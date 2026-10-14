@@ -165,3 +165,21 @@ visibility rules as sections. `snapshot()`/`finish()` include `exploration`.
 - `csv.ts`: `flights_explored`, `switches`, `compares`, `alternatives_opened`, `what_ifs`,
   `preferred_flight`, `ended_on_flight`, `would_switch` columns.
 - `/results`: an "Exploring" block with those numbers (variant A), honest wording.
+
+## Implementation notes (contract as landed)
+
+- The new fields are **optional** in `shared/src/types.ts` so old records and code keep compiling:
+  `DashboardMetrics.exploration?`, `PostSurvey.wouldSwitch?`, `AlternativeFlight.input?/prefs?`,
+  `Flight.prefs?`. The generator must always fill `Flight.prefs` and every alternative's `input`/`prefs`.
+- The tracker API is in place in `frontend/lib/tracking.ts`:
+  `new DashboardTracker(order, initialMetrics, { reference })`, `explorationState()`, `activeFlight()`,
+  `addFlight(f) → boolean` (false if duplicate or 6 already), `setActiveFlight(id, viaUser)`,
+  `compareOpened(a, b)`, `compareClosed()`, `preferFlight(id | null)`; `MAX_EXPLORED_FLIGHTS = 6`.
+  `addFlight` counts alternativesOpened / whatIfs from `addedVia`.
+
+## Participant label (`?p=`)
+
+`SessionRecord.participant?: string` — set from `?p=<label>` on the study link (trimmed, ≤ 40 chars,
+letters/digits/space/`-_.@` only; "" if absent), so the team can send a specific version to a specific
+person (`/?v=A&p=sarah`) and find that session later. Shown in the results table and CSV; validated in
+`parseSessionRecord` (old records → "").

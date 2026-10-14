@@ -1,5 +1,15 @@
 import { createContext, useContext } from "react";
-import type { DashboardEvent, DashboardMetrics, SectionId, SectionStats } from "@preflight/shared/types";
+import type {
+  DashboardEvent,
+  DashboardMetrics,
+  ExplorationMetrics,
+  ExploredFlight,
+  SectionId,
+  SectionStats,
+} from "@preflight/shared/types";
+
+/** Most flights a participant can explore in one session. */
+export const MAX_EXPLORED_FLIGHTS = 6;
 
 /** Hard cap so a busy participant can't grow the record without bound. */
 export const MAX_EVENTS = 300;
@@ -63,9 +73,44 @@ export class DashboardTracker {
   private finished = false;
   /** Total time frozen at finish(). */
   private frozenTotalMs: number | null = null;
+  /** Free exploration (variant A only); null when not enabled. */
+  private exploration: ExplorationMetrics | null = null;
+  private activeFlightId: string | null = null;
+  private compareOpen = false;
 
-  constructor(sectionOrder: readonly SectionId[], initial?: DashboardMetrics | null) {
+  /**
+   * @param exploration pass `{ reference }` to enable free exploration (variant A).
+   *   On resume, the saved exploration state wins over `reference`.
+   */
+  constructor(
+    sectionOrder: readonly SectionId[],
+    initial?: DashboardMetrics | null,
+    exploration?: { reference: ExploredFlight } | null,
+  ) {
     this.sectionOrder = [...sectionOrder];
+    if (exploration) {
+      const saved = initial?.exploration;
+      this.exploration = saved
+        ? {
+            ...saved,
+            flights: saved.flights.map((f) => ({ ...f })),
+            flightMs: { ...saved.flightMs },
+            comparePairs: [...saved.comparePairs],
+          }
+        : {
+            flights: [{ ...exploration.reference }],
+            switches: 0,
+            flightMs: {},
+            compares: 0,
+            compareMs: 0,
+            comparePairs: [],
+            alternativesOpened: 0,
+            whatIfs: 0,
+            endedOnFlightId: exploration.reference.id,
+            preferredFlightId: null,
+          };
+      this.activeFlightId = this.exploration.endedOnFlightId;
+    }
     for (const id of this.sectionOrder) {
       this.sections[id] = { opens: 0, openMs: 0, firstOpenAtMs: null };
     }
@@ -170,6 +215,74 @@ export class DashboardTracker {
     this.maxScrollPct = Math.max(this.restoredScrollPct, Math.min(100, Math.max(0, Math.round(pct))));
   }
 
+  // ── Free exploration ─────────────────────────────────────────────────────
+
+  /** Exploration state (restored across a reload), so the UI can rebuild the flight strip. */
+  explorationState(): ExplorationMetrics | null {
+    return this.exploration ? cloneExploration(this.exploration) : null;
+  }
+
+  /** Id of the flight currently shown (null when exploration is off). */
+  activeFlight(): string | null {
+    return this.activeFlightId;
+  }
+
+  /**
+   * Add an explored flight (what-if or opened alternative). Returns false when
+   * it is already in the list or the list is full. Does not switch to it.
+   */
+  addFlight(flight: ExploredFlight): boolean {
+    const x = this.exploration;
+    if (this.finished || !x) return false;
+    if (x.flights.some((f) => f.id === flight.id)) return false;
+    if (x.flights.length >= MAX_EXPLORED_FLIGHTS) return false;
+    x.flights.push({ ...flight, addedAtMs: this.elapsedMs() });
+    if (flight.addedVia === "alternative") x.alternativesOpened += 1;
+    else if (flight.addedVia !== "setup") x.whatIfs += 1;
+    this.pushEvent("flight_added", undefined, `${flight.addedVia}:${flight.id}`);
+    return true;
+  }
+
+  /** Show another explored flight. `viaUser` = the participant chose it (counts as a switch). */
+  setActiveFlight(id: string, viaUser: boolean): void {
+    const x = this.exploration;
+    if (this.finished || !x || id === this.activeFlightId) return;
+    if (!x.flights.some((f) => f.id === id)) return;
+    this.flush();
+    this.activeFlightId = id;
+    x.endedOnFlightId = id;
+    if (viaUser) {
+      x.switches += 1;
+      this.pushEvent("flight_switched", undefined, id);
+    }
+  }
+
+  compareOpened(idA: string, idB: string): void {
+    const x = this.exploration;
+    if (this.finished || !x) return;
+    this.flush();
+    const pair = `${idA}|${idB}`;
+    if (!this.compareOpen) x.compares += 1;
+    this.compareOpen = true;
+    if (x.comparePairs[x.comparePairs.length - 1] !== pair && x.comparePairs.length < 50) x.comparePairs.push(pair);
+    this.pushEvent("compare_open", "compare", pair);
+  }
+
+  compareClosed(): void {
+    if (this.finished || !this.exploration || !this.compareOpen) return;
+    this.flush();
+    this.compareOpen = false;
+    this.pushEvent("compare_close", "compare");
+  }
+
+  /** "I'd prefer this one" (null = cleared). Recorded only. */
+  preferFlight(id: string | null): void {
+    const x = this.exploration;
+    if (this.finished || !x) return;
+    x.preferredFlightId = id;
+    this.pushEvent("flight_preferred", "compare", id ?? "none");
+  }
+
   /** Current numbers without stopping (for checkpoint saves). */
   snapshot(): DashboardMetrics {
     this.flush();
@@ -181,6 +294,7 @@ export class DashboardTracker {
     if (!this.finished) {
       this.flush();
       for (const id of [...this.open]) this.setSectionOpen(id, false);
+      if (this.compareOpen) this.compareClosed();
       this.pushEvent("dashboard_done");
       this.endedAt = new Date().toISOString();
       this.pause();
@@ -206,6 +320,13 @@ export class DashboardTracker {
     this.lastTick = now;
     if (!this.visible) return;
     this.activeMs += dt;
+    if (this.exploration) {
+      if (this.compareOpen) this.exploration.compareMs += dt;
+      else if (this.activeFlightId) {
+        const ms = this.exploration.flightMs;
+        ms[this.activeFlightId] = (ms[this.activeFlightId] ?? 0) + dt;
+      }
+    }
     for (const id of this.open) {
       const stats = this.sections[id];
       if (stats) stats.openMs += dt;
@@ -249,8 +370,21 @@ export class DashboardTracker {
       events: this.events.map((e) => ({ ...e })),
       maxScrollPct: this.maxScrollPct,
       resumed: this.resumed,
+      exploration: this.exploration ? cloneExploration(this.exploration, true) : null,
     };
   }
+}
+
+function cloneExploration(x: ExplorationMetrics, round = false): ExplorationMetrics {
+  const flightMs: Record<string, number> = {};
+  for (const [id, ms] of Object.entries(x.flightMs)) flightMs[id] = round ? Math.round(ms) : ms;
+  return {
+    ...x,
+    flights: x.flights.map((f) => ({ ...f, input: { ...f.input }, prefs: { ...f.prefs }, summary: { ...f.summary } })),
+    flightMs,
+    compareMs: round ? Math.round(x.compareMs) : x.compareMs,
+    comparePairs: [...x.comparePairs],
+  };
 }
 
 export const TrackerContext = createContext<DashboardTracker | null>(null);

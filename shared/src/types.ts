@@ -70,6 +70,8 @@ export interface PostSurvey extends Ratings {
   wouldReplace: ReplaceOption[];
   wouldReplaceText: string;
   stillScaredOf: string;
+  /** Variant A only: "If you could, would you switch to one of the other flights you looked at?" */
+  wouldSwitch?: WouldSwitch | null;
 }
 
 // ── Flight (generated — every value is fake but must look credible) ────────
@@ -364,6 +366,9 @@ export interface AlternativeFlight {
   reason: string;
   /** Fare difference vs. the participant's flight in USD (can be negative). */
   fareDiffUsd: number;
+  /** What opens this option as a full flight: generateFlight(input, prefs). */
+  input?: FlightInput;
+  prefs?: FlightPrefs;
 }
 
 export interface Flight {
@@ -399,6 +404,8 @@ export interface Flight {
   sounds: SoundCue[];
   /** 2–3 options. */
   alternatives: AlternativeFlight[];
+  /** The prefs that produced this flight ({} for a plain setup flight). */
+  prefs?: FlightPrefs;
 }
 
 // ── Forecast status (depends on days until departure, not on the flight) ──
@@ -477,7 +484,65 @@ export interface DashboardMetrics {
   maxScrollPct: number;
   /** True if the dashboard was resumed after a page reload. */
   resumed: boolean;
+  /** Free exploration (variant A). Absent/null in variant B and in records from before the feature. */
+  exploration?: ExplorationMetrics | null;
 }
+
+// ── Free exploration (variant A; see docs/EXPLORATION.md) ───────────────────
+
+export type DepartWindow = "morning" | "afternoon" | "evening";
+
+/** Knobs the participant can turn. Part of the seed, so the same prefs always give the same flight. */
+export interface FlightPrefs {
+  departWindow?: DepartWindow;
+  /** Ask for a wide-body. */
+  bodyType?: "wide";
+  /** IATA code — fixes the carrier (used when opening an alternative). */
+  airline?: string;
+}
+
+export type AddedVia =
+  | "setup"
+  | "alternative"
+  | "whatif_day"
+  | "whatif_time"
+  | "whatif_wide"
+  | "whatif_route";
+
+export interface ExploredFlight {
+  /** Flight.id */
+  id: string;
+  input: FlightInput;
+  /** {} for the reference flight. */
+  prefs: FlightPrefs;
+  summary: FlightSummary;
+  addedVia: AddedVia;
+  /** ms after the dashboard started. */
+  addedAtMs: number;
+}
+
+export interface ExplorationMetrics {
+  /** First = the reference flight (the one set up before the dashboard). */
+  flights: ExploredFlight[];
+  /** Chip taps that changed the active flight. */
+  switches: number;
+  /** Visible time per flight id, ms. */
+  flightMs: Record<string, number>;
+  /** Times the compare view was opened. */
+  compares: number;
+  /** Visible time in the compare view, ms. */
+  compareMs: number;
+  /** "idA|idB" per compare, in order. */
+  comparePairs: string[];
+  alternativesOpened: number;
+  whatIfs: number;
+  /** Active flight when "done" was tapped (or at the last snapshot). */
+  endedOnFlightId: string;
+  /** Last "I'd prefer this one" (null if none). */
+  preferredFlightId: string | null;
+}
+
+export type WouldSwitch = "yes" | "no" | "not_sure" | "didnt_look";
 
 // ── Session record (one per participant session) ────────────────────────────
 
@@ -520,6 +585,8 @@ export interface SessionRecord {
   variantSource: VariantSource;
   /** True when the link had ?test=1 (team testing). */
   isTest: boolean;
+  /** Optional label from ?p=<label> on the link, to find a specific person's session. "" if none. */
+  participant?: string;
   device: DeviceInfo;
   pre: PreSurvey;
   flightInput: FlightInput | null;
