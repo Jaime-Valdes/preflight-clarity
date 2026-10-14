@@ -6,11 +6,11 @@
  *
  * Exits non-zero on any failure and prints a compact table to eyeball variety.
  */
-import { generateFlight, normalizeInput } from "../src/fakeFlight";
+import { departWindowOf, flightSeed, generateFlight, normalizeInput, normalizePrefs } from "../src/fakeFlight";
 import { AIRPORTS, getAirport, resolveAirport, searchAirports } from "../src/airports";
 import { candidateAirlines, isRetiredFlightNumber } from "../src/airlines";
 import { getAircraftModel } from "../src/aircraft";
-import type { Flight, FlightInput, FlightPhase } from "../src/types";
+import type { AlternativeFlight, DepartWindow, Flight, FlightInput, FlightPhase, FlightPrefs } from "../src/types";
 
 const INPUTS: FlightInput[] = [
   // Short and medium haul, North America
@@ -106,9 +106,9 @@ function stringsOf(value: unknown, path: string, out: Array<[string, string]>) {
   }
 }
 
-function checkFlight(input: FlightInput, flight: Flight) {
-  const tag = `${input.origin}→${input.destination} ${input.date}`;
-  const again = generateFlight(input);
+function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
+  const tag = `${input.origin}→${input.destination} ${input.date}${prefs && Object.keys(prefs).length ? " " + JSON.stringify(prefs) : ""}`;
+  const again = generateFlight(input, prefs);
   check(JSON.stringify(again) === JSON.stringify(flight), `${tag}: not deterministic`);
   const normTwice = normalizeInput(normalizeInput(input));
   check(JSON.stringify(normTwice) === JSON.stringify(flight.input), `${tag}: normalizeInput is not idempotent`);
@@ -301,7 +301,7 @@ function checkFlight(input: FlightInput, flight: Flight) {
     check(alt.flightNumber !== flight.flightNumber, `${tag}: alt reuses the flight number`);
     check(Math.abs(alt.blockMin - flight.blockMin) <= 60, `${tag}: alt block time`);
     check(alt.reason.length > 10 && alt.reason.endsWith("."), `${tag}: alt reason "${alt.reason}"`);
-    if (s.score >= 92) check(alt.scoreDelta <= 3, `${tag}: very smooth flight but alt delta ${alt.scoreDelta}`);
+    check(Boolean(alt.input) && Boolean(alt.prefs) && Object.keys(alt.prefs ?? {}).length > 0, `${tag}: alt without input/prefs`);
   }
   check(new Set(alts.map((x) => x.id)).size === alts.length, `${tag}: alt ids`);
   // Compare never argues with the route-history tile about the best time of day.
@@ -447,6 +447,125 @@ for (const input of INPUTS) {
     `${pad(route, 9)} ${pad(input.date, 10)} ${pad(flight.airline.name, 24)} ${pad(flight.flightNumber, 8)} ${pad(flight.aircraft.fullName, 18)} ${pad(flight.airborneMin, 5)} ${pad(arr, 13)} ${pad(flight.smoothness.score, 3)} ${pad(flight.smoothness.label, 20)} ${pad(describeWindows(flight), 24)} ${flight.smoothness.summary}`,
   );
 }
+
+// ── Free exploration: prefs, causality, wide-bodies, real alternatives ─────
+
+function summarize(alt: AlternativeFlight | Flight) {
+  if ("smoothnessScore" in alt) {
+    const { airline, flightNumber, date, departTime, arriveTime, arriveDayOffset, blockMin, aircraft, bodyType, smoothnessScore } = alt;
+    return JSON.stringify({ airline: airline.code, flightNumber, date, departTime, arriveTime, arriveDayOffset, blockMin, aircraft, bodyType, smoothnessScore });
+  }
+  const f = alt;
+  return JSON.stringify({
+    airline: f.airline.code, flightNumber: f.flightNumber, date: f.input.date, departTime: f.departTime, arriveTime: f.arriveTime,
+    arriveDayOffset: f.arriveDayOffset, blockMin: f.blockMin, aircraft: f.aircraft.fullName, bodyType: f.aircraft.bodyType, smoothnessScore: f.smoothness.score,
+  });
+}
+
+// Prefs determinism and seeds.
+const jfkLaxIn: FlightInput = { origin: "JFK", destination: "LAX", date: "2026-10-30" };
+check(flightSeed(jfkLaxIn) === "JFK|LAX|2026-10-30" && flightSeed(jfkLaxIn, {}) === "JFK|LAX|2026-10-30", "empty-prefs seed changed");
+check(flightSeed(jfkLaxIn, { airline: "dl", bodyType: "wide", departWindow: "morning" }) === "JFK|LAX|2026-10-30|w=morning|b=wide|a=DL", "prefs seed format");
+check(JSON.stringify(normalizePrefs({ airline: "ZZ", departWindow: "night" as DepartWindow })) === "{}", "unknown prefs not dropped");
+for (const input of INPUTS.slice(0, 20)) {
+  const plain = JSON.stringify(generateFlight(input));
+  check(plain === JSON.stringify(generateFlight(input, {})) && plain === JSON.stringify(generateFlight(input, undefined)), `${input.origin}→${input.destination}: {} / undefined prefs differ`);
+  check(JSON.stringify(generateFlight(input).prefs) === "{}", `${input.origin}→${input.destination}: reference prefs not {}`);
+  for (const prefs of [{ departWindow: "evening" }, { bodyType: "wide" }, { airline: "dl", departWindow: "morning" }] as FlightPrefs[]) {
+    const a = generateFlight(input, prefs);
+    const b = generateFlight(input, { ...normalizePrefs(prefs) });
+    check(JSON.stringify(a) === JSON.stringify(b), `${input.origin}→${input.destination} ${JSON.stringify(prefs)}: not deterministic`);
+    check(JSON.stringify(a.prefs) === JSON.stringify(normalizePrefs(prefs)), `${input.origin}→${input.destination}: Flight.prefs not set`);
+    check(a.id !== generateFlight(input).id, `${input.origin}→${input.destination} ${JSON.stringify(prefs)}: same id as the reference`);
+    if (prefs.departWindow) check(departWindowOf(a.departTime) === prefs.departWindow, `${input.origin}→${input.destination}: ${a.departTime} outside the ${prefs.departWindow} window`);
+    if (prefs.airline) check(a.airline.code === "DL", `${input.origin}→${input.destination}: airline pref ignored (${a.airline.code})`);
+  }
+}
+
+// Departure-window causality: ≥ 200 summer seeds, morning ≥ afternoon on average; winter stays plausible.
+const CAUSAL_ROUTES = [["JFK", "ORD"], ["ATL", "DEN"], ["DFW", "LAX"], ["BOS", "MIA"], ["SEA", "SFO"], ["ORD", "PHX"], ["FRA", "FCO"], ["MAD", "CDG"], ["LHR", "AMS"], ["DEL", "BOM"]];
+function windowMeans(months: number[], days: number): { morning: number; afternoon: number; evening: number; n: number; outside: number; tileDisagrees: number } {
+  const sum = { morning: 0, afternoon: 0, evening: 0 };
+  let n = 0;
+  let outside = 0;
+  let tileDisagrees = 0;
+  for (const [o, d] of CAUSAL_ROUTES)
+    for (const m of months)
+      for (let day = 1; day <= days; day++) {
+        const input = { origin: o, destination: d, date: `2027-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}` };
+        const ref = generateFlight(input);
+        for (const w of ["morning", "afternoon", "evening"] as DepartWindow[]) {
+          const f = generateFlight(input, { departWindow: w });
+          sum[w] += f.smoothness.score;
+          if (departWindowOf(f.departTime) !== w) outside++;
+          if (f.turbulence.history.bestDepartureWindow !== ref.turbulence.history.bestDepartureWindow) tileDisagrees++;
+        }
+        n++;
+      }
+  return { morning: sum.morning / n, afternoon: sum.afternoon / n, evening: sum.evening / n, n, outside, tileDisagrees };
+}
+const summer = windowMeans([6, 7, 8], 8);
+console.log(`\nSummer (${summer.n} seeds) mean score · morning ${summer.morning.toFixed(1)} · afternoon ${summer.afternoon.toFixed(1)} · evening ${summer.evening.toFixed(1)}`);
+check(summer.n >= 200, "causality sample too small");
+check(summer.morning >= summer.afternoon, `summer: morning mean ${summer.morning.toFixed(1)} < afternoon ${summer.afternoon.toFixed(1)}`);
+check(summer.afternoon >= summer.evening - 1, `summer: evening clearly smoother than afternoon (${summer.evening.toFixed(1)})`);
+check(summer.outside === 0 && summer.tileDisagrees === 0, `summer: ${summer.outside} departures outside their window, ${summer.tileDisagrees} history tiles disagree with the reference`);
+const winter = windowMeans([12, 1, 2], 4);
+console.log(`Winter (${winter.n} seeds) mean score · morning ${winter.morning.toFixed(1)} · afternoon ${winter.afternoon.toFixed(1)} · evening ${winter.evening.toFixed(1)}`);
+for (const w of ["morning", "afternoon", "evening"] as const) check(winter[w] >= 75 && winter[w] <= 92, `winter: implausible ${w} mean ${winter[w].toFixed(1)}`);
+check(Math.max(winter.morning, winter.afternoon, winter.evening) - Math.min(winter.morning, winter.afternoon, winter.evening) <= 6, "winter: time of day matters implausibly much");
+check(winter.outside === 0 && winter.tileDisagrees === 0, `winter: ${winter.outside} departures outside their window, ${winter.tileDisagrees} history tiles disagree`);
+
+// Wide-bodies honoured where a carrier on the route has one; never at LGA/DCA.
+for (const [o, d] of [["JFK", "LAX"], ["JFK", "BOS"], ["ATL", "DEN"], ["LHR", "CDG"], ["FRA", "FCO"], ["HND", "KIX"], ["DEN", "ATL"], ["SFO", "HNL"], ["DXB", "DEL"]]) {
+  for (const date of ["2026-11-26", "2027-07-14"]) {
+    const f = generateFlight({ origin: o, destination: d, date }, { bodyType: "wide" });
+    check(f.aircraft.bodyType === "wide", `${o}→${d} ${date}: wide-body pref not honoured (${f.airline.code} ${f.aircraft.model})`);
+  }
+}
+check(generateFlight({ origin: "LGA", destination: "ORD", date: "2027-01-10" }, { bodyType: "wide" }).aircraft.bodyType === "narrow", "wide-body at LaGuardia");
+
+// Every alternative row equals the full flight it opens; opened alternatives pass every flight check.
+let altRows = 0;
+let opened = 0;
+const kindsSeen = new Set<string>();
+for (const input of INPUTS) {
+  const flight = generateFlight(input);
+  for (const alt of flight.alternatives) {
+    altRows++;
+    const full = generateFlight(alt.input!, alt.prefs);
+    check(summarize(alt) === summarize(full), `${input.origin}→${input.destination}: alt row ≠ its flight\n    row  ${summarize(alt)}\n    full ${summarize(full)}`);
+    check(JSON.stringify(full.prefs) === JSON.stringify(alt.prefs), `${input.origin}→${input.destination}: alt prefs not round-tripped`);
+    kindsSeen.add(Object.keys(alt.prefs ?? {}).sort().join("+") + (alt.date === flight.input.date ? "" : " other-day"));
+    if (opened < 60) {
+      checkFlight(alt.input!, full, alt.prefs);
+      opened++;
+    }
+  }
+}
+console.log(`Alternatives: ${altRows} rows match their flights · shapes ${[...kindsSeen].join(", ")}`);
+
+// Depth limit: opening an alternative of an alternative (5 hops) stays one level deep and fast.
+let hop = generateFlight({ origin: "DEN", destination: "ATL", date: "2026-07-18" });
+const hopStart = performance.now();
+for (let i = 0; i < 5; i++) {
+  const alt = hop.alternatives[0];
+  hop = generateFlight(alt.input!, alt.prefs);
+  check(hop.alternatives.length >= 2 && hop.alternatives.every((a) => !("alternatives" in a)), "alternatives nest");
+}
+check(performance.now() - hopStart < 500, "alternative chain too slow");
+
+// Performance: a flight with alternatives generates in < 30 ms on average.
+const perfStart = performance.now();
+let perfN = 0;
+for (const input of INPUTS)
+  for (const prefs of [undefined, { departWindow: "morning" }, { bodyType: "wide" }] as Array<FlightPrefs | undefined>) {
+    generateFlight({ ...input, date: input.date.replace(/-\d\d$/, "-11") }, prefs);
+    perfN++;
+  }
+const perfMs = (performance.now() - perfStart) / perfN;
+console.log(`Performance: ${perfMs.toFixed(1)} ms per flight with alternatives (${perfN} flights)`);
+check(perfMs < 30, `generateFlight too slow: ${perfMs.toFixed(1)} ms`);
 
 // ── Variety ─────────────────────────────────────────────────────────────────
 

@@ -12,8 +12,24 @@ import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_EVENTS, MAX_TEXT_CHARS, parseSessionRecord } from "@preflight/shared/record";
-import type { DashboardEvent, SectionId, SectionStats, SessionRecord } from "@preflight/shared/types";
+import { CSV_COLUMNS, csvCell, recordToRow as csvRow, recordsToCsv } from "@preflight/shared/csv";
+import {
+  MAX_COMPARE_PAIRS,
+  MAX_EVENTS,
+  MAX_EXPLORED_FLIGHTS,
+  MAX_TEXT_CHARS,
+  parseSessionRecord,
+} from "@preflight/shared/record";
+import { explorationStats } from "@preflight/shared/stats";
+import type {
+  DashboardEvent,
+  ExplorationMetrics,
+  ExploredFlight,
+  FlightSummary,
+  SectionId,
+  SectionStats,
+  SessionRecord,
+} from "@preflight/shared/types";
 import { createFileStore } from "../src/lib/store/file";
 import { recordToRow, rowToRecord } from "../src/lib/store/supabase";
 
@@ -73,6 +89,50 @@ const SECTIONS: SectionId[] = [
   "alerts",
 ];
 
+function summary(id: string, score: number, bodyType: "narrow" | "wide" = "narrow"): FlightSummary {
+  return {
+    flightId: id,
+    flightNumber: "DL 1423",
+    airline: "Delta Air Lines",
+    route: "JFK → LAX",
+    aircraft: bodyType === "wide" ? "Airbus A330-900neo" : "Airbus A321neo",
+    bodyType,
+    airborneMin: 332,
+    smoothnessScore: score,
+    maxIntensity: "light",
+    daysUntil: 44,
+    forecastMode: "history",
+  };
+}
+
+/** Variant A exploration: own flight + a what-if day + an opened wide-body alternative. */
+function explorationFixture(): ExplorationMetrics {
+  const flights: ExploredFlight[] = [
+    { id: "f3a9c1e2", input: { origin: "JFK", destination: "LAX", date: "2026-11-26" }, prefs: {}, summary: summary("f3a9c1e2", 82), addedVia: "setup", addedAtMs: 0 },
+    { id: "b71e04aa", input: { origin: "JFK", destination: "LAX", date: "2026-11-27" }, prefs: {}, summary: summary("b71e04aa", 88), addedVia: "whatif_day", addedAtMs: 61000 },
+    {
+      id: "c0ffee12",
+      input: { origin: "JFK", destination: "LAX", date: "2026-11-26" },
+      prefs: { departWindow: "morning", bodyType: "wide", airline: "DL" },
+      summary: summary("c0ffee12", 91, "wide"),
+      addedVia: "alternative",
+      addedAtMs: 120500,
+    },
+  ];
+  return {
+    flights,
+    switches: 4,
+    flightMs: { f3a9c1e2: 150000, b71e04aa: 30000, c0ffee12: 45000 },
+    compares: 2,
+    compareMs: 26000,
+    comparePairs: ["f3a9c1e2|b71e04aa", "f3a9c1e2|c0ffee12"],
+    alternativesOpened: 1,
+    whatIfs: 1,
+    endedOnFlightId: "c0ffee12",
+    preferredFlightId: "c0ffee12",
+  };
+}
+
 function fixture(): SessionRecord {
   const events: DashboardEvent[] = [
     { t: 0, type: "section_open", section: "turbulence" },
@@ -101,6 +161,7 @@ function fixture(): SessionRecord {
     variant: "A",
     variantSource: "random",
     isTest: false,
+    participant: "sarah",
     device: {
       type: "mobile",
       userAgent:
@@ -143,6 +204,7 @@ function fixture(): SessionRecord {
       events,
       maxScrollPct: 100,
       resumed: false,
+      exploration: explorationFixture(),
     },
     post: {
       anxiety: 5,
@@ -155,6 +217,7 @@ function fixture(): SessionRecord {
       wouldReplace: ["turbulence_apps", "choosing_flights"],
       wouldReplaceText: "Maybe the forecast app I use now.",
       stillScaredOf: "Long stretches of bumps over the ocean, and the feeling of not knowing when they end.",
+      wouldSwitch: "not_sure",
     },
     email: "participant@example.com",
   };
@@ -437,7 +500,142 @@ group("parseSessionRecord", () => {
       },
       email: "",
     };
-    assert.deepEqual(expectOk(minimal), minimal);
+    // Records from before the participant label / exploration fields parse with "" / null.
+    assert.deepEqual(expectOk(minimal), { ...minimal, participant: "", post: { ...minimal.post, wouldSwitch: null } });
+  });
+
+  test("an old record without participant / exploration / wouldSwitch is accepted with defaults", () => {
+    const record = expectOk(
+      loose((r) => {
+        delete r.participant;
+        delete r.dashboard.exploration;
+        delete r.post.wouldSwitch;
+      }),
+    );
+    assert.equal(record.participant, "");
+    assert.equal(record.dashboard?.exploration, null);
+    assert.equal(record.post.wouldSwitch, null);
+    assert.deepEqual(
+      { ...record, participant: "sarah", dashboard: { ...record.dashboard!, exploration: explorationFixture() }, post: { ...record.post, wouldSwitch: "not_sure" } },
+      fixture(),
+      "nothing else changes",
+    );
+  });
+
+  test("wouldSwitch is an enum or null", () => {
+    for (const v of ["yes", "no", "not_sure", "didnt_look"] as const) {
+      assert.equal(expectOk(loose((r) => (r.post.wouldSwitch = v))).post.wouldSwitch, v);
+    }
+    for (const v of ["maybe", 1, true, {}, null]) {
+      assert.equal(expectOk(loose((r) => (r.post.wouldSwitch = v))).post.wouldSwitch, null);
+    }
+  });
+
+  test("participant label keeps letters, digits, space and - _ . @ only, ≤ 40 chars", () => {
+    const label = (v: unknown) => expectOk(loose((r) => (r.participant = v))).participant;
+    assert.equal(label("  sarah  "), "sarah");
+    assert.equal(label("José M. <script>"), "José M. script");
+    assert.equal(label("=cmd|' /C calc'!A0"), "cmd C calcA0");
+    assert.equal(label("a@b.co_x-1"), "a@b.co_x-1");
+    assert.equal(label("x".repeat(80)), "x".repeat(40));
+    assert.equal(label("a\u0000b\nc"), "abc");
+    assert.equal(label(42), "");
+    assert.equal(label(null), "");
+  });
+
+  test("exploration: a non-object or flight-less block becomes null (never rejects)", () => {
+    for (const v of ["lots", 5, [], { flights: [] }, { flights: "x" }, {}]) {
+      assert.equal(expectOk(loose((r) => (r.dashboard.exploration = v))).dashboard?.exploration, null);
+    }
+    // A broken reference flight (the first) voids the block: every other figure is relative to it.
+    assert.equal(expectOk(loose((r) => (r.dashboard.exploration.flights[0].summary.bodyType = "huge"))).dashboard?.exploration, null);
+    assert.equal(expectOk(loose((r) => (r.dashboard.exploration.flights[0].addedVia = "teleport"))).dashboard?.exploration, null);
+  });
+
+  test("exploration: implausible or duplicate flights are dropped, prefs sanitized", () => {
+    const record = expectOk(
+      loose((r) => {
+        const x = r.dashboard.exploration;
+        x.flights[1].input.date = "2026-02-31";
+        x.flights[2].prefs = { departWindow: "midnight", bodyType: "narrow", airline: "  DL  ", extra: 1 };
+        x.flights[2].extra = true;
+        x.flights.push({ ...x.flights[2] }, "junk", { ...x.flights[2], id: "neg", addedAtMs: -5 }, { ...x.flights[2], id: "nan", addedAtMs: "1" });
+      }),
+    );
+    const x = record.dashboard!.exploration!;
+    assert.deepEqual(x.flights.map((f) => f.id), ["f3a9c1e2", "c0ffee12", "neg"]);
+    assert.deepEqual(x.flights[1].prefs, { airline: "DL" });
+    assert.equal(x.flights[2].addedAtMs, 0, "negative clamps to 0");
+    assert.equal(Object.hasOwn(x.flights[1], "extra"), false);
+    assert.deepEqual(Object.keys(x.flightMs).sort(), ["c0ffee12", "f3a9c1e2"], "flightMs keys ⊆ surviving flight ids");
+  });
+
+  test("exploration: counters clamp, flightMs is filtered, lists are capped", () => {
+    const record = expectOk(
+      loose((r) => {
+        const x = r.dashboard.exploration;
+        x.switches = -3;
+        x.compares = "2";
+        x.compareMs = Number.MAX_SAFE_INTEGER;
+        delete x.whatIfs;
+        x.flightMs = { f3a9c1e2: 1000.6, b71e04aa: "30", c0ffee12: -1, stranger: 5, __proto__: { polluted: 1 } };
+        x.comparePairs = ["a|b", "", 7, "p".repeat(400), ...Array.from({ length: 100 }, () => "x|y")];
+        x.endedOnFlightId = "";
+        x.preferredFlightId = 7;
+        x.flights = Array.from({ length: 20 }, (_, i) => ({ ...x.flights[0], id: `id${i}` }));
+      }),
+    );
+    const x = record.dashboard!.exploration!;
+    assert.equal(x.switches, 0);
+    assert.equal(x.compares, 0);
+    assert.equal(x.compareMs, 2_147_483_647);
+    assert.equal(x.whatIfs, 0);
+    assert.equal(x.flights.length, MAX_EXPLORED_FLIGHTS);
+    assert.deepEqual(x.flightMs, {}, "ids no longer match any flight");
+    assert.equal(x.comparePairs.length <= MAX_COMPARE_PAIRS, true);
+    assert.equal(x.comparePairs[0], "a|b");
+    assert.equal(x.comparePairs[1].length, 241);
+    assert.equal(x.endedOnFlightId, "id0", "falls back to the reference flight");
+    assert.equal(x.preferredFlightId, null);
+    assert.equal(({} as Loose).polluted, undefined, "no prototype pollution");
+
+    const ms = expectOk(
+      loose((r) => (r.dashboard.exploration.flightMs = { f3a9c1e2: 1000.6, b71e04aa: "30", c0ffee12: -1, stranger: 5 })),
+    ).dashboard!.exploration!.flightMs;
+    assert.deepEqual(ms, { f3a9c1e2: 1001, c0ffee12: 0 });
+  });
+
+  test("exploration survives a JSON round trip through stats and CSV", () => {
+    const old = loose((r) => {
+      r.sessionId = "00000000-0000-4000-8000-000000000002";
+      r.variant = "B";
+      delete r.participant;
+      r.dashboard.exploration = null;
+      delete r.post.wouldSwitch;
+    });
+    const records = [fixture(), expectOk(old)];
+    const stats = explorationStats(records);
+    assert.equal(stats.overall.n, 1);
+    assert.equal(stats.byVariant.B.n, 0);
+    assert.equal(stats.byVariant.B.meanFlights, null);
+    assert.equal(stats.byVariant.A.meanFlights, 3);
+    assert.equal(stats.byVariant.A.preferredOther, 1);
+    assert.equal(stats.byVariant.A.medianReferenceMs, 150000);
+    assert.equal(stats.byVariant.A.medianOtherMs, 37500);
+    assert.equal(stats.overall.wouldSwitch.n, 1);
+
+    const header = recordsToCsv(records).replace(/^\uFEFF/, "").split("\r\n")[0].split(",");
+    assert.deepEqual(header, [...CSV_COLUMNS]);
+    const col = (record: SessionRecord, name: string) => csvCell(csvRow(record)[CSV_COLUMNS.indexOf(name)]);
+    assert.equal(col(records[0], "participant"), "sarah");
+    assert.equal(col(records[0], "flights_explored"), "3");
+    assert.equal(col(records[0], "switches"), "4");
+    assert.equal(col(records[0], "preferred_flight"), "c0ffee12");
+    assert.equal(col(records[0], "ended_on_flight"), "c0ffee12");
+    assert.equal(col(records[0], "would_switch"), "not_sure");
+    for (const name of ["participant", "flights_explored", "switches", "compares", "alternatives_opened", "what_ifs", "preferred_flight", "ended_on_flight", "would_switch"]) {
+      assert.equal(col(records[1], name), "", `${name} is blank without exploration`);
+    }
   });
 });
 

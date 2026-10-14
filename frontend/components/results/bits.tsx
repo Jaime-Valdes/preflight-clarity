@@ -148,6 +148,17 @@ export function HBar({ pct, color, className, height = "h-2.5" }: HBarProps) {
   );
 }
 
+/** Small number tile inside a block: label, value, one-line hint. */
+export function Tile({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-2xl bg-canvas/70 px-3.5 py-3 ring-1 ring-inset ring-line/70">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">{label}</div>
+      <div className="mt-1 text-lg font-bold leading-tight text-ink-900">{value}</div>
+      <div className="mt-0.5 text-xs leading-snug text-ink-500">{hint}</div>
+    </div>
+  );
+}
+
 /** Bar + value label row used by the small horizontal bar lists. */
 export function BarRow({
   label,

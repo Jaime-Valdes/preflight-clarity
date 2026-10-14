@@ -22,6 +22,7 @@ import type {
   Step,
   Timeframe,
   Variant,
+  WouldSwitch,
 } from "./types";
 
 // ── Vocabulary ──────────────────────────────────────────────────────────────
@@ -106,6 +107,15 @@ export const FLIGHTS_PER_YEAR_LABELS: Record<FlightsPerYear, string> = {
   "4to6": "4–6 flights a year",
   "7to12": "7–12 flights a year",
   "13plus": "13+ flights a year",
+};
+
+export const WOULD_SWITCH_OPTIONS: readonly WouldSwitch[] = ["yes", "no", "not_sure", "didnt_look"];
+
+export const WOULD_SWITCH_LABELS: Record<WouldSwitch, string> = {
+  yes: "Yes",
+  no: "No",
+  not_sure: "Not sure",
+  didnt_look: "Didn’t look at other flights",
 };
 
 /** Parts a participant can name in the post-survey, in dashboard order, plus the explicit "none". */
@@ -610,6 +620,116 @@ export function timeframeDistribution(records: readonly SessionRecord[]): Distri
 /** Pre-survey: flights per year (optional question). */
 export function flightsPerYearDistribution(records: readonly SessionRecord[]): Distribution<FlightsPerYear> {
   return singleChoice(records, FLIGHTS_PER_YEAR, FLIGHTS_PER_YEAR_LABELS, (r) => r.pre.flightsPerYear);
+}
+
+// ── Free exploration (variant A) ───────────────────────────────────────────
+
+/** Exploration metrics of a record, or null (variant B, older records, before the dashboard). */
+function explorationOf(record: SessionRecord) {
+  const x = record.dashboard?.exploration;
+  return x && Array.isArray(x.flights) && x.flights.length > 0 ? x : null;
+}
+
+/** Flights the participant looked at, including their own (reference) flight; null without exploration data. */
+export function flightsExplored(record: SessionRecord): number | null {
+  return explorationOf(record)?.flights.length ?? null;
+}
+
+/** The flight marked "I'd prefer this one", if it is not the participant's own flight; else null. */
+export function preferredOtherFlight(record: SessionRecord): string | null {
+  const x = explorationOf(record);
+  if (!x || !x.preferredFlightId || x.preferredFlightId === x.flights[0].id) return null;
+  return x.preferredFlightId;
+}
+
+export interface ExplorationStats {
+  /** Sessions with exploration data (variant A dashboards recorded since the feature landed). */
+  n: number;
+  /** Flights looked at per session, including their own. */
+  meanFlights: number | null;
+  medianFlights: number | null;
+  /** …who added at least one flight beyond their own. */
+  addedAny: number;
+  addedAnyPct: number | null;
+  openedCompare: number;
+  openedComparePct: number | null;
+  /** …who marked a flight other than their own as preferred. */
+  preferredOther: number;
+  preferredOtherPct: number | null;
+  /** …whose last active flight was not their own when they tapped "done". */
+  endedOnOther: number;
+  endedOnOtherPct: number | null;
+  medianSwitches: number | null;
+  /** Median visible time per flight, pooled over every explored flight of every session (ms). */
+  medianMsPerFlight: number | null;
+  /** Median visible time on the participant's own flight (ms). */
+  medianReferenceMs: number | null;
+  /** Median visible time on the other flights, pooled (ms); null when nobody added one. */
+  medianOtherMs: number | null;
+  /** Median visible time in the compare view, among sessions that opened it (ms). */
+  medianCompareMs: number | null;
+  /** Sum over sessions: flights opened from "Compare smoother options". */
+  alternativesOpened: number;
+  /** Sum over sessions: flights added through the what-if sheet. */
+  whatIfs: number;
+  /** "Would you switch to one of the other flights you looked at?" — among those who answered. */
+  wouldSwitch: Distribution<WouldSwitch>;
+}
+
+function explorationStatsFor(records: readonly SessionRecord[]): ExplorationStats {
+  const sessions = records.flatMap((r) => {
+    const x = explorationOf(r);
+    return x ? [x] : [];
+  });
+  const n = sessions.length;
+  const counts = sessions.map((x) => x.flights.length);
+  const msOf = (x: (typeof sessions)[number], id: string): number[] => {
+    const ms = x.flightMs?.[id];
+    return isNumber(ms) ? [ms] : [];
+  };
+  const addedAny = sessions.filter((x) => x.flights.length > 1).length;
+  const openedCompare = sessions.filter((x) => x.compares > 0);
+  const preferredOther = sessions.filter(
+    (x) => x.preferredFlightId !== null && x.preferredFlightId !== undefined && x.preferredFlightId !== x.flights[0].id,
+  ).length;
+  const endedOnOther = sessions.filter((x) => !!x.endedOnFlightId && x.endedOnFlightId !== x.flights[0].id).length;
+  return {
+    n,
+    meanFlights: mean(counts),
+    medianFlights: median(counts),
+    addedAny,
+    addedAnyPct: share(addedAny, n),
+    openedCompare: openedCompare.length,
+    openedComparePct: share(openedCompare.length, n),
+    preferredOther,
+    preferredOtherPct: share(preferredOther, n),
+    endedOnOther,
+    endedOnOtherPct: share(endedOnOther, n),
+    medianSwitches: median(sessions.map((x) => x.switches)),
+    medianMsPerFlight: median(sessions.flatMap((x) => x.flights.flatMap((f) => msOf(x, f.id)))),
+    medianReferenceMs: median(sessions.flatMap((x) => msOf(x, x.flights[0].id))),
+    medianOtherMs: median(sessions.flatMap((x) => x.flights.slice(1).flatMap((f) => msOf(x, f.id)))),
+    medianCompareMs: median(openedCompare.map((x) => x.compareMs)),
+    alternativesOpened: sessions.reduce((sum, x) => sum + (x.alternativesOpened || 0), 0),
+    whatIfs: sessions.reduce((sum, x) => sum + (x.whatIfs || 0), 0),
+    wouldSwitch: wouldSwitchDistribution(records),
+  };
+}
+
+/** Exploration figures, overall and by variant (variant B never has exploration data, so its n is 0). */
+export function explorationStats(records: readonly SessionRecord[]): {
+  overall: ExplorationStats;
+  byVariant: Record<Variant, ExplorationStats>;
+} {
+  return { overall: explorationStatsFor(records), byVariant: byVariant(records, explorationStatsFor) };
+}
+
+/** Post-survey "would you switch?" (variant A, optional) — single choice, share of those who answered. */
+export function wouldSwitchDistribution(records: readonly SessionRecord[]): Distribution<WouldSwitch> {
+  return singleChoice(records, WOULD_SWITCH_OPTIONS, WOULD_SWITCH_LABELS, (r) => {
+    const answer = r.post.wouldSwitch;
+    return answer && WOULD_SWITCH_OPTIONS.includes(answer) ? answer : null;
+  });
 }
 
 // ── Open text ───────────────────────────────────────────────────────────────

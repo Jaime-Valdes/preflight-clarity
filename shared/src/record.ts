@@ -13,6 +13,9 @@
  *    arrays are filtered to known values, nullable enums fall back to null,
  *    numbers are clamped to a sane range, an email is kept only if it looks
  *    like one.
+ *  - Fields added after launch (participant, dashboard.exploration,
+ *    post.wouldSwitch) are optional on input: older records parse with
+ *    "" / null. The exploration block is sanitized, never a reason to reject.
  *  - The result is rebuilt field by field from literal keys, so unknown keys
  *    (and prototype tricks such as "__proto__") never get through, and the
  *    output is always a well-formed SessionRecord.
@@ -20,14 +23,19 @@
 import { isISODate } from "./dates";
 import { isDashboardPart, isSectionId, SECTION_IDS } from "./sections";
 import type {
+  AddedVia,
   BodyType,
   CheckFrequency,
   DashboardEvent,
   DashboardMetrics,
   DashboardPart,
   DeviceInfo,
+  DepartWindow,
   DeviceType,
+  ExplorationMetrics,
+  ExploredFlight,
   FlightInput,
+  FlightPrefs,
   FlightSummary,
   FlightsPerYear,
   ForecastMode,
@@ -42,6 +50,7 @@ import type {
   Timeframe,
   Variant,
   VariantSource,
+  WouldSwitch,
 } from "./types";
 
 export type ParseResult = { ok: true; record: SessionRecord } | { ok: false; error: string };
@@ -64,6 +73,13 @@ const MAX_SEQ = 1_000_000;
 const MAX_COUNT = 1_000_000;
 const MAX_LIST_ITEMS = 50;
 const MAX_VIEWPORT_PX = 100_000;
+/** Explored flights kept per session (the tracker allows 6; leave headroom, never unbounded). */
+export const MAX_EXPLORED_FLIGHTS = 12;
+/** "idA|idB" entries kept per session (mirrors the tracker's cap). */
+export const MAX_COMPARE_PAIRS = 50;
+/** Participant label from ?p= (see docs/EXPLORATION.md). */
+export const MAX_PARTICIPANT_CHARS = 40;
+const MAX_AIRLINE_CODE_CHARS = 8;
 
 // ── Enumerations (kept in sync with ./types) ────────────────────────────────
 
@@ -84,6 +100,16 @@ const REPLACE_OPTIONS: readonly ReplaceOption[] = [
 const BODY_TYPES: readonly BodyType[] = ["narrow", "wide"];
 const INTENSITIES: readonly Intensity[] = ["none", "light", "moderate"];
 const FORECAST_MODES: readonly ForecastMode[] = ["history", "outlook", "forecast"];
+const DEPART_WINDOWS: readonly DepartWindow[] = ["morning", "afternoon", "evening"];
+const ADDED_VIA: readonly AddedVia[] = [
+  "setup",
+  "alternative",
+  "whatif_day",
+  "whatif_time",
+  "whatif_wide",
+  "whatif_route",
+];
+const WOULD_SWITCH: readonly WouldSwitch[] = ["yes", "no", "not_sure", "didnt_look"];
 
 // ── Primitives ──────────────────────────────────────────────────────────────
 
@@ -219,6 +245,8 @@ function parsePost(value: unknown): PostSurvey {
     wouldReplace: knownValues(value.wouldReplace, (item) => enumValue(item, REPLACE_OPTIONS)),
     wouldReplaceText: text(value.wouldReplaceText, MAX_TEXT_CHARS),
     stillScaredOf: text(value.stillScaredOf, MAX_TEXT_CHARS),
+    // Added with free exploration; absent on older records.
+    wouldSwitch: enumValue(value.wouldSwitch, WOULD_SWITCH) ?? null,
   };
 }
 
@@ -230,6 +258,16 @@ function parseFlightInput(value: unknown): FlightInput | null {
   const date = typeof value.date === "string" && isISODate(value.date) ? value.date : undefined;
   if (!origin || !destination || !date) fail("invalid_flight_input");
   return { origin, destination, date };
+}
+
+/** Run a strict nested parser, but turn its rejection into `undefined` (for lenient containers). */
+function lenient<T>(parse: () => T): T | undefined {
+  try {
+    return parse();
+  } catch (err) {
+    if (err instanceof ParseError) return undefined;
+    throw err;
+  }
 }
 
 function parseFlight(value: unknown): FlightSummary | null {
@@ -280,6 +318,89 @@ function parseEvents(value: unknown): DashboardEvent[] {
   return out;
 }
 
+function parsePrefs(value: unknown): FlightPrefs {
+  const prefs: FlightPrefs = {};
+  if (!isObject(value)) return prefs;
+  const departWindow = enumValue(value.departWindow, DEPART_WINDOWS);
+  if (departWindow) prefs.departWindow = departWindow;
+  if (value.bodyType === "wide") prefs.bodyType = "wide";
+  const airline = text(value.airline, MAX_AIRLINE_CODE_CHARS);
+  if (airline) prefs.airline = airline;
+  return prefs;
+}
+
+/** One explored flight, or undefined when any part of it is implausible (the entry is dropped). */
+function parseExploredFlight(value: unknown): ExploredFlight | undefined {
+  if (!isObject(value)) return undefined;
+  const id = text(value.id, MAX_SHORT_CHARS);
+  const input = lenient(() => parseFlightInput(value.input));
+  const summary = lenient(() => parseFlight(value.summary));
+  const addedVia = enumValue(value.addedVia, ADDED_VIA);
+  const addedAtMs = int(value.addedAtMs, 0, MAX_MS);
+  if (!id || !input || !summary || !addedVia || addedAtMs === undefined) return undefined;
+  return { id, input, prefs: parsePrefs(value.prefs), summary, addedVia, addedAtMs };
+}
+
+/**
+ * Free-exploration metrics (variant A). Lenient on purpose: this block is
+ * secondary to the surveys, so a malformed one never costs the whole record.
+ * Missing or non-object → null; implausible flights are dropped (duplicates
+ * by id too); if the reference flight (the first) does not survive, the
+ * block is null, because every other figure is relative to it.
+ */
+function parseExploration(value: unknown): ExplorationMetrics | null {
+  if (!isObject(value) || !Array.isArray(value.flights)) return null;
+  const first = value.flights[0];
+  const flights: ExploredFlight[] = [];
+  for (const item of value.flights.slice(0, MAX_EXPLORED_FLIGHTS)) {
+    const flight = parseExploredFlight(item);
+    if (flight && !flights.some((f) => f.id === flight.id)) flights.push(flight);
+    else if (item === first) return null;
+  }
+  if (flights.length === 0) return null;
+  const ids = flights.map((f) => f.id);
+
+  // Built with Object.fromEntries (data properties only) from known ids, so "__proto__" is inert.
+  const rawMs = isObject(value.flightMs) ? value.flightMs : {};
+  const flightMs: Record<string, number> = Object.fromEntries(
+    ids.flatMap((id) => {
+      const ms = Object.hasOwn(rawMs, id) ? int(rawMs[id], 0, MAX_MS) : undefined;
+      return ms === undefined ? [] : [[id, ms] as const];
+    }),
+  );
+
+  const comparePairs = Array.isArray(value.comparePairs)
+    ? value.comparePairs
+        .slice(0, MAX_COMPARE_PAIRS)
+        .map((pair) => text(pair, MAX_SHORT_CHARS * 2 + 1))
+        .filter((pair) => pair !== "")
+    : [];
+
+  const preferred = text(value.preferredFlightId, MAX_SHORT_CHARS);
+  return {
+    flights,
+    switches: int(value.switches, 0, MAX_COUNT) ?? 0,
+    flightMs,
+    compares: int(value.compares, 0, MAX_COUNT) ?? 0,
+    compareMs: int(value.compareMs, 0, MAX_MS) ?? 0,
+    comparePairs,
+    alternativesOpened: int(value.alternativesOpened, 0, MAX_COUNT) ?? 0,
+    whatIfs: int(value.whatIfs, 0, MAX_COUNT) ?? 0,
+    endedOnFlightId: text(value.endedOnFlightId, MAX_SHORT_CHARS) || ids[0],
+    preferredFlightId: preferred || null,
+  };
+}
+
+/** Anything outside letters, digits, space and - _ . @ (the ?p= alphabet). */
+const PARTICIPANT_DISALLOWED = /[^\p{L}\p{N} \-_.@]/gu;
+
+/** Participant label from ?p=: disallowed characters removed, spaces collapsed, ≤ 40 chars; "" if none. */
+function participant(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const cleaned = value.replace(PARTICIPANT_DISALLOWED, "").replace(/ {2,}/g, " ");
+  return text(cleaned, MAX_PARTICIPANT_CHARS);
+}
+
 function parseDashboard(value: unknown): DashboardMetrics | null {
   if (value === null || value === undefined) return null;
   if (!isObject(value)) fail("invalid_dashboard");
@@ -310,6 +431,7 @@ function parseDashboard(value: unknown): DashboardMetrics | null {
     events: parseEvents(value.events),
     maxScrollPct: int(value.maxScrollPct, 0, 100) ?? 0,
     resumed: value.resumed === true,
+    exploration: parseExploration(value.exploration),
   };
 }
 
@@ -338,6 +460,7 @@ function build(input: unknown): SessionRecord {
     variant: enumValue(input.variant, VARIANTS) ?? fail("invalid_variant"),
     variantSource: enumValue(input.variantSource, VARIANT_SOURCES) ?? fail("invalid_variant"),
     isTest: input.isTest === true,
+    participant: participant(input.participant),
     device: parseDevice(input.device),
     pre: parsePre(input.pre),
     flightInput: parseFlightInput(input.flightInput),

@@ -20,6 +20,7 @@ import { useHydrated } from "@/lib/hooks";
 import { ChangeBlock } from "./ChangeBlock";
 import { DistributionsBlock } from "./DistributionsBlock";
 import { EngagementBlock } from "./EngagementBlock";
+import { ExplorationBlock } from "./ExplorationBlock";
 import { InterpretationNote } from "./InterpretationNote";
 import { KpiRow, ResultsHeader } from "./ResultsHeader";
 import { OpenTextBlock } from "./OpenTextBlock";
@@ -106,6 +107,7 @@ export function ResultsDashboard({ records, storage, banner }: ResultsDashboardP
         <PartsBlock feedback={feedback} />
         <EngagementBlock records={filtered} />
         <DistributionsBlock records={filtered} />
+        <ExplorationBlock records={filtered} className="lg:col-span-2" />
         <OpenTextBlock answers={texts} className="lg:col-span-2" />
         <ResponsesTable records={filtered} className="lg:col-span-2" />
         <InterpretationNote className="lg:col-span-2" />

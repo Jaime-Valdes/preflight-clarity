@@ -2,7 +2,7 @@
 
 import { Check } from "lucide-react";
 import { useId } from "react";
-import type { CheckFrequency, PostSurvey, ReplaceOption } from "@preflight/shared/types";
+import type { CheckFrequency, PostSurvey, ReplaceOption, Variant, WouldSwitch } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
@@ -26,14 +26,22 @@ export const REPLACE_OPTIONS: readonly ChoiceOption<ReplaceOption>[] = [
   { value: "nothing", label: "Nothing" },
 ];
 
+export const WOULD_SWITCH_OPTIONS: readonly ChoiceOption<WouldSwitch>[] = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+  { value: "not_sure", label: "Not sure" },
+  { value: "didnt_look", label: "I didn\u2019t look at other flights" },
+];
+
 interface PostHabitsScreenProps {
+  variant: Variant;
   post: PostSurvey;
   onChange: (patch: Partial<PostSurvey>) => void;
   onFinish: () => void;
 }
 
 /** How they'd use it, what it might replace, what they'd still be scared of. */
-export function PostHabitsScreen({ post, onChange, onFinish }: PostHabitsScreenProps) {
+export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabitsScreenProps) {
   const replaceTextId = useId();
   const scaredId = useId();
   const complete = post.checkFrequency !== null && post.wouldReplace.length > 0;
@@ -92,6 +100,18 @@ export function PostHabitsScreen({ post, onChange, onFinish }: PostHabitsScreenP
             rows={3}
           />
         </Card>
+        {variant === "A" ? (
+          <Card className="animate-fade-up" style={fadeUp(180)}>
+            <ChoiceGroup
+              kind="single"
+              label="If you could, would you switch to one of the other flights you looked at?"
+              hint="Optional."
+              options={WOULD_SWITCH_OPTIONS}
+              value={post.wouldSwitch ?? null}
+              onChange={(v) => onChange({ wouldSwitch: v })}
+            />
+          </Card>
+        ) : null}
       </div>
     </Screen>
   );

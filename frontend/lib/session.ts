@@ -11,6 +11,7 @@ import type {
   Step,
   Variant,
   VariantSource,
+  WouldSwitch,
 } from "@preflight/shared/types";
 
 /*
@@ -123,6 +124,8 @@ export interface SessionInfo {
   variant: Variant;
   variantSource: VariantSource;
   isTest: boolean;
+  /** Label from ?p= on the study link (sanitized); "" if none. */
+  participant: string;
   device: DeviceInfo;
 }
 
@@ -171,6 +174,7 @@ export function emptyPost(): PostSurvey {
     wouldReplace: [],
     wouldReplaceText: "",
     stillScaredOf: "",
+    wouldSwitch: null,
   };
 }
 
@@ -290,14 +294,22 @@ export function buildRecord(state: FlowState): SessionRecord | null {
     variant: s.variant,
     variantSource: s.variantSource,
     isTest: s.isTest,
+    participant: s.participant,
     device: s.device,
     pre: state.pre,
     flightInput: state.flightInput,
     flight: state.flight,
     dashboard: state.dashboard,
-    post: state.post,
+    // The switch question is variant A only; B always stores null.
+    post: { ...state.post, wouldSwitch: s.variant === "A" ? normalizeWouldSwitch(state.post.wouldSwitch) : null },
     email: state.email,
   };
+}
+
+const WOULD_SWITCH: ReadonlySet<string> = new Set<WouldSwitch>(["yes", "no", "not_sure", "didnt_look"]);
+
+function normalizeWouldSwitch(value: unknown): WouldSwitch | null {
+  return typeof value === "string" && WOULD_SWITCH.has(value) ? (value as WouldSwitch) : null;
 }
 
 // ── Persistence (sessionStorage) ────────────────────────────────────────────
@@ -321,8 +333,12 @@ export function loadFlowState(): FlowState | null {
       version: 1,
       pre: { ...base.pre, ...(candidate.pre ?? {}) },
       post: { ...base.post, ...(candidate.post ?? {}) },
-      session: isSessionInfo(candidate.session) ? candidate.session : null,
+      // Sessions saved before the ?p= label existed have no participant field.
+      session: isSessionInfo(candidate.session)
+        ? { ...candidate.session, participant: sanitizeParticipant(candidate.session.participant) }
+        : null,
     };
+    state.post.wouldSwitch = normalizeWouldSwitch(state.post.wouldSwitch);
     // Guard against a saved screen the data can't support.
     if (!state.session && state.screen !== "welcome") return null;
     if (state.completedAt) state.screen = "debrief";
@@ -433,7 +449,29 @@ function safeMatchMedia(query: string): boolean {
   }
 }
 
-export function createSession(opts: { forcedVariant: string | null; isTest: boolean; now: Date }): SessionInfo {
+const PARTICIPANT_MAX = 40;
+
+/**
+ * ?p=<label> → the stored participant label: characters outside letters,
+ * digits, space and `-_.@` are dropped, whitespace runs collapse to one space,
+ * then trimmed to at most 40 characters. Anything else (absent, not a string) → "".
+ */
+export function sanitizeParticipant(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  return raw
+    .replace(/[^\p{L}\p{N} \-_.@]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, PARTICIPANT_MAX)
+    .trim();
+}
+
+export function createSession(opts: {
+  forcedVariant: string | null;
+  isTest: boolean;
+  participant?: string | null;
+  now: Date;
+}): SessionInfo {
   const { variant, source } = pickVariant(opts.forcedVariant);
   return {
     sessionId: newSessionId(),
@@ -441,6 +479,7 @@ export function createSession(opts: { forcedVariant: string | null; isTest: bool
     variant,
     variantSource: source,
     isTest: opts.isTest,
+    participant: sanitizeParticipant(opts.participant),
     device: detectDevice(),
   };
 }

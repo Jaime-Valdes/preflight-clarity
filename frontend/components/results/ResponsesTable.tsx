@@ -12,6 +12,8 @@ import {
   STEP_LABELS,
   TIMEFRAME_LABELS,
   FEEDBACK_PART_LABELS,
+  WOULD_SWITCH_LABELS,
+  flightsExplored,
   formatMs,
   formatSigned,
   isCompleted,
@@ -31,6 +33,7 @@ const DEVICE_ICON: Record<DeviceType, LucideIcon> = { mobile: Smartphone, tablet
 
 const COLUMNS = [
   "Date",
+  "Participant",
   "Variant",
   "Device",
   "Status",
@@ -40,6 +43,7 @@ const COLUMNS = [
   "Δ anxiety",
   "Dashboard",
   "Sections",
+  "Flights",
   "Alert",
   "Score",
 ] as const;
@@ -61,8 +65,18 @@ function alertCell(record: SessionRecord): string {
   return d.alert.tapped ? (d.alert.finalOn ? "On" : "Tapped") : "No";
 }
 
+const ADDED_VIA_LABEL: Record<string, string> = {
+  setup: "own flight",
+  alternative: "alternative",
+  whatif_day: "another day",
+  whatif_time: "another time",
+  whatif_wide: "larger plane",
+  whatif_route: "another route",
+};
+
 function Details({ record }: { record: SessionRecord }) {
   const { pre, post, flight, dashboard, device } = record;
+  const exploration = dashboard?.exploration ?? null;
   const shown = dashboard ? sectionsShown(record) : [];
   const chips = (values: ReadonlyArray<string>, tone: "calm" | "sand") =>
     values.length === 0 ? (
@@ -123,6 +137,9 @@ function Details({ record }: { record: SessionRecord }) {
           {post.wouldReplaceText ? <span className="block text-xs text-ink-500">“{post.wouldReplaceText}”</span> : null}
         </Field>
         <Field label="Still scared of">{post.stillScaredOf ? `“${post.stillScaredOf}”` : "—"}</Field>
+        {record.variant === "A" ? (
+          <Field label="Would switch">{post.wouldSwitch ? WOULD_SWITCH_LABELS[post.wouldSwitch] ?? post.wouldSwitch : "—"}</Field>
+        ) : null}
         <Field label="Email">{record.email || "—"}</Field>
       </dl>
 
@@ -156,6 +173,30 @@ function Details({ record }: { record: SessionRecord }) {
                 );
               })}
             </ul>
+          </Field>
+        ) : null}
+        {exploration && exploration.flights.length > 0 ? (
+          <Field label="Flights looked at">
+            <ul className="flex flex-col gap-1 text-sm">
+              {exploration.flights.map((f, i) => {
+                const tags = [
+                  i === 0 ? "own flight" : (ADDED_VIA_LABEL[f.addedVia] ?? f.addedVia),
+                  f.id === exploration.preferredFlightId ? "preferred" : null,
+                  f.id === exploration.endedOnFlightId ? "finished here" : null,
+                ].filter(Boolean);
+                return (
+                  <li key={f.id} className="min-w-0 text-ink-900">
+                    {f.summary.route} · {f.input.date} · score {f.summary.smoothnessScore}
+                    <span className="block text-xs text-ink-500 tabular-nums">
+                      {[...tags, `${formatMs(exploration.flightMs[f.id] ?? 0)} visible`].join(" · ")}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <span className="mt-1 block text-xs text-ink-500">
+              {exploration.switches} switches · compare opened {exploration.compares}× ({formatMs(exploration.compareMs)})
+            </span>
           </Field>
         ) : null}
       </dl>
@@ -193,6 +234,9 @@ function Row({ record, open, onToggle }: { record: SessionRecord; open: boolean;
             <span className="tabular-nums">{formatDateTime(record.createdAt)}</span>
           </span>
         </td>
+        <td className={cn(cell, "max-w-40 truncate text-ink-700")} title={record.participant || undefined}>
+          {record.participant || <span className="text-ink-400">—</span>}
+        </td>
         <td className={cell}>
           <span className="inline-flex items-center gap-1.5">
             <span className="flex size-6 items-center justify-center rounded-full bg-canvas text-xs font-bold text-ink-900 ring-1 ring-inset ring-line">
@@ -225,6 +269,7 @@ function Row({ record, open, onToggle }: { record: SessionRecord; open: boolean;
         <td className={cn(cell, "font-semibold tabular-nums", deltaClass(change))}>{formatSigned(change, 0)}</td>
         <td className={cn(cell, "tabular-nums text-ink-700")}>{formatMs(record.dashboard?.activeMs)}</td>
         <td className={cn(cell, "tabular-nums text-ink-700")}>{opened ? `${opened.opened} / ${opened.shown}` : "—"}</td>
+        <td className={cn(cell, "tabular-nums text-ink-700")}>{flightsExplored(record) ?? "—"}</td>
         <td className={cn(cell, "text-ink-700")}>{alertCell(record)}</td>
         <td className={cn(cell, "pr-2 tabular-nums text-ink-700")}>{record.flight ? record.flight.smoothnessScore : "—"}</td>
       </tr>
@@ -257,7 +302,7 @@ export function ResponsesTable({ records, className }: { records: SessionRecord[
         <EmptyNote>No sessions match these filters yet.</EmptyNote>
       ) : (
         <div className="-mx-5 overflow-x-auto px-5 [scrollbar-width:thin]">
-          <table className="w-full min-w-[1000px] border-collapse text-[13px]">
+          <table className="w-full min-w-[1140px] border-collapse text-[13px]">
             <thead>
               <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-ink-400">
                 {COLUMNS.map((c, i) => (
@@ -287,7 +332,7 @@ export function ResponsesTable({ records, className }: { records: SessionRecord[
         </div>
       ) : null}
       <p className="text-xs text-ink-400">
-        Columns: pre → post for each 0–10 rating · Δ anxiety = post − pre · Dashboard = active time · Sections = opened / shown · Score = the smoothness score of the flight they were shown.
+        Columns: pre → post for each 0–10 rating · Δ anxiety = post − pre · Dashboard = active time · Sections = opened / shown · Flights = flights looked at in variant A, their own included · Score = the smoothness score of the flight they were shown.
       </p>
     </Block>
   );

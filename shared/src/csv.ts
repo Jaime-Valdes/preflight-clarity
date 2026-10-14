@@ -10,7 +10,7 @@
  *   numbers and are never prefixed, so negative deltas stay numeric.
  */
 import { SECTION_IDS } from "./sections";
-import { isCompleted, ratingChange, sectionsOpened, sectionsShown } from "./stats";
+import { flightsExplored, isCompleted, ratingChange, sectionsOpened, sectionsShown } from "./stats";
 import type { SessionRecord } from "./types";
 
 type Cell = string | number | boolean | null | undefined;
@@ -54,6 +54,7 @@ export const CSV_COLUMNS: readonly string[] = [
   "variant",
   "variant_source",
   "is_test",
+  "participant",
   // device
   "device_type",
   "viewport_w",
@@ -106,6 +107,15 @@ export const CSV_COLUMNS: readonly string[] = [
   "alert_tapped",
   "alert_taps",
   "alert_final_on",
+  // free exploration (variant A; blank without exploration data)
+  "flights_explored",
+  "switches",
+  "compares",
+  "alternatives_opened",
+  "what_ifs",
+  "preferred_flight",
+  "ended_on_flight",
+  "would_switch",
   // post-survey answers
   "felt_better",
   "felt_worse",
@@ -121,6 +131,7 @@ export const CSV_COLUMNS: readonly string[] = [
 export function recordToRow(record: SessionRecord): Cell[] {
   const { device, pre, post, flightInput, flight, dashboard } = record;
   const opened = sectionsOpened(record);
+  const x = dashboard?.exploration ?? null;
   const shown = dashboard ? sectionsShown(record) : [];
 
   const sectionCells: Cell[] = SECTION_IDS.flatMap((id) => {
@@ -142,6 +153,7 @@ export function recordToRow(record: SessionRecord): Cell[] {
     record.variant,
     record.variantSource,
     record.isTest,
+    record.participant ?? "",
 
     device?.type ?? null,
     device?.viewportW ?? null,
@@ -194,6 +206,15 @@ export function recordToRow(record: SessionRecord): Cell[] {
     dashboard ? dashboard.alert.tapped : null,
     dashboard?.alert.taps ?? null,
     dashboard ? dashboard.alert.finalOn : null,
+
+    flightsExplored(record),
+    x?.switches ?? null,
+    x?.compares ?? null,
+    x?.alternativesOpened ?? null,
+    x?.whatIfs ?? null,
+    x?.preferredFlightId ?? null,
+    x?.endedOnFlightId ?? null,
+    post.wouldSwitch ?? null,
 
     joinList(post.feltBetter),
     joinList(post.feltWorse),

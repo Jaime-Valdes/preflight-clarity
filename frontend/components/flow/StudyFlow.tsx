@@ -2,10 +2,10 @@
 
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addDays, daysBetween, toISODate } from "@preflight/shared/dates";
+import { addDays, daysBetween, formatShortDate, isISODate, toISODate } from "@preflight/shared/dates";
 import { generateFlight, normalizeInput } from "@preflight/shared/fakeFlight";
 import { summarizeFlight } from "@preflight/shared/forecast";
-import type { DashboardMetrics, Flight, FlightInput } from "@preflight/shared/types";
+import type { DashboardMetrics, Flight, FlightInput, FlightSummary } from "@preflight/shared/types";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -89,6 +89,14 @@ function tryGenerate(input: FlightInput): Generated {
  */
 const SCREEN_SETTLE_MS = 400;
 
+/** "LAX → JFK · Sat, Oct 31" for the post-survey reminder chip; null if the reference flight is unknown. */
+function referenceFlightLabel(input: FlightInput | null, summary: FlightSummary | null): string | null {
+  if (!input && !summary) return null;
+  const route = summary?.route || (input ? `${input.origin} → ${input.destination}` : "");
+  const date = input && isISODate(input.date) ? formatShortDate(input.date) : "";
+  return [route, date].filter(Boolean).join(" · ") || null;
+}
+
 function resolveInitialState(forcedVariant: string | null, isTest: boolean): FlowState {
   const saved = loadFlowState();
   if (!saved) return initialFlowState();
@@ -103,6 +111,7 @@ function resolveInitialState(forcedVariant: string | null, isTest: boolean): Flo
 function StudyFlowClient() {
   const forcedVariant = useQueryParam("v");
   const isTest = useQueryParam("test") === "1";
+  const participant = useQueryParam("p");
   const today = useTodayISO();
 
   const [state, setState] = useState<FlowState>(() => resolveInitialState(forcedVariant, isTest));
@@ -240,9 +249,9 @@ function StudyFlowClient() {
   // ── step handlers ─────────────────────────────────────────────────────────
 
   const onAgree = useCallback(() => {
-    const session = createSession({ forcedVariant, isTest, now: new Date() });
+    const session = createSession({ forcedVariant, isTest, participant, now: new Date() });
     commit({ type: "consent", session });
-  }, [commit, forcedVariant, isTest]);
+  }, [commit, forcedVariant, isTest, participant]);
 
   const onPrepared = useCallback(() => {
     const current = latest.current;
@@ -384,6 +393,7 @@ function StudyFlowClient() {
           eyebrow="After the briefing"
           title="Three questions, once more"
           sub="Answer for the same flight as before."
+          flightLabel={referenceFlightLabel(state.flightInput, state.flight)}
           questions={POST_QUESTIONS}
           ratings={state.post}
           onChange={(patch) => commit({ type: "post", patch })}
@@ -410,6 +420,7 @@ function StudyFlowClient() {
     case "postHabits":
       return (
         <PostHabitsScreen
+          variant={session?.variant ?? "A"}
           post={state.post}
           onChange={(patch) => commit({ type: "post", patch })}
           onFinish={() => {

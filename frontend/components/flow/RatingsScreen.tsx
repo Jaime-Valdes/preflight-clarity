@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Plane } from "lucide-react";
 import type { Ratings } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -56,6 +56,8 @@ interface RatingsScreenProps {
   eyebrow: string;
   title: string;
   sub?: string;
+  /** Post-survey only: a quiet reminder of which flight the questions are about. */
+  flightLabel?: string | null;
   questions: readonly RatingQuestion[];
   ratings: Ratings;
   onChange: (patch: Partial<Ratings>) => void;
@@ -71,6 +73,7 @@ export function RatingsScreen({
   eyebrow,
   title,
   sub,
+  flightLabel,
   questions,
   ratings,
   onChange,
@@ -96,6 +99,7 @@ export function RatingsScreen({
       }
     >
       <StepHeader stage={stage} eyebrow={eyebrow} title={title} sub={sub} />
+      {flightLabel ? <FlightChip label={flightLabel} /> : null}
       <div className="flex flex-col gap-3">
         {questions.map((q, i) => (
           <Card key={q.key} className="animate-fade-up" style={fadeUp(i * 60)}>
@@ -110,5 +114,22 @@ export function RatingsScreen({
         ))}
       </div>
     </Screen>
+  );
+}
+
+/** "Your flight · LAX → JFK · Sat, Oct 31" — names the flight, nothing more. */
+function FlightChip({ label }: { label: string }) {
+  return (
+    <p className="-mt-2 mb-4 flex animate-fade-up" style={fadeUp()}>
+      <span className="inline-flex min-h-8 max-w-full items-center gap-2 rounded-full bg-surface py-1.5 pl-2 pr-3.5 text-[13px] leading-snug text-ink-700 shadow-soft ring-1 ring-inset ring-line/80">
+        <span aria-hidden className="flex size-5 shrink-0 items-center justify-center rounded-full bg-breeze-50 text-breeze-700">
+          <Plane className="size-3" />
+        </span>
+        <span className="min-w-0 truncate">
+          <span className="font-semibold text-ink-900">Your flight</span>
+          <span className="tabular-nums"> · {label}</span>
+        </span>
+      </span>
+    </p>
   );
 }

@@ -10,7 +10,7 @@ import {
   type SectionEngagement,
 } from "@preflight/shared/stats";
 import type { SessionRecord, Variant } from "@preflight/shared/types";
-import { BarRow, Block, EmptyNote, SERIES, Segmented } from "./bits";
+import { BarRow, Block, EmptyNote, SERIES, Segmented, Tile } from "./bits";
 
 type Scope = "all" | Variant;
 
@@ -19,16 +19,6 @@ const SCOPE_OPTIONS: ReadonlyArray<{ value: Scope; label: string }> = [
   { value: "A", label: "A · Full" },
   { value: "B", label: "B · Minimal" },
 ];
-
-function Tile({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="rounded-2xl bg-canvas/70 px-3.5 py-3 ring-1 ring-inset ring-line/70">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">{label}</div>
-      <div className="mt-1 text-lg font-bold leading-tight text-ink-900">{value}</div>
-      <div className="mt-0.5 text-xs leading-snug text-ink-500">{hint}</div>
-    </div>
-  );
-}
 
 function SectionRows({ rows }: { rows: SectionEngagement[] }) {
   const shown = rows.filter((r) => r.shown > 0);
