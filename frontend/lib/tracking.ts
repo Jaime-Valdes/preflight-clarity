@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { DashboardEvent, DashboardMetrics, SectionId, SectionStats } from "./types";
+import type { DashboardEvent, DashboardMetrics, SectionId, SectionStats } from "@preflight/shared/types";
 
 /** Hard cap so a busy participant can't grow the record without bound. */
 export const MAX_EVENTS = 300;

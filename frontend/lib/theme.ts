@@ -1,4 +1,4 @@
-import type { FlightPhase, Intensity, SeatZone, SoundMoment } from "./types";
+import type { FlightPhase, Intensity, SeatZone, SoundMoment } from "@preflight/shared/types";
 
 /*
  * Design tokens that JavaScript needs (charts, inline SVG). Tailwind classes

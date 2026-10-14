@@ -528,7 +528,8 @@ export interface SessionRecord {
 
 // ── API ─────────────────────────────────────────────────────────────────────
 
-export type StorageKind = "supabase" | "none";
+/** Where the backend keeps records: Supabase, a local JSON file (dev), or nothing configured. */
+export type StorageKind = "supabase" | "file" | "none";
 
 /** POST /api/responses → */
 export interface SaveResponse {

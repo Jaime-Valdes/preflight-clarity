@@ -1,0 +1,19 @@
+{
+  "name": "@preflight/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Types, the fake-flight generator and pure helpers used by both the frontend and the backend. Plain TypeScript source — no build step.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/check-fake-flight.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.23.15",
+    "typescript": "^5"
+  }
+}

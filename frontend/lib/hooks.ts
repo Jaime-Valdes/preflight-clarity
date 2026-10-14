@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { toISODate } from "./dates";
+import { toISODate } from "@preflight/shared/dates";
 
 /*
  * Client-only values without hydration mismatches, without reading the clock

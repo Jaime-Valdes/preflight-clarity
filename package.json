@@ -2,30 +2,30 @@
   "name": "preflight-clarity",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+  "description": "Pre-Flight Clarity — a research prototype testing whether a calm, data-rich pre-flight dashboard lowers flight anxiety.",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=20.12"
   },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.117.3",
-    "lucide-react": "^1.56.0",
-    "next": "16.4.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "recharts": "^3.10.1"
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,green \"npm run dev -w frontend\" \"npm run dev -w backend\"",
+    "dev:web": "npm run dev -w frontend",
+    "dev:api": "npm run dev -w backend",
+    "build": "npm run build -w frontend && npm run build -w backend",
+    "start:api": "npm run start -w backend",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "eslint .",
+    "test": "npm run test --workspaces --if-present",
+    "check": "npm run typecheck && npm run lint && npm run test"
   },
   "devDependencies": {
-    "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "concurrently": "^10.0.6",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
-    "playwright-core": "^1.64.0",
-    "tailwindcss": "^4",
-    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

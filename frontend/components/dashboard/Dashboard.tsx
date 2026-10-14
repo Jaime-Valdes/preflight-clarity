@@ -2,9 +2,9 @@
 // STUB — owned by the dashboard-core agent, which replaces this whole file.
 // The exported names and signatures below are the contract; keep them.
 import { useState } from "react";
-import { VARIANT_SECTIONS } from "@/lib/sections";
+import { VARIANT_SECTIONS } from "@preflight/shared/sections";
 import { DashboardTracker } from "@/lib/tracking";
-import type { DashboardMetrics, Flight, Variant } from "@/lib/types";
+import type { DashboardMetrics, Flight, Variant } from "@preflight/shared/types";
 
 export interface DashboardProps {
   flight: Flight;

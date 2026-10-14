@@ -1,0 +1,27 @@
+{
+  "name": "@preflight/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pre-Flight Clarity API: receives study sessions from the web app and serves them to the team results page (Hono on Node).",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/test.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@preflight/shared": "*",
+    "@supabase/supabase-js": "^2.117.3",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5"
+  }
+}

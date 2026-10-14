@@ -2,16 +2,23 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+// One config for the whole monorepo. The Next.js rules only matter under
+// frontend/, but they are harmless (and the React Compiler rules useful) elsewhere.
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Override default ignores of eslint-config-next.
+  {
+    settings: {
+      next: { rootDir: "frontend/" },
+    },
+  },
   globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
+    "**/.next/**",
+    "**/out/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/next-env.d.ts",
+    "backend/data/**",
   ]),
 ]);
 

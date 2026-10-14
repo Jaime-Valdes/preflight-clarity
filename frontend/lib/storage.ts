@@ -1,6 +1,6 @@
 // STUB — owned by the study-flow agent, which replaces this whole file.
 // The exported names and signatures below are the contract; keep them.
-import type { SessionRecord } from "./types";
+import type { SessionRecord } from "@preflight/shared/types";
 
 /**
  * Save (upsert) a session record: always mirrors it to localStorage, then
