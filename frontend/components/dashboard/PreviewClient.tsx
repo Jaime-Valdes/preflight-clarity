@@ -147,6 +147,16 @@ function PreviewDone({ metrics, flight, onAgain }: { metrics: DashboardMetrics; 
           <dd className="text-ink-900">{opened.length ? opened.map((id) => sectionMeta(id).title).join(", ") : "No sections"}</dd>
           <dt className="text-ink-500">Scrolled</dt>
           <dd className="text-ink-900 tabular-nums">{metrics.maxScrollPct}% of the page</dd>
+          {metrics.exploration ? (
+            <>
+              <dt className="text-ink-500">Explored</dt>
+              <dd className="text-ink-900 tabular-nums">
+                {metrics.exploration.flights.length} flight{metrics.exploration.flights.length === 1 ? "" : "s"} ·{" "}
+                {metrics.exploration.switches} switch{metrics.exploration.switches === 1 ? "" : "es"} ·{" "}
+                {metrics.exploration.compares} compare{metrics.exploration.compares === 1 ? "" : "s"}
+              </dd>
+            </>
+          ) : null}
           <dt className="text-ink-500">Events</dt>
           <dd className="text-ink-900 tabular-nums">{metrics.events.length}</dd>
         </dl>

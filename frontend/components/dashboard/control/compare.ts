@@ -1,5 +1,5 @@
 import { daysBetween, formatShortDate } from "@preflight/shared/dates";
-import type { BodyType, Flight } from "@preflight/shared/types";
+import type { AlternativeFlight, BodyType, Flight } from "@preflight/shared/types";
 import type { Tone } from "@/lib/theme";
 
 /*
@@ -58,9 +58,23 @@ export function dayMarker(offset: number): string {
   return offset > 0 ? `+${offset}` : `−${-offset}`;
 }
 
+/**
+ * Alternatives that haven't already left: a "day before" option for a flight
+ * departing today (daysUntil 0) is in the past, so it is hidden.
+ */
+export function visibleAlternatives(flight: Flight, daysUntil: number): AlternativeFlight[] {
+  return (flight.alternatives ?? []).filter((alt) => {
+    try {
+      return daysUntil + daysBetween(flight.input.date, alt.date) >= 0;
+    } catch {
+      return true;
+    }
+  });
+}
+
 /** Collapsed-header line: "2 smoother options on this route · up to +9". */
-export function compareTeaserLine(flight: Flight): string {
-  const alts = flight.alternatives ?? [];
+export function compareTeaserLine(flight: Flight, daysUntil: number): string {
+  const alts = visibleAlternatives(flight, daysUntil);
   if (alts.length === 0) return "No other flights found on this route";
   const smoother = alts.filter((a) => a.scoreDelta > 0);
   if (smoother.length === 0) {

@@ -18,15 +18,20 @@ import {
   relationLabel,
   scoreLabel,
   scoreTone,
+  visibleAlternatives,
 } from "./control/compare";
+import { useExplore } from "./explore/context";
 
 // ── Section body ────────────────────────────────────────────────────────────
 
 export function CompareSection({ flight, ctx }: SectionProps) {
   const tracker = useTracker();
+  const explore = useExplore();
+  /** Variant B, or variant A showing the set-up flight: "your flight". An explored option is "this flight". */
+  const ownFlight = explore?.showingOwnFlight ?? true;
   const [expanded, setExpanded] = useState<string[]>([]);
   const [held, setHeld] = useState<string[]>([]);
-  const alternatives = flight.alternatives ?? [];
+  const alternatives = visibleAlternatives(flight, ctx.daysUntil);
 
   function toggleExpanded(alt: AlternativeFlight) {
     const isOpen = expanded.includes(alt.id);
@@ -43,11 +48,11 @@ export function CompareSection({ flight, ctx }: SectionProps) {
   return (
     <div className="space-y-4">
       <p className="text-sm leading-relaxed text-ink-700">
-        Other flights between {flight.origin.city} and {flight.destination.city}, scored on the same scale as yours and
-        ranked smoothest first.
+        Other flights between {flight.origin.city} and {flight.destination.city}, scored on the same scale as{" "}
+        {ownFlight ? "yours" : "this one"} and ranked smoothest first.
       </p>
 
-      <ReferenceRow flight={flight} />
+      <ReferenceRow flight={flight} label={ownFlight ? "Your flight" : "This flight"} />
 
       {alternatives.length > 0 ? (
         <div className="space-y-3">
@@ -60,6 +65,8 @@ export function CompareSection({ flight, ctx }: SectionProps) {
               isHeld={held.includes(alt.id)}
               onToggle={() => toggleExpanded(alt)}
               onHold={() => hold(alt)}
+              onOpen={explore ? () => explore.openAlternative(alt) : undefined}
+              ownFlight={ownFlight}
             />
           ))}
         </div>
@@ -71,6 +78,7 @@ export function CompareSection({ flight, ctx }: SectionProps) {
 
       <p className="text-xs leading-relaxed text-ink-500">
         {forecastNote(ctx)} Holding an option only keeps it here for you — nothing is booked or charged.
+        {explore ? " Opening one adds it to the flights at the top so you can look through it." : null}
       </p>
     </div>
   );
@@ -78,8 +86,7 @@ export function CompareSection({ flight, ctx }: SectionProps) {
 
 /** One calm line for the collapsed header. */
 export function compareTeaser(flight: Flight, ctx: SectionContext): string {
-  void ctx;
-  return compareTeaserLine(flight);
+  return compareTeaserLine(flight, ctx.daysUntil);
 }
 
 function forecastNote(ctx: SectionContext): string {
@@ -95,13 +102,13 @@ function forecastNote(ctx: SectionContext): string {
 
 // ── Your flight ─────────────────────────────────────────────────────────────
 
-function ReferenceRow({ flight }: { flight: Flight }) {
+function ReferenceRow({ flight, label }: { flight: Flight; label: string }) {
   return (
     <div className="rounded-2xl bg-breeze-50/60 px-4 py-3.5 ring-1 ring-inset ring-breeze-100">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Pill tone="breeze">Your flight</Pill>
+            <Pill tone="breeze">{label}</Pill>
             <span className="text-xs text-ink-500">{safeShortDate(flight.input.date)}</span>
           </div>
           <FlightLine airline={flight.airline.name} flightNumber={flight.flightNumber} />
@@ -128,9 +135,13 @@ interface AlternativeCardProps {
   isHeld: boolean;
   onToggle: () => void;
   onHold: () => void;
+  /** Variant A: show this option as a full flight in the dashboard. */
+  onOpen?: () => void;
+  /** false while an explored option (not the participant's own flight) is on screen. */
+  ownFlight: boolean;
 }
 
-function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold }: AlternativeCardProps) {
+function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, ownFlight }: AlternativeCardProps) {
   const delta = Math.round(alt.scoreDelta);
   const fare = fareLabel(alt.fareDiffUsd);
   const marker = dayMarker(alt.arriveDayOffset);
@@ -178,7 +189,7 @@ function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold }: Altern
         <div className="mt-3 flex items-center justify-between gap-3">
           <span className="text-sm">
             <span className="font-semibold text-ink-900 tabular-nums">{fare}</span>
-            {fare !== "Same fare" ? <span className="text-ink-500"> vs. your fare</span> : null}
+            {fare !== "Same fare" ? <span className="text-ink-500"> vs. {ownFlight ? "your fare" : "this flight’s fare"}</span> : null}
           </span>
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-ink-500">
             {open ? "Hide details" : "Details"}
@@ -206,20 +217,32 @@ function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold }: Altern
           <Detail label="Smoothness">
             <span className="tabular-nums">{alt.smoothnessScore} of 100</span> · {scoreLabel(alt.smoothnessScore)}
           </Detail>
-          <Detail label="vs. your flight">
+          <Detail label={ownFlight ? "vs. your flight" : "vs. this flight"}>
             <span className="tabular-nums">{deltaLabel(delta)}</span> · <span className="tabular-nums">{fare}</span>
             {fare !== "Same fare" ? " fare" : null}
           </Detail>
         </dl>
       ) : null}
 
-      <div className="px-4 pb-4 pt-3">
+      <div className={cn("px-4 pb-4 pt-3", onOpen && "grid grid-cols-1 gap-2 min-[380px]:grid-cols-2")}>
+        {onOpen ? (
+          <Button
+            size="md"
+            block
+            variant="secondary"
+            onClick={onOpen}
+            className="whitespace-nowrap px-2 text-[13px]"
+          >
+            Open this flight
+          </Button>
+        ) : null}
         <Button
           size="md"
           block
           variant={isHeld ? "soft" : "secondary"}
           aria-pressed={isHeld}
           onClick={onHold}
+          className={onOpen ? "whitespace-nowrap px-2 text-[13px]" : undefined}
           icon={isHeld ? <Check aria-hidden className="size-4" strokeWidth={2.5} /> : undefined}
         >
           {isHeld ? "Held" : "Hold this option"}

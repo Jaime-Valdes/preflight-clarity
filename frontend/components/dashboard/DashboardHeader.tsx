@@ -8,6 +8,8 @@ interface DashboardHeaderProps {
   flight: Flight;
   /** Whole calendar days from today to departure (0 = today). */
   daysUntil: number;
+  /** Variant A free exploration: "Your flight" / "Option 2"… shown above the airline. */
+  label?: string;
   className?: string;
 }
 
@@ -15,6 +17,13 @@ interface DashboardHeaderProps {
 function dayOffsetLabel(offset: number): string | null {
   if (offset === 0) return null;
   return offset > 0 ? `+${offset}` : `−${Math.abs(offset)}`;
+}
+
+/** The countdown speaks of "your flight" only for the participant's own flight (an explored option is "this flight"). */
+function countdown(daysUntil: number, label: string | undefined): string {
+  const text = countdownLabel(daysUntil);
+  if (!label || label === "Your flight") return text;
+  return text.replace("Your flight", "This flight").replace("your flight", "this flight");
 }
 
 function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
@@ -40,13 +49,13 @@ function Chip({ children, className }: { children: ReactNode; className?: string
  * Boarding-pass style header: airline and flight number, the route in big
  * codes, date, countdown, times, aircraft and gate on a deep night gradient.
  */
-export function DashboardHeader({ flight, daysUntil, className }: DashboardHeaderProps) {
+export function DashboardHeader({ flight, daysUntil, label, className }: DashboardHeaderProps) {
   const { origin, destination, aircraft } = flight;
   const offset = dayOffsetLabel(flight.arriveDayOffset);
 
   return (
     <section
-      aria-label="Your flight"
+      aria-label={label ?? "Your flight"}
       className={cn("relative overflow-hidden rounded-3xl bg-night-900 text-white shadow-lift", className)}
     >
       {/* Night gradient with a hint of calm. */}
@@ -61,6 +70,11 @@ export function DashboardHeader({ flight, daysUntil, className }: DashboardHeade
         {/* Airline + flight number */}
         <div className="flex items-start justify-between gap-3">
           <h1 className="min-w-0">
+            {label ? (
+              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-calm-200">
+                {label}
+              </span>
+            ) : null}
             <span className="block text-sm font-semibold leading-snug [overflow-wrap:anywhere]">{flight.airline.name}</span>
             <span className="mt-0.5 block text-xs text-white/60 tabular-nums">Flight {flight.flightNumber}</span>
             <span className="sr-only">
@@ -92,7 +106,7 @@ export function DashboardHeader({ flight, daysUntil, className }: DashboardHeade
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
           <Chip className="bg-calm-400/20 ring-calm-300/30">
             <Clock3 aria-hidden className="size-3.5 text-calm-200" />
-            {countdownLabel(daysUntil)}
+            {countdown(daysUntil, label)}
           </Chip>
           <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] text-white/80">
             <CalendarDays aria-hidden className="size-3.5 shrink-0 text-white/60" />
