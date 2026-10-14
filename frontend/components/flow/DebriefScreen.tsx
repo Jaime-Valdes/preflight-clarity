@@ -1,0 +1,126 @@
+"use client";
+
+import { Info, MailCheck } from "lucide-react";
+import { useId, useState, type FormEvent } from "react";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Screen } from "@/components/ui/Screen";
+import { Wordmark } from "./StepHeader";
+
+interface DebriefScreenProps {
+  /** Email already submitted (e.g. after a reload). */
+  emailSent: boolean;
+  onEmail: (email: string) => void;
+  /** Team test sessions get a way to start over. */
+  isTest?: boolean;
+  onStartOver?: () => void;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** Thank-you + the illustrative-data reminder + optional follow-up email. */
+export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver }: DebriefScreenProps) {
+  const emailId = useId();
+  const hintId = useId();
+  const [email, setEmail] = useState("");
+  const [attempted, setAttempted] = useState(false);
+  const valid = EMAIL_RE.test(email.trim());
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid) {
+      setAttempted(true);
+      return;
+    }
+    onEmail(email.trim());
+  }
+
+  return (
+    <Screen>
+      <Wordmark className="animate-fade-up" />
+      <div className="mt-9 animate-fade-up [animation-delay:60ms]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-calm-700">Thank you</p>
+        <h1 className="mt-1.5 text-[28px] font-bold leading-[1.12] tracking-[-0.01em] text-ink-900">
+          That&rsquo;s everything
+        </h1>
+        <p className="mt-4 text-[15px] leading-relaxed text-ink-700">
+          Thanks for taking part. Your answers help a student team understand what nervous flyers actually need
+          before a flight.
+        </p>
+      </div>
+
+      <Card className="mt-6 animate-fade-up [animation-delay:120ms] !bg-breeze-50 !ring-breeze-100">
+        <div className="flex gap-3">
+          <span aria-hidden className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-surface text-breeze-700 ring-1 ring-inset ring-breeze-100">
+            <Info className="size-4" />
+          </span>
+          <div>
+            <p className="text-[15px] font-semibold leading-snug text-ink-900">A reminder about the data</p>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-ink-700">
+              Everything on the dashboard was illustrative: the forecast, the pilots, the aircraft, the scores and
+              the alternative flights were all generated for this study. None of it was a real forecast or real
+              information about any flight.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="mt-3 animate-fade-up [animation-delay:180ms]">
+        {emailSent ? (
+          <div className="flex items-start gap-3" role="status">
+            <span aria-hidden className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-calm-50 text-calm-700 ring-1 ring-inset ring-calm-100">
+              <MailCheck className="size-4" />
+            </span>
+            <div>
+              <p className="text-[15px] font-semibold leading-snug text-ink-900">Thanks — we may reach out.</p>
+              <p className="mt-1 text-[13px] leading-snug text-ink-500">We&rsquo;ll only use your email for this study.</p>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={submit} noValidate>
+            <label htmlFor={emailId} className="block text-[15px] font-semibold leading-snug text-ink-900">
+              Open to a short follow-up chat?
+            </label>
+            <p className="mt-1 text-[13px] leading-snug text-ink-500">
+              Optional. Leave an email and we may invite you to a 15-minute interview.
+            </p>
+            <input
+              id={emailId}
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="off"
+              spellCheck={false}
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              aria-describedby={hintId}
+              className="mt-3 h-12 w-full rounded-2xl bg-surface px-4 text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-400 focus:outline-none"
+            />
+            <p id={hintId} className="mt-1.5 h-4 text-[13px] leading-snug text-sand-700" aria-live="polite">
+              {attempted && !valid ? "That email doesn't look complete yet." : ""}
+            </p>
+            <Button type="submit" variant="secondary" size="md" block className="mt-2">
+              Count me in
+            </Button>
+          </form>
+        )}
+      </Card>
+
+      <p className="mt-8 text-center text-[15px] font-semibold text-ink-700 animate-fade-up [animation-delay:240ms]">
+        You can close this page now.
+      </p>
+      <p className="mt-2 text-center text-xs text-ink-400">Prototype · illustrative data</p>
+
+      {isTest && onStartOver ? (
+        <button
+          type="button"
+          onClick={onStartOver}
+          className="mx-auto mt-6 h-10 rounded-full px-4 text-[13px] font-semibold text-ink-500 underline-offset-4 hover:underline"
+        >
+          Start a new test session
+        </button>
+      ) : null}
+    </Screen>
+  );
+}

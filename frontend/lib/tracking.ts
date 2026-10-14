@@ -123,6 +123,11 @@ export class DashboardTracker {
     this.pushEvent("alert_toggle", "alerts", on ? "on" : "off");
   }
 
+  /** Current state of the alert toggle (restored across a reload), so the switch can start from it. */
+  alertState(): { tapped: boolean; taps: number; finalOn: boolean } {
+    return { ...this.alert };
+  }
+
   /** Deepest scroll position reached, 0–100. */
   recordScroll(pct: number): void {
     if (Number.isFinite(pct)) this.maxScrollPct = Math.max(this.maxScrollPct, Math.min(100, Math.round(pct)));

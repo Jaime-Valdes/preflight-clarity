@@ -208,7 +208,7 @@ ignores stale writes (lower `seq`).
 
 ## Verifying your work during the build
 
-- Both dev servers are **already running**: web at http://localhost:3000 (Turbopack hot-reloads `frontend/` and `shared/` edits) and the API at http://localhost:8787 (`tsx watch` restarts on `backend/` and `shared/` edits; the web app proxies `/api/*` to it). Do **not** start other servers and do **not** run `next build` or `tsup`.
+- Both dev servers are **already running**: web at http://localhost:3000 (Turbopack hot-reloads `frontend/` and `shared/` edits in the browser bundle; server-rendered output of `shared/` modules can stay stale until `next dev` restarts, which shows up as a hydration mismatch — restart it if you see one) and the API at http://localhost:8787 (`tsx watch` restarts on `backend/` and `shared/` edits; the web app proxies `/api/*` to it). Do **not** start other servers and do **not** run `next build` or `tsup`.
 - Typecheck a package: `npx tsc --noEmit -p frontend` (or `-p shared`, `-p backend`), then filter to your files, e.g. `… 2>&1 | grep -E "^(frontend/components/flow|frontend/lib/session)"`. Errors in other people's files are expected while they work. (Frontend typecheck needs `npx next typegen` to have run once — it has.)
 - Lint your files from the repo root: `npx eslint <paths>`.
 - Screenshot in a phone viewport: `node frontend/scripts/shot.mjs <url> <out.png> [--full] [--desktop] [--click="text=Your pilots"]… [--storage=<file.json>]` and view the PNG with the Read tool. Save screenshots in the scratch directory given to you, never in the repo.

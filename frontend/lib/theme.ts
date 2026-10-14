@@ -34,6 +34,7 @@ export const COLORS = {
   calm700: "#26685b",
   breeze100: "#dbe9f7",
   breeze300: "#93bde3",
+  breeze400: "#6aa2d4",
   breeze500: "#4a87c0",
   breeze700: "#2d5680",
   dusk100: "#e8e4f6",
@@ -42,6 +43,7 @@ export const COLORS = {
   sand100: "#f8ebd2",
   sand300: "#eac283",
   sand400: "#dfa95c",
+  sand500: "#c98f3f",
   sand700: "#845b27",
 } as const;
 
