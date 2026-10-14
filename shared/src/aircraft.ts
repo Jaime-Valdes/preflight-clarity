@@ -23,6 +23,8 @@ export interface AircraftModel {
   cruiseSpeedMph: number;
   /** Practical maximum stage length in miles, used to keep pairings plausible. */
   rangeMi: number;
+  /** Year the last passenger example was delivered; absent while the model is still built. */
+  productionEnded?: number;
   /** Economy seat width used by the airline-comfort stats. */
   seatWidthIn: number;
   safetyRecord: string[];
@@ -114,6 +116,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     cruiseAltitudeFt: 37000,
     cruiseSpeedMph: 525,
     rangeMi: 3000,
+    productionEnded: 2020,
     seatWidthIn: 17,
     safetyRecord: [
       "One of the most widely flown airliners ever built, in service since 1998",
@@ -136,6 +139,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     cruiseAltitudeFt: 37000,
     cruiseSpeedMph: 525,
     rangeMi: 3200,
+    productionEnded: 2019,
     seatWidthIn: 17,
     safetyRecord: [
       "The longest version of the 737 Next Generation family, in service since 2007",
@@ -158,6 +162,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     cruiseAltitudeFt: 39000,
     cruiseSpeedMph: 530,
     rangeMi: 4000,
+    productionEnded: 2004,
     seatWidthIn: 17.5,
     safetyRecord: [
       "A pilot favorite, known for its powerful engines and strong climb",
@@ -246,6 +251,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     cruiseAltitudeFt: 37000,
     cruiseSpeedMph: 530,
     rangeMi: 6200,
+    productionEnded: 2014,
     seatWidthIn: 18,
     safetyRecord: [
       "A long-serving wide-body on transatlantic routes since 1988",
@@ -289,7 +295,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     cabinNoiseDb: 78,
     cruiseAltitudeFt: 41000,
     cruiseSpeedMph: 560,
-    rangeMi: 8800,
+    rangeMi: 9100,
     seatWidthIn: 17.2,
     safetyRecord: [
       "In service since 2014 with more than 60 airlines",
@@ -342,7 +348,9 @@ export function chooseAircraftModel(
   const fleet = fleetKeys.map((k) => BY_KEY.get(k)).filter((m): m is AircraftModel => Boolean(m));
   const pool = fleet.length > 0 ? fleet : AIRCRAFT_MODELS;
   const inRange = pool.filter((m) => m.rangeMi >= distanceMi);
-  const usable = inRange.length > 0 ? inRange : pool;
+  // Beyond every model's range, only the fleet's longest-legged jets are believable.
+  const longest = pool.reduce((max, m) => Math.max(max, m.rangeMi), 0);
+  const usable = inRange.length > 0 ? inRange : pool.filter((m) => m.rangeMi === longest);
   const narrow = usable.filter((m) => m.bodyType === "narrow");
   const wide = usable.filter((m) => m.bodyType === "wide");
 
@@ -390,8 +398,10 @@ export function makeTailNumber(rng: Rng, patterns: readonly string[]): string {
 /** Per-airframe facts for one specific plane flying this flight. */
 export function buildAircraft(rng: Rng, model: AircraftModel, tailPatterns: readonly string[], flightYear: number): Aircraft {
   const modelAge = flightYear - model.modelInServiceSince;
-  const maxAge = Math.max(0.8, Math.min(18, modelAge - 0.2));
-  const ageYears = round1(rng.float(0.8, maxAge));
+  // Nothing newer than the last one built; retired lines spread ~10 years behind their youngest example.
+  const youngest = model.productionEnded === undefined ? 0.8 : Math.max(0.8, flightYear - model.productionEnded);
+  const oldest = Math.max(youngest + 0.5, Math.min(model.productionEnded === undefined ? 18 : youngest + 10, modelAge - 0.2));
+  const ageYears = round1(rng.float(youngest, oldest));
   const deliveredYear = Math.max(model.modelInServiceSince, flightYear - Math.round(ageYears));
   return {
     manufacturer: model.manufacturer,

@@ -1,7 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 type SwitchSize = "md" | "sm";
@@ -22,11 +22,15 @@ interface SwitchRowProps {
  * right is purely visual.
  */
 export function SwitchRow({ checked, onChange, label, description, size = "md", className }: SwitchRowProps) {
+  const labelId = useId();
+  const descriptionId = useId();
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-labelledby={labelId}
+      aria-describedby={description ? descriptionId : undefined}
       onClick={() => onChange(!checked)}
       className={cn(
         "flex min-h-11 w-full select-none items-center gap-3 text-left transition-colors",
@@ -35,6 +39,7 @@ export function SwitchRow({ checked, onChange, label, description, size = "md", 
     >
       <span className="min-w-0 flex-1">
         <span
+          id={labelId}
           className={cn(
             "block font-semibold leading-snug text-ink-900",
             size === "md" ? "text-[15px]" : "text-sm",
@@ -43,7 +48,9 @@ export function SwitchRow({ checked, onChange, label, description, size = "md", 
           {label}
         </span>
         {description ? (
-          <span className="mt-0.5 block text-xs leading-snug text-ink-500">{description}</span>
+          <span id={descriptionId} className="mt-0.5 block text-xs leading-snug text-ink-500">
+            {description}
+          </span>
         ) : null}
       </span>
       <SwitchTrack checked={checked} size={size} />

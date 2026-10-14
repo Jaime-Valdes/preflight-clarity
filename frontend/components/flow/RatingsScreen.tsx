@@ -89,7 +89,7 @@ export function RatingsScreen({
           >
             Continue
           </Button>
-          <p className="mt-2 h-4 text-center text-xs text-ink-400" aria-live="polite">
+          <p className="mt-2 h-4 text-center text-xs text-ink-500" aria-live="polite">
             {complete ? "" : "Answer all three to continue"}
           </p>
         </div>

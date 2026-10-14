@@ -38,18 +38,18 @@ export function PostPartsScreen({ variant, post, onChange, onContinue }: PostPar
           <Button block disabled={!complete} onClick={onContinue} icon={<ArrowRight aria-hidden className="size-4" />}>
             Continue
           </Button>
-          <p className="mt-2 h-4 text-center text-xs text-ink-400" aria-live="polite">
+          <p className="mt-2 h-4 text-center text-xs text-ink-500" aria-live="polite">
             {complete ? "" : "Pick at least one answer for each question"}
           </p>
         </div>
       }
     >
-      <StepHeader stage={4} eyebrow="After the dashboard" title="What stood out" sub="Choose as many as apply." />
+      <StepHeader stage={4} eyebrow="After the briefing" title="What stood out" sub="Choose as many as apply." />
       <div className="flex flex-col gap-3">
         <Card className="animate-fade-up" style={fadeUp()}>
           <ChoiceGroup
             kind="multi"
-            label="Which part of the dashboard, if any, made you feel better?"
+            label="Which part of the briefing, if any, made you feel better?"
             options={partOptions(variant, "None of these")}
             values={post.feltBetter}
             exclusive="none"

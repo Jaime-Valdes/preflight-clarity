@@ -1,5 +1,6 @@
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { Hono, type Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { parseSessionRecord } from "@preflight/shared/record";
 import type { ListResponse, SaveResponse } from "@preflight/shared/types";
 import { isAdminKey } from "../lib/admin";
@@ -10,10 +11,11 @@ export const MAX_BODY_BYTES = 100_000;
 
 /**
  * Saves accepted per client IP per minute (override with RATE_LIMIT_PER_MINUTE).
- * A participant on the dashboard checkpoints about every 20 s, so a room of
- * 40 participants behind one NAT address still fits; a flood does not.
+ * At peak a participant sends about 6 saves a minute (a dashboard checkpoint
+ * every 20 s, two beacon saves per app switch, plus step saves), so 1000/min
+ * covers ~160 participants behind one NAT address; a flood (10–100× that) does not.
  */
-export const DEFAULT_RATE_LIMIT_PER_MINUTE = 120;
+export const DEFAULT_RATE_LIMIT_PER_MINUTE = 1000;
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAP_SWEEP_SIZE = 1000;
 
@@ -55,24 +57,22 @@ function clientIp(c: Context): string {
 
 export const responses = new Hono();
 
-/** Save (upsert) one session record. Accepts JSON sent as application/json or text/plain (sendBeacon). */
-responses.post("/", async (c) => {
+const tooLarge = (c: Context) =>
+  c.json<SaveResponse>({ ok: false, storage: storageKind(), error: "too_large" }, 413);
+
+/**
+ * Save (upsert) one session record. Accepts JSON sent as application/json or text/plain (sendBeacon).
+ * The body cap is enforced by bodyLimit while the request streams in: a declared
+ * Content-Length is checked up front, and a chunked upload is cut off as soon as it
+ * passes MAX_BODY_BYTES, so an oversized body is never buffered in full.
+ */
+responses.post("/", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge }), async (c) => {
   if (isRateLimited(clientIp(c), Date.now())) {
     c.header("Retry-After", "60");
     return c.json<SaveResponse>({ ok: false, storage: storageKind(), error: "rate_limited" }, 429);
   }
 
-  // Refuse oversized bodies before reading them when the client says how big they are…
-  const declared = Number(c.req.header("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
-    return c.json<SaveResponse>({ ok: false, storage: storageKind(), error: "too_large" }, 413);
-  }
-
-  // …and after reading them otherwise (chunked uploads carry no Content-Length).
-  const text = await c.req.text();
-  if (Buffer.byteLength(text, "utf8") > MAX_BODY_BYTES) {
-    return c.json<SaveResponse>({ ok: false, storage: storageKind(), error: "too_large" }, 413);
-  }
+  const text = await c.req.text(); // already capped by bodyLimit
 
   let payload: unknown;
   try {

@@ -469,7 +469,11 @@ export interface DashboardMetrics {
   alert: { tapped: boolean; taps: number; finalOn: boolean };
   /** Capped at MAX_EVENTS (see lib/tracking.ts). */
   events: DashboardEvent[];
-  /** Deepest scroll position reached on the dashboard, 0–100. */
+  /**
+   * Deepest scroll position reached, as a share of the scrollable height of
+   * the page as last laid out: 0 = never scrolled (or nothing to scroll),
+   * 100 = reached the bottom.
+   */
   maxScrollPct: number;
   /** True if the dashboard was resumed after a page reload. */
   resumed: boolean;

@@ -7,7 +7,9 @@
  * Exits non-zero on any failure and prints a compact table to eyeball variety.
  */
 import { generateFlight, normalizeInput } from "../src/fakeFlight";
-import { AIRPORTS, resolveAirport, searchAirports } from "../src/airports";
+import { AIRPORTS, getAirport, resolveAirport, searchAirports } from "../src/airports";
+import { candidateAirlines, isRetiredFlightNumber } from "../src/airlines";
+import { getAircraftModel } from "../src/aircraft";
 import type { Flight, FlightInput, FlightPhase } from "../src/types";
 
 const INPUTS: FlightInput[] = [
@@ -54,10 +56,21 @@ const INPUTS: FlightInput[] = [
   { origin: "SCL", destination: "EZE", date: "2027-02-11" },
   { origin: "BOG", destination: "MIA", date: "2026-10-02" },
   { origin: "LAX", destination: "SYD", date: "2026-12-30" },
+  { origin: "SIN", destination: "JFK", date: "2026-11-26" },
+  { origin: "PER", destination: "LHR", date: "2027-03-20" },
+  { origin: "JFK", destination: "SYD", date: "2026-11-26" },
+  { origin: "JFK", destination: "HKG", date: "2027-02-06" },
+  // Perimeter airports
+  { origin: "LGA", destination: "LAX", date: "2026-11-26" },
+  { origin: "LGA", destination: "DEN", date: "2027-04-09" },
+  { origin: "DCA", destination: "LAX", date: "2026-12-02" },
+  { origin: "DCA", destination: "LHR", date: "2027-05-22" },
   // Free text, aliases and edge cases
   { origin: "New York", destination: "Los Angeles", date: "2026-11-05" },
   { origin: "Boise", destination: "Seattle", date: "2027-03-02" },
   { origin: "boise, id", destination: "Chicago (ORD)", date: "2026-10-23" },
+  { origin: "Portland, Maine", destination: "JFK", date: "2026-12-19" },
+  { origin: "Fargo", destination: "Orlando", date: "2027-07-04" },
   { origin: "Timbuktu", destination: "Shangri-La", date: "2027-04-14" },
   { origin: "Paris", destination: "Tokyo", date: "2026-11-11" },
   { origin: "JFK", destination: "JFK", date: "2026-10-21" },
@@ -112,13 +125,33 @@ function checkFlight(input: FlightInput, flight: Flight) {
 
   // Aircraft
   const ac = flight.aircraft;
-  check(ac.ageYears >= 0.8 && ac.ageYears <= 18, `${tag}: aircraft age ${ac.ageYears}`);
+  check(ac.ageYears >= 0.8 && ac.ageYears <= 36, `${tag}: aircraft age ${ac.ageYears}`);
   check(ac.deliveredYear >= ac.modelInServiceSince, `${tag}: delivered before model entered service`);
+  const ended = getAircraftModel(ac.model)?.productionEnded;
+  check(ended === undefined || ac.deliveredYear <= ended, `${tag}: ${ac.model} delivered ${ac.deliveredYear} after production ended ${ended}`);
   check(ac.lastInspectionDaysAgo >= 3 && ac.lastInspectionDaysAgo <= 28, `${tag}: inspection days`);
   check(ac.nextCheckDueDays >= 20 && ac.nextCheckDueDays <= 60, `${tag}: next check`);
   check(!/MAX/i.test(ac.model), `${tag}: 737 MAX must not appear`);
   check(ac.safetyRecord.length >= 3, `${tag}: safety record lines`);
   if (flight.distanceMi >= 2800) check(ac.bodyType === "wide", `${tag}: long route on a narrow-body (${ac.model})`);
+  check(!isRetiredFlightNumber(flight.flightNumber), `${tag}: retired flight number ${flight.flightNumber}`);
+
+  // Perimeter airports: short routes only, narrow-body gates.
+  const codes = [flight.origin.code, flight.destination.code];
+  const other = (code: string) => (flight.origin.code === code ? flight.destination.code : flight.origin.code);
+  if (codes.includes("LGA")) check(flight.distanceMi <= 1500 || other("LGA") === "DEN", `${tag}: LGA beyond its perimeter (${flight.distanceMi} mi)`);
+  if (codes.includes("DCA"))
+    check(flight.distanceMi <= 1250 || ["LAX", "SFO", "SEA", "LAS", "PHX", "SLC", "DEN", "SAN", "AUS", "PDX"].includes(other("DCA")), `${tag}: DCA beyond its perimeter`);
+  if (codes.includes("LGA") || codes.includes("DCA")) {
+    check(ac.bodyType === "narrow", `${tag}: wide-body at a narrow-body-only airport (${ac.model})`);
+    check(flight.alternatives.every((a) => a.bodyType === "narrow"), `${tag}: wide-body alternative at a narrow-body-only airport`);
+  }
+  // Sensible arrival hours: never inside a curfew, and not in the dead of night except at round-the-clock hubs.
+  const arriveHour = Number(flight.arriveTime.slice(0, 2)) + Number(flight.arriveTime.slice(3)) / 60;
+  const dest = flight.destination.code;
+  if (dest === "SYD") check(arriveHour >= 6 && arriveHour < 23, `${tag}: lands inside the Sydney curfew at ${flight.arriveTime}`);
+  if (dest === "LHR") check(arriveHour >= 4.5 && arriveHour < 23.5, `${tag}: lands inside the Heathrow curfew at ${flight.arriveTime}`);
+  if (!["DXB", "DOH", "AUH", "IST", "SIN", "KUL", "BKK"].includes(dest)) check(!(arriveHour >= 0.75 && arriveHour < 5.5), `${tag}: dead-of-night arrival ${flight.arriveTime}`);
 
   // Crew
   const { captain, firstOfficer } = flight.crew;
@@ -174,6 +207,16 @@ function checkFlight(input: FlightInput, flight: Flight) {
     check(w.intensity === "moderate" ? peak >= 1.5 : peak >= 0.5 && peak < 1.5, `${tag}: window peak ${peak} for ${w.intensity}`);
   }
   check(t.windows.filter((w) => w.intensity === "moderate").length <= 1, `${tag}: more than one moderate window`);
+  // Bump causes agree with the weather card for the same airport.
+  const clearish = (c: string) => c === "clear" || c === "mostly_clear" || c === "breezy";
+  for (const w of t.windows) {
+    const cloudy = /cloud|shower/i.test(w.cause);
+    if (w.phase === "climb" && clearish(flight.weather.origin.condition)) check(!cloudy, `${tag}: climb cause "${w.cause}" but origin is ${flight.weather.origin.condition}`);
+    if (w.phase === "descent" && clearish(flight.weather.destination.condition)) check(!cloudy, `${tag}: descent cause "${w.cause}" but destination is ${flight.weather.destination.condition}`);
+  }
+  const cruiseCauses = t.windows.filter((w) => w.phase === "cruise").map((w) => w.cause);
+  check(new Set(cruiseCauses).size === cruiseCauses.length, `${tag}: two cruise windows share a cause`);
+  check(!t.phases.some((p) => /bumps (.+) and later \1\./.test(p.note)), `${tag}: repetitive phase note`);
   const expectedMax = t.windows.some((w) => w.intensity === "moderate") ? "moderate" : t.windows.length > 0 ? "light" : "none";
   check(t.maxIntensity === expectedMax, `${tag}: maxIntensity`);
   check(t.smoothMinutesPct >= 0 && t.smoothMinutesPct <= 100, `${tag}: smoothMinutesPct`);
@@ -261,6 +304,19 @@ function checkFlight(input: FlightInput, flight: Flight) {
     if (s.score >= 92) check(alt.scoreDelta <= 3, `${tag}: very smooth flight but alt delta ${alt.scoreDelta}`);
   }
   check(new Set(alts.map((x) => x.id)).size === alts.length, `${tag}: alt ids`);
+  // Compare never argues with the route-history tile about the best time of day.
+  const tileSlot = /^Morning/.test(t.history.bestDepartureWindow) ? "morning"
+    : /^Midday/.test(t.history.bestDepartureWindow) ? "midday"
+    : /^Afternoon/.test(t.history.bestDepartureWindow) ? "afternoon"
+    : "evening";
+  for (const alt of alts.filter((a) => a.date === flight.input.date)) {
+    const m = /^(Morning|Midday|Afternoon|Evening) departure/.exec(alt.reason);
+    if (!m) continue;
+    const reasonSlot = m[1].toLowerCase();
+    if (alt.scoreDelta > 0) check(reasonSlot === tileSlot, `${tag}: smoother alt says "${alt.reason}" but history says "${t.history.bestDepartureWindow}"`);
+    if (alt.scoreDelta < 0) check(reasonSlot !== tileSlot, `${tag}: bumpier alt blames the history-best slot: "${alt.reason}"`);
+    check(!isRetiredFlightNumber(alt.flightNumber), `${tag}: alt retired flight number ${alt.flightNumber}`);
+  }
 
   // Words
   const strings: Array<[string, string]> = [];
@@ -309,11 +365,23 @@ check(resolveAirport("Heathrow").code === "LHR", "resolve Heathrow");
 check(resolveAirport("london").code === "LHR", "resolve london");
 check(resolveAirport("Tokyo (NRT)").code === "NRT", "resolve City (CODE)");
 check(resolveAirport("washington dc").code === "DCA", "resolve alias");
-check(resolveAirport("Boise").known === false && resolveAirport("Boise").code === "BOI", "synthetic Boise");
+check(resolveAirport("Boise").known && resolveAirport("Boise").code === "BOI", "resolve Boise");
+check(resolveAirport("boise, id").code === "BOI", "resolve 'boise, id'");
+check(resolveAirport("Fargo").known === false && resolveAirport("Fargo").code === "FAR", "synthetic Fargo");
 check(resolveAirport("santa fe").code !== "SAN", "synthetic code must not collide with a real one");
+check(resolveAirport("Burlington, Iowa").code !== "BUR" && resolveAirport("Burlington, Iowa").known === false, "synthetic code must not borrow a well-known real code");
+check(resolveAirport("Portland, Maine").code === "PWM" && resolveAirport("Portland, ME").code === "PWM", "resolve Portland, Maine");
+check(resolveAirport("Portland").code === "PDX" && resolveAirport("Portland, Oregon").code === "PDX", "resolve Portland (Oregon)");
+check(resolveAirport("San Jose, Costa Rica").code === "SJO" && resolveAirport("San Jose, CA").code === "SJC", "resolve San Jose by country / state");
+check(resolveAirport("Manchester, NH").code === "MHT" && resolveAirport("Manchester, UK").code === "MAN", "resolve Manchester by suffix");
+check(resolveAirport("Paris, Texas").known === false && resolveAirport("Paris, France").code === "CDG", "mismatched state → synthetic");
+check(resolveAirport("Melbourne, FL").known === false && resolveAirport("London, Ontario").known === false, "wrong-country suffix → synthetic");
+check(resolveAirport("Denver, CO").code === "DEN" && resolveAirport("New York, NY").code === "JFK", "resolve City, State");
+check(resolveAirport("Buffalo").code === "BUF" && resolveAirport("Hyderabad").code === "HYD", "secondary airports are catalog rows");
+check(resolveAirport("Washington, DC").code === "DCA", "resolve Washington, DC");
 check(resolveAirport("").known === false, "empty resolves to synthetic");
 check(normalizeInput({ origin: " jfk ", destination: "Los Angeles", date: "2026-11-26" }).origin === "JFK", "normalize code");
-check(normalizeInput({ origin: "Boise", destination: "LAX", date: "2026-11-26" }).origin === "Boise", "normalize keeps free text");
+check(normalizeInput({ origin: "Fargo", destination: "LAX", date: "2026-11-26" }).origin === "Fargo", "normalize keeps free text");
 let threw = false;
 try {
   normalizeInput({ origin: "JFK", destination: "LAX", date: "2026-02-30" });
@@ -321,6 +389,39 @@ try {
   threw = true;
 }
 check(threw, "invalid date must throw");
+
+// ── Routes ──────────────────────────────────────────────────────────────────
+
+// Ultra-long routes stay with the endpoint countries' carriers; nothing draws Hawaiian.
+for (const [o, d] of [["JFK", "SYD"], ["LHR", "SYD"], ["EWR", "MEL"], ["MNL", "EZE"]]) {
+  for (const date of ["2026-11-26", "2027-03-14", "2027-08-02"]) {
+    const f = generateFlight({ origin: o, destination: d, date });
+    const countries = [f.origin.country, f.destination.country];
+    check(countries.includes(f.airline.country), `${o}→${d} ${date}: ${f.airline.name} is from neither endpoint country`);
+    check(f.alternatives.every((a) => a.airline.code !== "HA"), `${o}→${d} ${date}: Hawaiian alternative`);
+    check(f.alternatives.every((a) => countries.includes(a.airline.country)), `${o}→${d} ${date}: third-country alternative`);
+  }
+}
+const aklJfk = candidateAirlines(getAirport("AKL")!, getAirport("JFK")!, 8833, true).map(([a]) => a.code);
+check(aklJfk.includes("NZ"), "AKL→JFK candidates lack Air New Zealand");
+const perLhr = candidateAirlines(getAirport("PER")!, getAirport("LHR")!, 9015, true).map(([a]) => a.code);
+check(perLhr.includes("QF"), "PER→LHR candidates lack Qantas");
+const jfkLax = candidateAirlines(getAirport("JFK")!, getAirport("LAX")!, 2470, false).map(([a]) => a.code);
+check(!jfkLax.includes("UA"), "United does not serve JFK");
+const lgaMia = candidateAirlines(getAirport("LGA")!, getAirport("MIA")!, 1096, false).map(([a]) => a.code);
+check(!lgaMia.includes("AS"), "Alaska has no presence on LGA→MIA");
+
+// Typed cities that are not in the catalog give the same hop on every date.
+const fargoA = generateFlight({ origin: "Fargo", destination: "Orlando", date: "2026-11-20" });
+const fargoB = generateFlight({ origin: "Fargo", destination: "Orlando", date: "2027-07-04" });
+check(fargoA.distanceMi === fargoB.distanceMi && fargoA.distanceMi <= 1600, `synthetic route distance changes by date (${fargoA.distanceMi} vs ${fargoB.distanceMi})`);
+check(fargoA.aircraft.bodyType === "narrow", "synthetic hop on a wide-body");
+
+// Block times on ultra-long routes stay close to real schedules.
+const sinJfk = generateFlight({ origin: "SIN", destination: "JFK", date: "2026-11-26" }).blockMin;
+check(sinJfk >= 17.5 * 60 && sinJfk <= 19.75 * 60, `SIN→JFK block ${sinJfk} min (real ≈ 18h40)`);
+const jfkHkg = generateFlight({ origin: "JFK", destination: "HKG", date: "2027-02-06" }).blockMin;
+check(jfkHkg >= 15 * 60 && jfkHkg <= 17 * 60, `JFK→HKG block ${jfkHkg} min (real ≈ 16h00)`);
 
 // ── Flights ─────────────────────────────────────────────────────────────────
 

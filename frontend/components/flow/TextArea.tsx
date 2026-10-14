@@ -38,7 +38,7 @@ export function TextArea({
         rows={rows}
         maxLength={maxLength}
         className={cn(
-          "mt-2.5 w-full resize-none rounded-2xl bg-surface px-4 py-3 text-[15px] leading-relaxed text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-400 focus:outline-none",
+          "mt-2.5 w-full resize-none rounded-2xl bg-surface px-4 py-3 text-[15px] leading-relaxed text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-500 focus:outline-none",
         )}
       />
     </div>

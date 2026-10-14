@@ -82,14 +82,21 @@ function tryGenerate(input: FlightInput): Generated {
   }
 }
 
-function resolveInitialState(forcedVariant: string | null): FlowState {
+/**
+ * A tap within this window of a screen change is the second half of a double
+ * tap on the previous screen's button (every step's primary button sits in the
+ * same sticky-footer spot), not a decision about the new screen.
+ */
+const SCREEN_SETTLE_MS = 400;
+
+function resolveInitialState(forcedVariant: string | null, isTest: boolean): FlowState {
   const saved = loadFlowState();
   if (!saved) return initialFlowState();
-  // Team convenience: forcing a different variant in the same tab starts a fresh session.
+  if (!saved.session) return saved;
+  // Team convenience: forcing a different variant, or opening ?test=1 over a real session, starts fresh.
   const forced = forcedVariant?.trim().toUpperCase();
-  if ((forced === "A" || forced === "B") && saved.session && saved.session.variant !== forced) {
-    return initialFlowState();
-  }
+  if ((forced === "A" || forced === "B") && saved.session.variant !== forced) return initialFlowState();
+  if (isTest && !saved.session.isTest) return initialFlowState();
   return saved;
 }
 
@@ -98,10 +105,14 @@ function StudyFlowClient() {
   const isTest = useQueryParam("test") === "1";
   const today = useTodayISO();
 
-  const [state, setState] = useState<FlowState>(() => resolveInitialState(forcedVariant));
+  const [state, setState] = useState<FlowState>(() => resolveInitialState(forcedVariant, isTest));
   const latest = useRef(state);
   const persistTimer = useRef<number | null>(null);
   const lastBeaconed = useRef<FlowState | null>(null);
+  /** performance.now() of the last screen change (double-tap guard). */
+  const screenChangedAt = useRef(0);
+  /** Screen whose heading last received focus (none on initial mount / resume). */
+  const focusedScreen = useRef<string | null>(null);
   /** Set while deliberately discarding the session, so the page-hide flush doesn't resurrect it. */
   const leaving = useRef(false);
   const [prepFailed, setPrepFailed] = useState(false);
@@ -132,6 +143,12 @@ function StudyFlowClient() {
     (action: FlowAction, opts: { save?: boolean; beacon?: boolean; fromHistory?: boolean } = {}) => {
       const prev = latest.current;
       let next = reduceFlow(prev, action);
+      if (next.screen !== prev.screen) {
+        const now = performance.now();
+        // Swallow the second tap of a double tap (it would land on the new screen's button).
+        if (!opts.fromHistory && now - screenChangedAt.current < SCREEN_SETTLE_MS) return;
+        screenChangedAt.current = now;
+      }
       if (opts.save && next.session) next = markSaved(next, new Date().toISOString());
       if (next === prev) return;
       latest.current = next;
@@ -166,7 +183,9 @@ function StudyFlowClient() {
     const onPopState = (event: PopStateEvent) => {
       const target = (event.state as HistoryEntry | null)?.pfcScreen;
       const current = latest.current.screen;
-      if (target && canTraverse(current, target)) {
+      // Entries from an earlier session in this tab must not reach a survey screen without a session.
+      const allowed = !!target && canTraverse(current, target) && (target === "welcome" || !!latest.current.session);
+      if (allowed) {
         setPrepFailed(false);
         commit({ type: "goto", screen: target }, { fromHistory: true });
       } else {
@@ -188,6 +207,8 @@ function StudyFlowClient() {
         return;
       }
       if (lastBeaconed.current === current) return;
+      // On the dashboard its own checkpoint (page hidden / pagehide) saves a fresh snapshot.
+      if (current.screen === "dashboard") return;
       commit({ type: "touch" }, { save: true, beacon: true });
     };
     const onVisibility = () => {
@@ -205,6 +226,16 @@ function StudyFlowClient() {
       }
     };
   }, [commit, persistNow]);
+
+  // Screen change: move focus to the new heading so keyboard and screen-reader
+  // users hear where they are (never on initial mount or a reload-resume).
+  useEffect(() => {
+    const view = `${state.screen}:${prepFailed}`;
+    const changed = focusedScreen.current !== null && focusedScreen.current !== view;
+    focusedScreen.current = view;
+    if (!changed) return;
+    document.querySelector<HTMLElement>("main [data-focus-start], main h1")?.focus({ preventScroll: true });
+  }, [state.screen, prepFailed]);
 
   // ── step handlers ─────────────────────────────────────────────────────────
 
@@ -350,7 +381,7 @@ function StudyFlowClient() {
       return (
         <RatingsScreen
           stage={4}
-          eyebrow="After the dashboard"
+          eyebrow="After the briefing"
           title="Three questions, once more"
           sub="Answer for the same flight as before."
           questions={POST_QUESTIONS}
@@ -418,7 +449,7 @@ function GenerationFailed({ onRetry, onChangeFlight }: { onRetry: () => void; on
       <div className="flex flex-1 flex-col justify-center pb-16">
         <Card className="animate-fade-up">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-calm-700">One moment</p>
-          <h1 className="mt-1.5 text-[22px] font-bold leading-tight text-ink-900">
+          <h1 tabIndex={-1} className="mt-1.5 text-[22px] font-bold leading-tight text-ink-900 outline-none">
             Your briefing didn&rsquo;t come together this time
           </h1>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-700">

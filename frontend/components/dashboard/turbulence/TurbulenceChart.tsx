@@ -80,7 +80,7 @@ function ChartTip({ active, payload, airborneMin }: TipProps) {
   if (!active || !point) return null;
   const band = INTENSITY[intensityForLevel(point.level)];
   return (
-    <div style={CHART.tooltip.contentStyle} className="bg-surface">
+    <div role="status" style={CHART.tooltip.contentStyle} className="bg-surface">
       <p className="text-[11px] font-semibold text-ink-500">{pointMoment(point.minute, airborneMin)}</p>
       <p className="mt-0.5 flex items-center gap-1.5 text-[13px] font-semibold text-ink-900">
         <span aria-hidden className="size-2 rounded-full" style={{ background: band.color }} />
@@ -103,9 +103,12 @@ export function TurbulenceChart({ points, phases, windows, airborneMin }: Turbul
   const rawId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const fillId = `turb-fill-${rawId}`;
   const strokeId = `turb-stroke-${rawId}`;
-  const lastInspect = useRef(0);
+  const lastInspect = useRef(Number.NEGATIVE_INFINITY);
   const ticks = useMemo(() => chooseTicks(airborneMin), [airborneMin]);
   const data = useMemo(() => decimate(points), [points]);
+  const description =
+    phases.map((p) => `${PHASE_LABEL[p.phase]}: ${INTENSITY[p.intensity].label}`).join(". ") +
+    ". Full details are listed below the chart.";
 
   const inspect = (state: { activeLabel?: string | number }) => {
     if (!tracker) return;
@@ -121,11 +124,17 @@ export function TurbulenceChart({ points, phases, windows, airborneMin }: Turbul
   }
 
   return (
-    <div className="mt-2 -ml-1.5" style={{ height: HEIGHT }}>
+    <div
+      // Chromium draws its own blue focus ring on the chart's inner <g> after a tap; keyboard focus keeps the global ring.
+      className="mt-2 -ml-1.5 [&_svg:focus:not(:focus-visible)]:outline-none [&_svg_*:focus]:outline-none"
+      style={{ height: HEIGHT }}
+    >
       <ResponsiveContainer width="100%" height={HEIGHT} initialDimension={{ width: 320, height: HEIGHT }}>
         <AreaChart
           data={data}
           margin={MARGIN}
+          title="Expected turbulence by time into the flight"
+          desc={description}
           onMouseMove={inspect}
           onTouchStart={inspect}
           onTouchMove={inspect}

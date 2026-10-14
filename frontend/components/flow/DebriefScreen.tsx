@@ -1,7 +1,7 @@
 "use client";
 
 import { Info, MailCheck } from "lucide-react";
-import { useId, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
@@ -24,6 +24,8 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
   const hintId = useId();
   const [email, setEmail] = useState("");
   const [attempted, setAttempted] = useState(false);
+  /** When the email went out: the shorter "thanks" card moves "Start a new test session" under the thumb. */
+  const sentAt = useRef<number | null>(null);
   const valid = EMAIL_RE.test(email.trim());
 
   function submit(e: FormEvent) {
@@ -32,7 +34,14 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
       setAttempted(true);
       return;
     }
+    sentAt.current = performance.now();
     onEmail(email.trim());
+  }
+
+  function startOver() {
+    // Ignore the second half of a double tap on "Count me in".
+    if (sentAt.current !== null && performance.now() - sentAt.current < 600) return;
+    onStartOver?.();
   }
 
   return (
@@ -40,7 +49,7 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
       <Wordmark className="animate-fade-up" />
       <div className="mt-9 animate-fade-up [animation-delay:60ms]">
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-calm-700">Thank you</p>
-        <h1 className="mt-1.5 text-[28px] font-bold leading-[1.12] tracking-[-0.01em] text-ink-900">
+        <h1 tabIndex={-1} className="mt-1.5 text-[28px] font-bold leading-[1.12] tracking-[-0.01em] text-ink-900 outline-none">
           That&rsquo;s everything
         </h1>
         <p className="mt-4 text-[15px] leading-relaxed text-ink-700">
@@ -57,9 +66,9 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
           <div>
             <p className="text-[15px] font-semibold leading-snug text-ink-900">A reminder about the data</p>
             <p className="mt-1.5 text-[14px] leading-relaxed text-ink-700">
-              Everything on the dashboard was illustrative: the forecast, the pilots, the aircraft, the scores and
+              Everything in the briefing was illustrative: the forecast, the pilots, the aircraft, the scores and
               the alternative flights were all generated for this study. None of it was a real forecast or real
-              information about any flight.
+              information about any flight. No alerts were set up, and no seat or flight was held or booked.
             </p>
           </div>
         </div>
@@ -82,7 +91,7 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
               Open to a short follow-up chat?
             </label>
             <p className="mt-1 text-[13px] leading-snug text-ink-500">
-              Optional. Leave an email and we may invite you to a 15-minute interview.
+              Optional. Leave an email and we may invite you to a 15-minute interview. It&rsquo;s stored with your answers.
             </p>
             <input
               id={emailId}
@@ -95,7 +104,7 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               aria-describedby={hintId}
-              className="mt-3 h-12 w-full rounded-2xl bg-surface px-4 text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-400 focus:outline-none"
+              className="mt-3 h-12 w-full rounded-2xl bg-surface px-4 text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-500 focus:outline-none"
             />
             <p id={hintId} className="mt-1.5 h-4 text-[13px] leading-snug text-sand-700" aria-live="polite">
               {attempted && !valid ? "That email doesn't look complete yet." : ""}
@@ -110,12 +119,12 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
       <p className="mt-8 text-center text-[15px] font-semibold text-ink-700 animate-fade-up [animation-delay:240ms]">
         You can close this page now.
       </p>
-      <p className="mt-2 text-center text-xs text-ink-400">Prototype · illustrative data</p>
+      <p className="mt-2 text-center text-xs text-ink-500">Prototype · illustrative data</p>
 
       {isTest && onStartOver ? (
         <button
           type="button"
-          onClick={onStartOver}
+          onClick={startOver}
           className="mx-auto mt-6 h-10 rounded-full px-4 text-[13px] font-semibold text-ink-500 underline-offset-4 hover:underline"
         >
           Start a new test session

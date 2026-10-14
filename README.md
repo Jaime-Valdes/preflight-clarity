@@ -17,7 +17,7 @@ rules every contributor follows are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 | Folder | What | Deploys to |
 | --- | --- | --- |
 | [`frontend/`](frontend/) | Next.js app: the participant flow, the dashboard, the team results page | Vercel (root directory `frontend`) |
-| [`backend/`](backend/) | Hono API on Node: receives session records, stores them in Supabase, serves them to the results page | Railway / any Node host (root directory `backend`) |
+| [`backend/`](backend/) | Hono API on Node: receives session records, stores them in Supabase, serves them to the results page | Railway / any Node host (built from the repo root) |
 | [`shared/`](shared/) | TypeScript shared by both: types, the fake-flight generator, pure helpers, stats, CSV | — (imported as `@preflight/shared/*`) |
 
 npm workspaces, one `package-lock.json` at the root, Node 20.12 or newer.
@@ -94,18 +94,19 @@ Three services. Do them in this order, because each one needs a value from the p
 1. [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo** → pick
    `Jaime-Valdes/preflight-clarity`.
 2. In the service **Settings**:
-   - **Root Directory**: `backend`
-   - **Build Command**: `npm run build` (tsup bundles the API *and* the shared package into `dist/`)
-   - **Start Command**: `npm start`
+   - **Root Directory**: leave empty. The API needs the repo root (the workspaces, the lockfile and
+     `shared/`). Don't set it to `backend`: Railway then checks out `backend/` alone and `npm install`
+     fails with `E404` for `@preflight/shared`, which is a workspace, not an npm package.
+   - **Build Command**: `npm ci && npm run build -w backend` (tsup bundles the API *and* `shared/` into
+     `backend/dist/`)
+   - **Start Command**: `npm run start:api`
+   - Optional — **Watch Paths**: `backend/**`, `shared/**`, `package.json`, `package-lock.json`, so
+     frontend-only commits don't redeploy the API.
 3. **Variables**: `ADMIN_KEY` (invent a long random string), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
    (the two values from step 1). `PORT` is provided by Railway; leave `DATA_FILE` unset.
 4. **Settings → Networking → Generate Domain**. Note the URL, e.g. `https://preflight-api.up.railway.app`.
 5. Check it: `curl https://<your-domain>/health` → `{"ok":true,"storage":"supabase"}`. If it says
    `"file"` or `"none"`, a variable is missing or misspelt.
-
-> If the build fails to resolve `@preflight/shared`, the host built only the `backend/` folder without the
-> workspace. Fix: clear Root Directory (build from the repo root) and use `npm run build -w backend` /
-> `npm run start -w backend` instead.
 
 ### 3. Frontend → Vercel
 
@@ -145,7 +146,8 @@ own environment, so `NEXT_PUBLIC_SITE_URL` is only needed if you host the fronte
 
 ## The results page
 
-`/results?key=<ADMIN_KEY>` (the key is checked by the API, not the page) shows, for the filtered sessions:
+`/results?key=<ADMIN_KEY>` (the key is checked against `ADMIN_KEY` by the web app, and again by the API
+when a backend is configured) shows, for the filtered sessions:
 
 - a **table** of every session (newest first) and a **CSV export** with one row per session and every
   field flattened (`shared/src/csv.ts`), ready for a spreadsheet;
@@ -189,7 +191,9 @@ data the participant sees. `?v=A` / `?v=B` override the draw for demos and testi
       opens with it (and shows nothing without it).
 - [ ] `https://<api>/health` says `"storage":"supabase"`.
 - [ ] You did a full run on **your own phone** with `/?test=1` (both variants: `/?test=1&v=A`,
-      `/?test=1&v=B`), the whole thing took under 8 minutes, nothing looked broken, and the sessions
+      `/?test=1&v=B`; open it in a fresh tab — over an in-progress real session in the same tab it
+      starts a new test session and the old one stays in storage as incomplete), the whole thing
+      took under 8 minutes, nothing looked broken, and the sessions
       appeared in `/results` (test sessions are hidden by default — switch the filter) and in the
       Supabase table editor.
 - [ ] The CSV export opens cleanly in a spreadsheet.

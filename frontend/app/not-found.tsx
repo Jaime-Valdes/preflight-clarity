@@ -34,7 +34,7 @@ export default function NotFound() {
         </Link>
 
         <p className="mt-5 text-xs leading-relaxed text-ink-400">
-          If a teammate sent you this link, check that it was copied in full.
+          If someone sent you this link, check that it was copied in full.
         </p>
       </Card>
     </Screen>

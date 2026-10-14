@@ -47,7 +47,9 @@ export function PreparingFlight({ onReady }: PreparingFlightProps) {
             <Plane className="size-6" />
           </span>
         </div>
-        <h1 className="mt-8 text-[22px] font-bold leading-tight text-ink-900">Preparing your briefing</h1>
+        <h1 tabIndex={-1} className="mt-8 text-[22px] font-bold leading-tight text-ink-900 outline-none">
+          Preparing your briefing
+        </h1>
         <ul className="mt-5 flex flex-col gap-2 text-[15px] text-ink-500">
           {PREPARING_LINES.map((line, i) => {
             const visible = i < shown;

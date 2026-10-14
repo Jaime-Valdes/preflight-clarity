@@ -27,8 +27,10 @@ export interface AirlineProfile extends Airline {
   minRouteMi?: number;
   /** Airports the airline is known not to serve. */
   notServed?: readonly string[];
-  /** Point-to-point carrier: rarely plausible away from its focus cities. */
+  /** Point-to-point carrier: only plausible when one end is a focus city. */
   focus?: boolean;
+  /** Countries (besides home) the airline flies to; other international routes are out. */
+  intlCountries?: readonly string[];
   /** Only flies within its home market. */
   domesticOnly?: boolean;
   /** Only plausible on routes touching Hawaii. */
@@ -42,10 +44,10 @@ export interface AirlineProfile extends Airline {
 export const AIRLINES: readonly AirlineProfile[] = [
   // ── United States ──
   { code: "DL", name: "Delta Air Lines", country: "US", region: "NA", hubs: ["ATL", "DTW", "MSP", "SLC", "JFK", "LGA", "BOS", "SEA", "LAX"], fleet: ["A220-300", "A321neo", "737-800", "737-900ER", "757-200", "A330-900neo", "A350-900", "767-300ER"], tailPatterns: ["N###DN", "N###DZ", "N###DX", "N###DA"], amenities: ["Free Wi-Fi", "Seat-back screens", "Power at every seat", "Free snacks and drinks"], longHaul: true, hubCarrier: true },
-  { code: "UA", name: "United Airlines", country: "US", region: "NA", hubs: ["EWR", "ORD", "IAH", "DEN", "SFO", "IAD", "LAX"], fleet: ["A321neo", "737-800", "737-900ER", "757-200", "767-300ER", "777-300ER", "787-9", "787-10"], tailPatterns: ["N#####"], amenities: ["Seat-back screens on most planes", "Power at every seat", "Free messaging", "Wi-Fi available"], longHaul: true, hubCarrier: true },
+  { code: "UA", name: "United Airlines", country: "US", region: "NA", hubs: ["EWR", "ORD", "IAH", "DEN", "SFO", "IAD", "LAX"], fleet: ["A321neo", "737-800", "737-900ER", "757-200", "767-300ER", "777-300ER", "787-9", "787-10"], tailPatterns: ["N#####"], amenities: ["Seat-back screens on most planes", "Power at every seat", "Free messaging", "Wi-Fi available"], longHaul: true, hubCarrier: true, notServed: ["JFK"] },
   { code: "AA", name: "American Airlines", country: "US", region: "NA", hubs: ["DFW", "CLT", "PHX", "MIA", "PHL", "ORD", "DCA", "LAX", "JFK"], fleet: ["A321neo", "737-800", "787-9", "777-300ER"], tailPatterns: ["N###AN", "N###NN", "N###AA"], amenities: ["Free messaging", "Streaming entertainment", "Power at every seat", "Wi-Fi available"], longHaul: true, hubCarrier: true },
-  { code: "B6", name: "JetBlue Airways", country: "US", region: "NA", hubs: ["JFK", "BOS", "FLL", "MCO", "SJU", "EWR", "LGA"], fleet: ["A220-300", "A321neo"], tailPatterns: ["N###JB", "N###JT"], amenities: ["Free high-speed Wi-Fi", "Seat-back screens", "Free snacks and drinks", "Extra legroom in economy"], longHaul: false, focus: true },
-  { code: "AS", name: "Alaska Airlines", country: "US", region: "NA", hubs: ["SEA", "PDX", "SFO", "LAX", "SAN", "ANC"], fleet: ["737-800", "737-900ER"], tailPatterns: ["N###AS", "N###AK"], amenities: ["Free messaging", "Streaming entertainment", "Power at most seats", "Free snacks"], longHaul: false, focus: true },
+  { code: "B6", name: "JetBlue Airways", country: "US", region: "NA", hubs: ["JFK", "BOS", "FLL", "MCO", "SJU", "EWR", "LGA"], fleet: ["A220-300", "A321neo"], tailPatterns: ["N###JB", "N###JT"], amenities: ["Free high-speed Wi-Fi", "Seat-back screens", "Free snacks and drinks", "Extra legroom in economy"], longHaul: false, focus: true, intlCountries: ["MX", "CR", "CO", "PE", "DO", "JM", "BS", "CA", "GB", "FR", "NL", "IE"] },
+  { code: "AS", name: "Alaska Airlines", country: "US", region: "NA", hubs: ["SEA", "PDX", "SFO", "LAX", "SAN", "ANC"], fleet: ["737-800", "737-900ER"], tailPatterns: ["N###AS", "N###AK"], amenities: ["Free messaging", "Streaming entertainment", "Power at most seats", "Free snacks"], longHaul: false, focus: true, intlCountries: ["MX", "CA", "CR", "BS"] },
   { code: "WN", name: "Southwest Airlines", country: "US", region: "NA", hubs: ["DAL", "HOU", "MDW", "BWI", "DEN", "LAS", "PHX", "MCO", "BNA", "OAK", "SAN"], fleet: ["737-800"], tailPatterns: ["N8###W", "N8###Q", "N8###Z"], amenities: ["Free messaging", "Streaming entertainment", "Free snacks and drinks", "Power at most seats"], longHaul: false, domesticOnly: true, notServed: ["JFK", "EWR", "IAD", "DFW", "ANC"] },
   { code: "HA", name: "Hawaiian Airlines", country: "US", region: "NA", hubs: ["HNL", "OGG"], fleet: ["A321neo", "787-9"], tailPatterns: ["N###HA"], amenities: ["Free Wi-Fi", "Complimentary meals", "Seat-back screens on long flights", "Power at every seat"], longHaul: true, hawaiiOnly: true },
   // ── Canada ──
@@ -117,6 +119,7 @@ const REGION_BY_COUNTRY: Record<string, Region> = {
   DK: "EU", SE: "EU", NO: "EU", FI: "EU", IS: "EU", ES: "EU", PT: "EU", IT: "EU", GR: "EU", TR: "EU",
   AE: "ME", QA: "ME", IL: "ME", JO: "ME",
   JP: "AS", KR: "AS", CN: "AS", HK: "AS", TW: "AS", PH: "AS", VN: "AS", TH: "AS", MY: "AS", SG: "AS", ID: "AS", IN: "AS",
+  PK: "AS", BD: "AS", LK: "AS", NP: "AS",
   AU: "OC", NZ: "OC",
   ZA: "AF", EG: "AF", ET: "AF", KE: "AF", NG: "AF", GH: "AF", MA: "AF",
 };
@@ -154,50 +157,86 @@ export function candidateAirlines(
   const touchesHawaii = HAWAII.has(origin.code) || HAWAII.has(destination.code);
   const farRoute = oceanic || distanceMi > 2600;
 
-  const canFly = (a: AirlineProfile) => {
+  const canFly = (a: AirlineProfile, checkRange: boolean) => {
     if (a.hawaiiOnly && !touchesHawaii) return false;
     if (a.domesticOnly && !(domestic && operatesDomesticallyIn(a, mo))) return false;
     if (farRoute && !a.longHaul) return false;
     if (a.minRouteMi && distanceMi < a.minRouteMi) return false;
     if (a.notServed && (a.notServed.includes(origin.code) || a.notServed.includes(destination.code))) return false;
-    if (distanceMi > 6500 && fleetMaxRangeMi(a.fleet) < distanceMi) return false;
+    const intl = a.intlCountries;
+    if (!domestic && intl) {
+      const away = [mo, md].filter((c) => !operatesDomesticallyIn(a, c));
+      if (away.some((c) => !intl.includes(c))) return false;
+    }
+    if (checkRange && distanceMi > 6500 && fleetMaxRangeMi(a.fleet) < distanceMi) return false;
     return true;
   };
 
-  const weights: Array<[AirlineProfile, number]> = [];
-  for (const a of AIRLINES) {
-    if (!canFly(a)) continue;
-    const hubs = (a.hubs.includes(origin.code) ? 1 : 0) + (a.hubs.includes(destination.code) ? 1 : 0);
-    const hubBonus = hubs * 3;
-    const focusPenalty = a.focus && hubs === 0 ? 0.3 : 1;
-    if (domestic) {
-      if (operatesDomesticallyIn(a, mo)) weights.push([a, (1 + hubBonus) * focusPenalty]);
-    } else if (operatesDomesticallyIn(a, mo) || operatesDomesticallyIn(a, md)) {
-      weights.push([a, (2 + hubBonus) * focusPenalty]);
+  // Three tiers: carriers from either endpoint's country (hubs weighted up), then
+  // big network carriers from either region, then any big network carrier.
+  const pick = (checkRange: boolean): Array<[AirlineProfile, number]> | null => {
+    const weights: Array<[AirlineProfile, number]> = [];
+    for (const a of AIRLINES) {
+      if (!canFly(a, checkRange)) continue;
+      const hubs = (a.hubs.includes(origin.code) ? 1 : 0) + (a.hubs.includes(destination.code) ? 1 : 0);
+      if (a.focus && hubs === 0) continue;
+      const hubBonus = hubs * 3;
+      if (domestic) {
+        if (operatesDomesticallyIn(a, mo)) weights.push([a, 1 + hubBonus]);
+      } else if (operatesDomesticallyIn(a, mo) || operatesDomesticallyIn(a, md)) {
+        weights.push([a, 2 + hubBonus]);
+      }
     }
-  }
-  if (weights.length > 0) return weights;
+    if (weights.length > 0) return weights;
 
-  const ro = regionOf(origin.country);
-  const rd = regionOf(destination.country);
-  const regional = AIRLINES.filter((a) => a.hubCarrier && canFly(a) && (a.region === ro || a.region === rd));
-  if (regional.length > 0) return regional.map((a) => [a, 1]);
+    const ro = regionOf(origin.country);
+    const rd = regionOf(destination.country);
+    const regional = AIRLINES.filter((a) => a.hubCarrier && canFly(a, checkRange) && (a.region === ro || a.region === rd));
+    if (regional.length > 0) return regional.map((a) => [a, 1]);
 
-  const global = AIRLINES.filter((a) => a.hubCarrier && canFly(a));
-  return (global.length > 0 ? global : AIRLINES.filter((a) => a.longHaul)).map((a) => [a, 1]);
+    const global = AIRLINES.filter((a) => a.hubCarrier && canFly(a, checkRange));
+    return global.length > 0 ? global.map((a) => [a, 1]) : null;
+  };
+
+  // Beyond every catalogued fleet's range (> 9,700 mi, e.g. JFK–SYD) the endpoint
+  // countries' flag carriers on their longest-legged jets are still the believable answer.
+  return (
+    pick(true) ??
+    pick(false) ??
+    AIRLINES.filter((a) => a.longHaul && a.hubCarrier && !a.hawaiiOnly).map((a): [AirlineProfile, number] => [a, 1])
+  );
+}
+
+/** Numbers retired after well-known events; anxious flyers recognise them. Only numbers the draw ranges can reach. */
+export const RETIRED_FLIGHT_NUMBERS: Record<string, readonly number[]> = {
+  UA: [93, 175, 232, 328, 585, 811], AA: [11, 77, 191, 587, 965, 1420], DL: [89, 191, 1141], AS: [261, 1282],
+  WN: [1248, 1380], B6: [292], AC: [143, 624, 797], BA: [9, 38, 2276], AF: [296, 358, 447], KL: [867],
+  LH: [540, 2904], SK: [686, 751], TK: [981, 1951], EK: [521], SQ: [6, 321], JL: [123, 350, 516], KE: [7, 801],
+  MH: [17, 370, 653], QF: [1, 32, 72], NZ: [901], AV: [52, 203], MS: [804, 990], ET: [302, 409, 961], KQ: [507],
+  SA: [295], GA: [152, 200], CA: [129], TG: [311], PR: [434], AM: [498], CM: [201], IB: [610], AT: [630],
+};
+
+export function isRetiredFlightNumber(flightNumber: string): boolean {
+  const [code, num] = flightNumber.split(" ");
+  return (RETIRED_FLIGHT_NUMBERS[code] ?? []).includes(Number(num));
 }
 
 /** "DL 1423": long-haul flights carry short numbers, domestic ones 3–4 digits. */
 export function makeFlightNumber(rng: Rng, airline: Airline, longHaul: boolean): string {
-  const n = longHaul
-    ? rng.weighted<number>([
-        [rng.int(1, 99), 50],
-        [rng.int(100, 999), 50],
-      ])
-    : rng.weighted<number>([
-        [rng.int(100, 999), 45],
-        [rng.int(1000, 2999), 55],
-      ]);
+  const draw = () =>
+    longHaul
+      ? rng.weighted<number>([
+          [rng.int(1, 99), 50],
+          [rng.int(100, 999), 50],
+        ])
+      : rng.weighted<number>([
+          [rng.int(100, 999), 45],
+          [rng.int(1000, 2999), 55],
+        ]);
+  const retired = RETIRED_FLIGHT_NUMBERS[airline.code] ?? [];
+  let n = draw();
+  for (let tries = 0; retired.includes(n) && tries < 8; tries++) n = draw();
+  while (retired.includes(n)) n++; // deterministic fallback; never loops forever
   return `${airline.code} ${n}`;
 }
 

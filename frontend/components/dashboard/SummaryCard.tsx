@@ -111,7 +111,13 @@ export function SummaryCard({ flight, ctx, className }: SummaryCardProps) {
       </p>
 
       <div className="mt-4 border-t border-line/70 pt-4">
-        <div className="flex gap-0.5" role="img" aria-label="Expected intensity by flight phase">
+        <div
+          className="flex gap-0.5"
+          role="img"
+          aria-label={`Expected intensity by flight phase: ${turbulence.phases
+            .map((p) => `${PHASE_LABEL[p.phase]} ${INTENSITY[p.intensity].label.toLowerCase()}`)
+            .join(", ")}`}
+        >
           {turbulence.phases.map((p) => (
             <span
               key={p.phase}

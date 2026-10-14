@@ -211,16 +211,18 @@ function byVariant<T>(records: readonly SessionRecord[], compute: (subset: Sessi
 
 // ── Per-session helpers (also used by the table and the CSV) ───────────────
 
+/** A usable rating: a finite number (guards against unvalidated local/file records). */
+const isRating = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
 /** Post minus pre for one measure; null unless both answers exist. */
 export function ratingChange(record: SessionRecord, measure: Measure): number | null {
   const pre = record.pre[measure];
   const post = record.post[measure];
-  if (pre === null || post === null) return null;
-  return post - pre;
+  return isRating(pre) && isRating(post) ? post - pre : null;
 }
 
 export function hasPairedRatings(record: SessionRecord, measure: Measure): boolean {
-  return record.pre[measure] !== null && record.post[measure] !== null;
+  return ratingChange(record, measure) !== null;
 }
 
 /** Sections the participant's dashboard actually displayed (falls back to the variant's list). */

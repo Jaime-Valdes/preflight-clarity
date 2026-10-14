@@ -83,7 +83,8 @@ export function Dashboard(props: DashboardProps) {
 function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, today }: DashboardProps & { today: string }) {
   const sectionIds = VARIANT_SECTIONS[variant];
   const [tracker] = useState(() => new DashboardTracker(sectionIds, initialMetrics));
-  const [openIds, setOpenIds] = useState<ReadonlySet<SectionId>>(() => new Set());
+  // Starts from the sections that were open when the metrics were last saved (resume after a reload).
+  const [openIds, setOpenIds] = useState<ReadonlySet<SectionId>>(() => new Set(tracker.openSections()));
   const [done, setDone] = useState(false);
   const finishedRef = useRef(false);
   const checkpointRef = useRef(onCheckpoint);
@@ -106,22 +107,45 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
     return () => tracker.pause();
   }, [tracker]);
 
-  // Deepest point of the page seen so far, as a share of the whole page.
+  // Scroll depth is kept in pixels and only turned into a percentage when a
+  // snapshot is saved, so the page growing as sections open re-bases it instead
+  // of latching a value measured against the collapsed page.
+  const scrollPx = useRef({ maxTop: 0, scrollable: 0 });
+  const measureScroll = useCallback(() => {
+    const top = window.scrollY;
+    const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+    const s = scrollPx.current;
+    if (Number.isFinite(top)) s.maxTop = Math.max(s.maxTop, top, 0);
+    // The tallest layout seen: collapsing sections afterwards can't push the share up.
+    if (Number.isFinite(scrollable)) s.scrollable = Math.max(s.scrollable, scrollable, 0);
+  }, []);
+  /** 0 = never scrolled (or nothing to scroll), 100 = reached the bottom of the tallest page laid out. */
+  const reportScroll = useCallback(() => {
+    measureScroll();
+    const { maxTop, scrollable } = scrollPx.current;
+    tracker.recordScroll(scrollable > 0 ? (Math.min(maxTop, scrollable) / scrollable) * 100 : 0);
+  }, [measureScroll, tracker]);
+
   useEffect(() => {
-    const record = () => {
-      const total = document.documentElement.scrollHeight;
-      if (total <= 0) return;
-      tracker.recordScroll(((window.scrollY + window.innerHeight) / total) * 100);
+    measureScroll();
+    window.addEventListener("scroll", measureScroll, { passive: true });
+    window.addEventListener("resize", measureScroll);
+    // Catches the 300 ms expand transition and late chart layout without hooking each toggle.
+    const observer = new ResizeObserver(measureScroll);
+    observer.observe(document.body);
+    return () => {
+      window.removeEventListener("scroll", measureScroll);
+      window.removeEventListener("resize", measureScroll);
+      observer.disconnect();
     };
-    record();
-    window.addEventListener("scroll", record, { passive: true });
-    return () => window.removeEventListener("scroll", record);
-  }, [tracker]);
+  }, [measureScroll]);
 
   // Checkpoints: when the page is hidden or left, and every 20 s while visible.
   useEffect(() => {
     const send = () => {
-      if (!finishedRef.current) checkpointRef.current?.(tracker.snapshot());
+      if (finishedRef.current) return;
+      reportScroll();
+      checkpointRef.current?.(tracker.snapshot());
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") send();
@@ -137,7 +161,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
       window.removeEventListener("pagehide", send);
       window.clearInterval(timer);
     };
-  }, [tracker]);
+  }, [reportScroll, tracker]);
 
   const toggleSection = useCallback(
     (id: SectionId, next: boolean) => {
@@ -168,6 +192,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
     if (finishedRef.current) return;
     finishedRef.current = true;
     setDone(true);
+    reportScroll();
     onDone(tracker.finish());
   };
 
@@ -180,6 +205,9 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
           </Button>
         }
       >
+        <h1 tabIndex={-1} data-focus-start className="sr-only outline-none">
+          Your flight briefing
+        </h1>
         <DashboardHeader flight={flight} daysUntil={daysUntil} className="animate-fade-up" />
         <SummaryCard flight={flight} ctx={ctx} className="mt-4 animate-fade-up [animation-delay:60ms]" />
 
@@ -215,7 +243,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
           })}
         </div>
 
-        <p className="mt-7 text-center text-[11px] text-ink-400">Prototype · all flight data is illustrative</p>
+        <p className="mt-7 text-center text-[11px] text-ink-500">Prototype · all flight data is illustrative</p>
       </Screen>
     </TrackerContext.Provider>
   );

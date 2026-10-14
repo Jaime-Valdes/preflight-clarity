@@ -22,6 +22,10 @@ const KEEPALIVE_LIMIT_BYTES = 60_000;
 type SaveResult = "remote" | "local";
 
 let queue: Promise<unknown> = Promise.resolve();
+/** Set once /api/responses answers with an HTML 404: the deploy has no backend, so later saves stay local. */
+let backendMissing = false;
+/** Bound on one network save; a stalled request must not hold back every later save. */
+const REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Save (upsert) a session record: always mirrors it to localStorage, then
@@ -39,6 +43,7 @@ export function saveSession(record: SessionRecord, opts?: { beacon?: boolean }):
   }
 
   mirrorToLocal(record);
+  if (backendMissing) return Promise.resolve("local");
 
   if (opts?.beacon) {
     if (sendBeacon(json)) return Promise.resolve("remote");
@@ -71,18 +76,50 @@ function sendBeacon(json: string): boolean {
   }
 }
 
+/** A 429 is retried this many times, honouring Retry-After (capped) or a short backoff. */
+const RATE_LIMIT_RETRIES = 2;
+const RETRY_BASE_MS = 1_000;
+const RETRY_MAX_MS = 10_000;
+
 async function postRecord(json: string): Promise<SaveResult> {
-  try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: json,
-      keepalive: byteLength(json) <= KEEPALIVE_LIMIT_BYTES,
-    });
-    return res.ok ? "remote" : "local";
-  } catch {
-    return "local";
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: json,
+        keepalive: byteLength(json) <= KEEPALIVE_LIMIT_BYTES,
+        // Guarded: older Safari has no AbortSignal.timeout.
+        signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(REQUEST_TIMEOUT_MS) : undefined,
+      });
+      if (res.status === 404 && (res.headers.get("content-type") ?? "").includes("text/html")) backendMissing = true;
+      if (res.status === 429 && attempt < RATE_LIMIT_RETRIES) {
+        await sleep(retryDelayMs(res.headers.get("retry-after"), attempt));
+        continue;
+      }
+      return res.ok ? "remote" : "local";
+    } catch {
+      return "local";
+    }
   }
+}
+
+/** Retry-After in seconds (or an HTTP date), else exponential backoff; never longer than RETRY_MAX_MS. */
+function retryDelayMs(retryAfter: string | null, attempt: number): number {
+  let ms = RETRY_BASE_MS * 2 ** attempt;
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) ms = seconds * 1000;
+    else {
+      const at = Date.parse(retryAfter);
+      if (Number.isFinite(at)) ms = Math.max(0, at - Date.now());
+    }
+  }
+  return Math.min(RETRY_MAX_MS, ms);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function byteLength(text: string): number {

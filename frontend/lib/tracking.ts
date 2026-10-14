@@ -5,6 +5,22 @@ import type { DashboardEvent, DashboardMetrics, SectionId, SectionStats } from "
 export const MAX_EVENTS = 300;
 
 /**
+ * Events that mark the shape of the timeline (opens/closes, visibility,
+ * the alert toggle, resume/done). Once the log is full these evict the
+ * oldest detail event instead of being dropped, so a very active participant
+ * still gets a complete timeline (only a log of 300 lifecycle events can drop one).
+ */
+const LIFECYCLE: ReadonlySet<string> = new Set([
+  "section_open",
+  "section_close",
+  "page_hidden",
+  "page_visible",
+  "alert_toggle",
+  "dashboard_resumed",
+  "dashboard_done",
+]);
+
+/**
  * Measures how a participant uses the dashboard: total and visible time,
  * which sections they expand and for how long, the alert toggle, scroll depth
  * and small interaction events.
@@ -28,6 +44,8 @@ export class DashboardTracker {
   private events: DashboardEvent[] = [];
   private alert = { tapped: false, taps: 0, finalOn: false };
   private maxScrollPct = 0;
+  /** Scroll share restored across a reload; a floor for later reports. */
+  private restoredScrollPct = 0;
   private resumed = false;
 
   private startedAt: string | null = null;
@@ -59,9 +77,18 @@ export class DashboardTracker {
       this.events = initial.events.slice(0, MAX_EVENTS);
       this.alert = { ...initial.alert };
       this.maxScrollPct = initial.maxScrollPct;
+      this.restoredScrollPct = initial.maxScrollPct;
       for (const id of this.sectionOrder) {
         const prev = initial.sections[id];
         if (prev) this.sections[id] = { ...prev };
+      }
+      // Rebuild which sections were expanded when the metrics were last saved,
+      // without pushing events or touching counters: the UI starts from them,
+      // and the pre-reload section_open is matched by a later section_close.
+      for (const e of this.events) {
+        if (!e.section || !this.sections[e.section]) continue;
+        if (e.type === "section_open") this.open.add(e.section);
+        else if (e.type === "section_close") this.open.delete(e.section);
       }
     }
   }
@@ -128,9 +155,19 @@ export class DashboardTracker {
     return { ...this.alert };
   }
 
-  /** Deepest scroll position reached, 0–100. */
+  /** Sections that were expanded when the metrics were last saved (restored across a reload), so the UI can start from them. */
+  openSections(): SectionId[] {
+    return this.sectionOrder.filter((id) => this.open.has(id));
+  }
+
+  /**
+   * Deepest scroll position reached, as a share (0–100) of the scrollable
+   * height of the page as last laid out; the caller re-bases it and reports
+   * right before snapshot()/finish(). A value restored across a reload is a floor.
+   */
   recordScroll(pct: number): void {
-    if (Number.isFinite(pct)) this.maxScrollPct = Math.max(this.maxScrollPct, Math.min(100, Math.round(pct)));
+    if (this.finished || !Number.isFinite(pct)) return;
+    this.maxScrollPct = Math.max(this.restoredScrollPct, Math.min(100, Math.max(0, Math.round(pct))));
   }
 
   /** Current numbers without stopping (for checkpoint saves). */
@@ -183,7 +220,12 @@ export class DashboardTracker {
   }
 
   private pushEvent(type: string, section?: SectionId, detail?: string): void {
-    if (this.events.length >= MAX_EVENTS) return;
+    if (this.events.length >= MAX_EVENTS) {
+      if (!LIFECYCLE.has(type)) return;
+      const i = this.events.findIndex((e) => !LIFECYCLE.has(e.type));
+      if (i < 0) return;
+      this.events.splice(i, 1);
+    }
     const event: DashboardEvent = { t: this.elapsedMs(), type };
     if (section) event.section = section;
     if (detail) event.detail = detail.slice(0, 120);

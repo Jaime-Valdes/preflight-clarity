@@ -120,8 +120,9 @@
     background: var(--color-calm-100);
   }
 
+  /* breeze-500 is 3.8:1 on white and above 3:1 on the canvas (WCAG 1.4.11); breeze-400 was not. */
   :focus-visible {
-    outline: 2px solid var(--color-breeze-400);
+    outline: 2px solid var(--color-breeze-500);
     outline-offset: 2px;
   }
 

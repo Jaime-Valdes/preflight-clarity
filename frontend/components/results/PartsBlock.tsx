@@ -30,7 +30,7 @@ function DivergingRow({ row, scale }: { row: PartFeedback; scale: number }) {
       <div className="mb-1.5 sm:hidden">
         <Label row={row} />
       </div>
-      <div className="grid grid-cols-[4rem_1fr_4rem] items-center gap-2 sm:grid-cols-[minmax(0,12rem)_4rem_1fr_4rem] sm:gap-3">
+      <div className="grid grid-cols-[4rem_1fr_4rem] items-center gap-2 sm:grid-cols-[minmax(0,13rem)_4rem_1fr_4rem] sm:gap-3">
         <div className="hidden sm:block">
           <Label row={row} />
         </div>

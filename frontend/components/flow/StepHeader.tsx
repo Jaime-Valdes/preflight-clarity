@@ -65,7 +65,9 @@ export function StepHeader({ stage, eyebrow, title, sub, className }: StepHeader
       {eyebrow ? (
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-calm-700">{eyebrow}</p>
       ) : null}
-      <h1 className="mt-1.5 text-[26px] font-bold leading-[1.15] tracking-[-0.01em] text-ink-900">{title}</h1>
+      <h1 tabIndex={-1} className="mt-1.5 text-[26px] font-bold leading-[1.15] tracking-[-0.01em] text-ink-900 outline-none">
+        {title}
+      </h1>
       {sub ? <p className="mt-2.5 text-[15px] leading-relaxed text-ink-500">{sub}</p> : null}
     </header>
   );

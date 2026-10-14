@@ -1,7 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { useId, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 export interface ChoiceOption<T extends string> {
@@ -46,6 +46,28 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
   const hintId = useId();
   const { label, hint, options, columns = 1, className } = props;
   const isMulti = props.kind === "multi";
+  // Radio group: one Tab stop (the checked option, else the first) and arrow keys move + select.
+  const anyChecked = props.kind === "single" && options.some((o) => o.value === props.value);
+
+  function onRadioKeyDown(e: KeyboardEvent<HTMLButtonElement>, i: number) {
+    if (props.kind !== "single") return;
+    const n = options.length;
+    const target =
+      e.key === "ArrowDown" || e.key === "ArrowRight"
+        ? (i + 1) % n
+        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+          ? (i - 1 + n) % n
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? n - 1
+              : -1;
+    if (target < 0) return;
+    e.preventDefault();
+    props.onChange(options[target].value);
+    const sibling = e.currentTarget.parentElement?.children[target];
+    if (sibling instanceof HTMLElement) sibling.focus();
+  }
 
   function isChecked(value: T): boolean {
     return isMulti ? props.values.includes(value) : props.value === value;
@@ -82,7 +104,7 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
         aria-describedby={hint ? hintId : undefined}
         className={cn("mt-3 grid gap-2", columns === 2 ? "grid-cols-2" : "grid-cols-1")}
       >
-        {options.map((opt) => {
+        {options.map((opt, i) => {
           const checked = isChecked(opt.value);
           return (
             <button
@@ -90,6 +112,8 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
               type="button"
               role={isMulti ? "checkbox" : "radio"}
               aria-checked={checked}
+              tabIndex={isMulti ? undefined : checked || (!anyChecked && i === 0) ? 0 : -1}
+              onKeyDown={isMulti ? undefined : (e) => onRadioKeyDown(e, i)}
               onClick={() => toggle(opt.value)}
               className={cn(
                 "flex min-h-12 items-center gap-3 rounded-2xl px-4 py-2.5 text-left text-[15px] leading-snug transition-colors duration-150",

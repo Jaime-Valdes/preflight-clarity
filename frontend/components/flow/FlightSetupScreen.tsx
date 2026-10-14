@@ -1,7 +1,8 @@
 "use client";
 
 import { ArrowRight, ArrowUpDown, CalendarDays } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { resolveAirport } from "@preflight/shared/airports";
 import { addDays, daysBetween, formatLongDate, isISODate } from "@preflight/shared/dates";
 import type { FlightInput, Timeframe } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
@@ -37,13 +38,27 @@ export interface SetupErrors {
 
 export type SetupValidation = { ok: true; input: FlightInput } | { ok: false; errors: SetupErrors };
 
+/**
+ * Whether two typed endpoints are the same airport however they were written
+ * ("JFK" vs "New York", "lhr" vs "Heathrow"). Unknown places compare by city
+ * ("Springfield" vs "Springfield, IL" match; "Springfield" vs "Sprague" share
+ * a synthetic code but differ).
+ */
+function sameEndpoint(origin: string, destination: string): boolean {
+  if (origin.toUpperCase() === destination.toUpperCase()) return true;
+  const a = resolveAirport(origin);
+  const b = resolveAirport(destination);
+  if (a.known !== b.known) return false;
+  return a.known ? a.code === b.code : a.city.toLowerCase() === b.city.toLowerCase();
+}
+
 export function validateSetup(draft: FlightInput, today: string): SetupValidation {
   const origin = draft.origin.trim();
   const destination = draft.destination.trim();
   const errors: SetupErrors = {};
   if (!origin) errors.origin = "Where does the flight leave from?";
   if (!destination) errors.destination = "Where is the flight going?";
-  else if (origin && origin.toUpperCase() === destination.toUpperCase()) {
+  else if (origin && sameEndpoint(origin, destination)) {
     errors.destination = "Choose a destination that's different from the origin.";
   }
   if (!draft.date) errors.date = "When is the flight?";
@@ -66,6 +81,11 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
   const dateId = useId();
   const dateHintId = useId();
   const [attempted, setAttempted] = useState(false);
+  /** performance.now() at mount: a tap within ~400 ms is the tail of a double tap on the previous screen. */
+  const shownAt = useRef<number | null>(null);
+  useEffect(() => {
+    shownAt.current = performance.now();
+  }, []);
   const validation = validateSetup(draft, today);
   const errors: SetupErrors = attempted && !validation.ok ? validation.errors : {};
   const maxDate = addDays(today, MAX_DAYS_AHEAD);
@@ -73,6 +93,7 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
   const daysAway = dateValid ? daysBetween(today, draft.date) : null;
 
   function submit() {
+    if (shownAt.current !== null && performance.now() - shownAt.current < 400) return;
     if (validation.ok) {
       onContinue(validation.input);
       return;
@@ -99,7 +120,7 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
         stage={2}
         eyebrow="Your flight"
         title="Which flight should we look at?"
-        sub="Your next real flight, or any route you might take. We'll put together a briefing for it."
+        sub="The flight you just rated — your next real one, or the one you imagined. We'll put together a briefing for it."
       />
       <div className="flex flex-col gap-3">
         <Card className="animate-fade-up" style={fadeUp()}>
@@ -109,6 +130,7 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
             value={draft.origin}
             onChange={(v) => onDraftChange({ ...draft, origin: v })}
             hint={errors.origin}
+            invalid={!!errors.origin}
           />
           <AirportField
             id="setup-destination"
@@ -116,13 +138,14 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
             value={draft.destination}
             onChange={(v) => onDraftChange({ ...draft, destination: v })}
             hint={errors.destination}
+            invalid={!!errors.destination}
             className="mt-4"
             labelAction={
               <button
                 type="button"
                 onClick={swap}
                 aria-label="Swap origin and destination"
-                className="-my-2 flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-ink-500 transition-colors hover:bg-line/50 hover:text-ink-900"
+                className="-my-2 flex h-11 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-ink-500 transition-colors hover:bg-line/50 hover:text-ink-900"
               >
                 <ArrowUpDown aria-hidden className="size-4" />
                 Swap
@@ -145,8 +168,9 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
               max={maxDate}
               onChange={(e) => onDraftChange({ ...draft, date: e.target.value })}
               aria-describedby={dateHintId}
+              aria-invalid={errors.date ? true : undefined}
               className={cn(
-                "relative h-12 w-full appearance-none rounded-2xl bg-surface pl-11 pr-4 text-left text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong focus:ring-2 focus:ring-breeze-400 focus:outline-none",
+                "relative h-12 w-full appearance-none rounded-2xl bg-surface pl-11 pr-4 text-left text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong focus:ring-2 focus:ring-breeze-500 focus:outline-none",
                 "[&::-webkit-date-and-time-value]:text-left",
                 // Chrome/Android: stretch the invisible native picker trigger over the whole field so a tap anywhere opens it.
                 "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0",
@@ -154,9 +178,10 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
             />
           </div>
           <p id={dateHintId} className={cn("mt-1.5 text-[13px] leading-snug", errors.date ? "text-sand-700" : "text-ink-500")}>
-            {errors.date
-              ? errors.date
-              : daysAway !== null
+            {errors.date ? (
+              // A fresh node, so the error is announced when it appears.
+              <span role="alert">{errors.date}</span>
+            ) : daysAway !== null
                 ? `${formatLongDate(draft.date)} · ${daysAway === 0 ? "today" : daysAway === 1 ? "tomorrow" : `in ${daysAway} days`}`
                 : "Any date in the next 12 months."}
           </p>

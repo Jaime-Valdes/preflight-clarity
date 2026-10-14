@@ -76,6 +76,42 @@ const ROWS: Row[] = [
   ["OGG", "Kahului", "Kahului Airport", "US", 20.8986, -156.4305, "Pacific/Honolulu", [23, 27, 25, 18]],
   ["ANC", "Anchorage", "Ted Stevens Anchorage International", "US", 61.1743, -149.9962, "America/Anchorage", [-9, 15, 25, 35]],
   ["SJU", "San Juan", "Luis Muñoz Marín International", "PR", 18.4394, -66.0018, "America/Puerto_Rico", [25, 28, 30, 40]],
+  // ── United States: common secondary airports ──
+  ["BUF", "Buffalo", "Buffalo Niagara International", "US", 42.9405, -78.7322, "America/New_York", [-4, 22, 40, 30]],
+  ["ROC", "Rochester", "Frederick Douglass Greater Rochester International", "US", 43.1189, -77.6724, "America/New_York", [-4, 22, 42, 30]],
+  ["SYR", "Syracuse", "Syracuse Hancock International", "US", 43.1112, -76.1063, "America/New_York", [-5, 22, 42, 30]],
+  ["ALB", "Albany", "Albany International", "US", 42.7483, -73.8017, "America/New_York", [-4, 23, 35, 32]],
+  ["ISP", "Islip", "Long Island MacArthur", "US", 40.7952, -73.1002, "America/New_York", [0, 24, 30, 28]],
+  ["HPN", "White Plains", "Westchester County", "US", 41.067, -73.7076, "America/New_York", [-1, 24, 30, 30]],
+  ["BDL", "Hartford", "Bradley International", "US", 41.9389, -72.6832, "America/New_York", [-3, 23, 32, 30]],
+  ["PVD", "Providence", "Rhode Island T. F. Green International", "US", 41.7267, -71.4325, "America/New_York", [-1, 23, 32, 28]],
+  ["BTV", "Burlington", "Burlington International", "US", 44.4719, -73.1533, "America/New_York", [-8, 21, 38, 32]],
+  ["PWM", "Portland", "Portland International Jetport", "US", 43.6462, -70.3093, "America/New_York", [-5, 20, 35, 28]],
+  ["MHT", "Manchester", "Manchester–Boston Regional", "US", 42.9326, -71.4357, "America/New_York", [-4, 22, 32, 30]],
+  ["RIC", "Richmond", "Richmond International", "US", 37.5052, -77.3197, "America/New_York", [3, 26, 28, 32]],
+  ["ORF", "Norfolk", "Norfolk International", "US", 36.8946, -76.2012, "America/New_York", [5, 26, 28, 35]],
+  ["CHS", "Charleston", "Charleston International", "US", 32.8986, -80.0405, "America/New_York", [9, 28, 28, 42]],
+  ["SAV", "Savannah", "Savannah/Hilton Head International", "US", 32.1276, -81.2021, "America/New_York", [10, 28, 28, 42]],
+  ["JAX", "Jacksonville", "Jacksonville International", "US", 30.4941, -81.6879, "America/New_York", [12, 28, 25, 45]],
+  ["PBI", "West Palm Beach", "Palm Beach International", "US", 26.6832, -80.0956, "America/New_York", [19, 28, 18, 50]],
+  ["RSW", "Fort Myers", "Southwest Florida International", "US", 26.5362, -81.7552, "America/New_York", [18, 28, 15, 55]],
+  ["SRQ", "Sarasota", "Sarasota–Bradenton International", "US", 27.3954, -82.5544, "America/New_York", [16, 28, 15, 55]],
+  ["MYR", "Myrtle Beach", "Myrtle Beach International", "US", 33.6797, -78.9283, "America/New_York", [8, 27, 28, 40]],
+  ["GSP", "Greenville", "Greenville–Spartanburg International", "US", 34.8957, -82.2189, "America/New_York", [5, 26, 30, 35]],
+  ["TYS", "Knoxville", "McGhee Tyson", "US", 35.811, -83.994, "America/New_York", [4, 26, 32, 35]],
+  ["SDF", "Louisville", "Louisville Muhammad Ali International", "US", 38.1744, -85.736, "America/Kentucky/Louisville", [1, 26, 32, 30]],
+  ["MEM", "Memphis", "Memphis International", "US", 35.0421, -89.9792, "America/Chicago", [6, 28, 30, 28]],
+  ["BHM", "Birmingham", "Birmingham–Shuttlesworth International", "US", 33.5629, -86.7535, "America/Chicago", [7, 27, 32, 35]],
+  ["DSM", "Des Moines", "Des Moines International", "US", 41.534, -93.6631, "America/Chicago", [-6, 24, 22, 28]],
+  ["OMA", "Omaha", "Eppley Airfield", "US", 41.3032, -95.8941, "America/Chicago", [-5, 25, 18, 28]],
+  ["OKC", "Oklahoma City", "Will Rogers World Airport", "US", 35.3931, -97.6007, "America/Chicago", [4, 28, 15, 20]],
+  ["TUL", "Tulsa", "Tulsa International", "US", 36.1984, -95.8881, "America/Chicago", [3, 28, 18, 22]],
+  ["ELP", "El Paso", "El Paso International", "US", 31.8072, -106.3776, "America/Denver", [8, 29, 8, 20]],
+  ["ABQ", "Albuquerque", "Albuquerque International Sunport", "US", 35.0402, -106.6091, "America/Denver", [3, 26, 10, 22]],
+  ["TUS", "Tucson", "Tucson International", "US", 32.1161, -110.9410, "America/Phoenix", [12, 31, 12, 25]],
+  ["RNO", "Reno", "Reno–Tahoe International", "US", 39.4991, -119.7681, "America/Los_Angeles", [2, 24, 18, 5]],
+  ["BOI", "Boise", "Boise Airport", "US", 43.5644, -116.2228, "America/Boise", [-1, 25, 28, 5]],
+  ["GEG", "Spokane", "Spokane International", "US", 47.6199, -117.5337, "America/Los_Angeles", [-2, 21, 40, 8]],
   // ── Canada ──
   ["YYZ", "Toronto", "Toronto Pearson International", "CA", 43.6777, -79.6248, "America/Toronto", [-5, 23, 32, 30]],
   ["YVR", "Vancouver", "Vancouver International", "CA", 49.1967, -123.1815, "America/Vancouver", [4, 18, 55, 10]],
@@ -154,6 +190,20 @@ const ROWS: Row[] = [
   ["DEL", "Delhi", "Indira Gandhi International", "IN", 28.5562, 77.1, "Asia/Kolkata", [14, 31, 8, 55]],
   ["BOM", "Mumbai", "Chhatrapati Shivaji Maharaj International", "IN", 19.0896, 72.8656, "Asia/Kolkata", [24, 28, 1, 85]],
   ["BLR", "Bengaluru", "Kempegowda International", "IN", 13.1989, 77.7068, "Asia/Kolkata", [22, 24, 2, 40]],
+  ["HYD", "Hyderabad", "Rajiv Gandhi International", "IN", 17.2403, 78.4294, "Asia/Kolkata", [22, 27, 2, 45]],
+  ["MAA", "Chennai", "Chennai International", "IN", 12.9941, 80.1709, "Asia/Kolkata", [25, 31, 10, 30]],
+  ["CCU", "Kolkata", "Netaji Subhas Chandra Bose International", "IN", 22.6547, 88.4467, "Asia/Kolkata", [20, 29, 5, 65]],
+  ["AMD", "Ahmedabad", "Sardar Vallabhbhai Patel International", "IN", 23.0772, 72.6347, "Asia/Kolkata", [20, 29, 1, 55]],
+  ["LHE", "Lahore", "Allama Iqbal International", "PK", 31.5216, 74.4036, "Asia/Karachi", [12, 32, 10, 40]],
+  ["KHI", "Karachi", "Jinnah International", "PK", 24.9065, 67.1608, "Asia/Karachi", [19, 31, 3, 25]],
+  ["DAC", "Dhaka", "Hazrat Shahjalal International", "BD", 23.8433, 90.3978, "Asia/Dhaka", [19, 29, 3, 70]],
+  ["CMB", "Colombo", "Bandaranaike International", "LK", 7.1808, 79.8841, "Asia/Colombo", [27, 28, 25, 45]],
+  ["KTM", "Kathmandu", "Tribhuvan International", "NP", 27.6966, 85.3591, "Asia/Kathmandu", [10, 24, 5, 70]],
+  ["CAN", "Guangzhou", "Guangzhou Baiyun International", "CN", 23.3924, 113.2988, "Asia/Shanghai", [14, 29, 20, 55]],
+  ["SZX", "Shenzhen", "Shenzhen Bao'an International", "CN", 22.6393, 113.8107, "Asia/Shanghai", [16, 29, 18, 55]],
+  ["CTU", "Chengdu", "Chengdu Tianfu International", "CN", 30.3125, 104.4414, "Asia/Shanghai", [6, 26, 20, 50]],
+  ["HAN", "Hanoi", "Noi Bai International", "VN", 21.2212, 105.8072, "Asia/Ho_Chi_Minh", [17, 29, 20, 60]],
+  ["PUS", "Busan", "Gimhae International", "KR", 35.1795, 128.9382, "Asia/Seoul", [3, 25, 12, 45]],
   // ── Oceania ──
   ["SYD", "Sydney", "Sydney Kingsford Smith", "AU", -33.9399, 151.1753, "Australia/Sydney", [23, 13, 35, 25]],
   ["MEL", "Melbourne", "Melbourne Airport", "AU", -37.669, 144.841, "Australia/Melbourne", [21, 10, 20, 35]],
@@ -246,6 +296,13 @@ const ALIASES: Record<string, string[]> = {
   PEK: ["peking"],
   SGN: ["saigon", "ho chi minh"],
   BOM: ["bombay"],
+  MAA: ["madras"],
+  CCU: ["calcutta"],
+  CAN: ["canton"],
+  PBI: ["palm beach"],
+  RSW: ["ft myers", "ft. myers"],
+  MHT: ["manchester nh", "manchester new hampshire"],
+  PWM: ["portland maine", "portland me"],
   BLR: ["bangalore"],
   DEL: ["new delhi"],
   DPS: ["denpasar", "bali"],
@@ -313,6 +370,10 @@ const COUNTRY_NAMES: Record<string, string> = {
   SG: "Singapore",
   ID: "Indonesia",
   IN: "India",
+  PK: "Pakistan",
+  BD: "Bangladesh",
+  LK: "Sri Lanka",
+  NP: "Nepal",
   AU: "Australia",
   NZ: "New Zealand",
   ZA: "South Africa",
@@ -322,6 +383,46 @@ const COUNTRY_NAMES: Record<string, string> = {
   NG: "Nigeria",
   GH: "Ghana",
   MA: "Morocco",
+};
+
+
+/** US state (or Canadian province) of each North American catalog airport, for "City, State" input. */
+const AIRPORT_STATE: Record<string, string> = {
+  JFK: "NY", LGA: "NY", EWR: "NJ", BOS: "MA", PHL: "PA", DCA: "DC", IAD: "VA", BWI: "MD", ATL: "GA", CLT: "NC", RDU: "NC",
+  MIA: "FL", FLL: "FL", MCO: "FL", TPA: "FL", BNA: "TN", ORD: "IL", MDW: "IL", DTW: "MI", MSP: "MN", STL: "MO", MCI: "MO",
+  CLE: "OH", PIT: "PA", CVG: "KY", IND: "IN", CMH: "OH", MKE: "WI", DFW: "TX", DAL: "TX", IAH: "TX", HOU: "TX", AUS: "TX",
+  SAT: "TX", MSY: "LA", DEN: "CO", SLC: "UT", PHX: "AZ", LAS: "NV", LAX: "CA", SAN: "CA", SFO: "CA", SJC: "CA", OAK: "CA",
+  SMF: "CA", SEA: "WA", PDX: "OR", HNL: "HI", OGG: "HI", ANC: "AK", SJU: "PR",
+  BUF: "NY", ROC: "NY", SYR: "NY", ALB: "NY", ISP: "NY", HPN: "NY", BDL: "CT", PVD: "RI", BTV: "VT", PWM: "ME", MHT: "NH",
+  RIC: "VA", ORF: "VA", CHS: "SC", SAV: "GA", JAX: "FL", PBI: "FL", RSW: "FL", SRQ: "FL", MYR: "SC", GSP: "SC", TYS: "TN",
+  SDF: "KY", MEM: "TN", BHM: "AL", DSM: "IA", OMA: "NE", OKC: "OK", TUL: "OK", ELP: "TX", ABQ: "NM", TUS: "AZ", RNO: "NV",
+  BOI: "ID", GEG: "WA",
+  YYZ: "ON", YVR: "BC", YUL: "QC", YYC: "AB",
+};
+
+/** State / province names and abbreviations (as search keys) → abbreviation. */
+const STATE_KEYS: Record<string, string> = {};
+for (const [abbr, name] of [
+  ["AL", "Alabama"], ["AK", "Alaska"], ["AZ", "Arizona"], ["AR", "Arkansas"], ["CA", "California"], ["CO", "Colorado"],
+  ["CT", "Connecticut"], ["DE", "Delaware"], ["FL", "Florida"], ["GA", "Georgia"], ["HI", "Hawaii"], ["ID", "Idaho"],
+  ["IL", "Illinois"], ["IN", "Indiana"], ["IA", "Iowa"], ["KS", "Kansas"], ["KY", "Kentucky"], ["LA", "Louisiana"],
+  ["ME", "Maine"], ["MD", "Maryland"], ["MA", "Massachusetts"], ["MI", "Michigan"], ["MN", "Minnesota"], ["MS", "Mississippi"],
+  ["MO", "Missouri"], ["MT", "Montana"], ["NE", "Nebraska"], ["NV", "Nevada"], ["NH", "New Hampshire"], ["NJ", "New Jersey"],
+  ["NM", "New Mexico"], ["NY", "New York"], ["NC", "North Carolina"], ["ND", "North Dakota"], ["OH", "Ohio"], ["OK", "Oklahoma"],
+  ["OR", "Oregon"], ["PA", "Pennsylvania"], ["RI", "Rhode Island"], ["SC", "South Carolina"], ["SD", "South Dakota"],
+  ["TN", "Tennessee"], ["TX", "Texas"], ["UT", "Utah"], ["VT", "Vermont"], ["VA", "Virginia"], ["WA", "Washington"],
+  ["WV", "West Virginia"], ["WI", "Wisconsin"], ["WY", "Wyoming"], ["DC", "District of Columbia"], ["PR", "Puerto Rico"],
+  ["ON", "Ontario"], ["BC", "British Columbia"], ["QC", "Quebec"], ["AB", "Alberta"], ["MB", "Manitoba"], ["SK", "Saskatchewan"],
+  ["NS", "Nova Scotia"], ["NB", "New Brunswick"], ["NL", "Newfoundland"],
+] as const) {
+  STATE_KEYS[abbr.toLowerCase()] = abbr;
+  STATE_KEYS[searchKey(name)] = abbr;
+}
+
+/** Extra ways people write a country after a comma. */
+const COUNTRY_ALIASES: Record<string, string> = {
+  usa: "US", us: "US", "united states of america": "US", america: "US", uk: "GB", england: "GB", scotland: "GB", britain: "GB",
+  "great britain": "GB", holland: "NL", uae: "AE", "czech republic": "CZ", "south korea": "KR", korea: "KR", "hong kong": "HK",
 };
 
 export function countryName(code: string): string {
@@ -338,6 +439,13 @@ export function searchKey(value: string): string {
     .replace(/[-–/]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Country name search keys and ISO codes → ISO code, for "City, Country" input. */
+const COUNTRY_KEYS: Record<string, string> = { ...COUNTRY_ALIASES };
+for (const [code, name] of Object.entries(COUNTRY_NAMES)) {
+  COUNTRY_KEYS[searchKey(name)] = code;
+  COUNTRY_KEYS[code.toLowerCase()] = code;
 }
 
 const GENERIC_NAME_WORDS = new Set(["international", "airport", "the", "de", "da", "del", "of"]);
@@ -451,6 +559,15 @@ export function titleCase(text: string): string {
     .join(" ");
 }
 
+/** Well-known real codes missing from the catalog: a synthetic airport must not borrow them. */
+const RESERVED_CODES = new Set([
+  "BUR", "JAC", "CHA", "HAR", "PEN", "GUA", "FLO", "LOU", "TAL", "BEL", "MAR", "MOS", "RIG", "PRO", "GRE", "SPO", "BIR",
+  "FOR", "LIT", "SAC", "AUG", "GRR", "MSN", "DAY", "LEX", "ICT", "COS", "SNA", "ONT", "PSP", "LGB", "SBA", "FAT", "EUG",
+  "MDT", "AVP", "ROA", "GSO", "ILM", "PNS", "TLH", "GNV", "MLB", "DAB", "VPS", "HSV", "MOB", "JAN", "LBB", "AMA", "MAF",
+  "CRP", "BRO", "MTY", "SJD", "PVR", "LIR", "SAL", "SDQ", "STI", "KIN", "AUA", "CUR", "BGI", "UVF", "POS", "GCM", "BDA",
+  "YOW", "YHZ", "YEG", "YWG", "YQB", "SXM", "ANU", "STT", "STX",
+]);
+
 function syntheticCode(city: string, preferred?: string): string {
   if (preferred && /^[A-Za-z]{3}$/.test(preferred)) return preferred.toUpperCase();
   const letters = searchKey(city).replace(/[^a-z]/g, "").toUpperCase();
@@ -458,7 +575,7 @@ function syntheticCode(city: string, preferred?: string): string {
   const candidates = [letters.slice(0, 3), letters[0] + consonants.slice(0, 2), letters.slice(0, 2) + "X", letters[0] + "XX"];
   for (const c of candidates) {
     const code = (c || "").padEnd(3, "X").slice(0, 3);
-    if (code.length === 3 && !BY_CODE.has(code)) return code;
+    if (code.length === 3 && !BY_CODE.has(code) && !RESERVED_CODES.has(code)) return code;
   }
   return "XXX";
 }
@@ -510,12 +627,29 @@ export function resolveAirport(value: string): Airport {
   const byCity = airportForCity(key);
   if (byCity) return byCity;
 
-  // "Denver, CO" / "Boise, Idaho" → try the part before the comma.
-  const beforeComma = raw.split(",")[0].trim();
-  if (beforeComma && beforeComma !== raw) {
-    const byPrefix = airportForCity(searchKey(beforeComma));
+  // "Denver, CO" / "San Jose, Costa Rica": the part after the comma must agree with the city.
+  const comma = raw.indexOf(",");
+  if (comma > 0) {
+    const beforeComma = raw.slice(0, comma).trim();
+    const suffix = searchKey(raw.slice(comma + 1));
+    const cityKey = searchKey(beforeComma);
+    const candidates = INDEX.filter((e) => e.cityKey === cityKey || e.aliases.includes(cityKey)).map((e) => e.airport);
+    const state = STATE_KEYS[suffix];
+    const country = COUNTRY_KEYS[suffix];
+    if (state) {
+      const match = candidates.find((a) => AIRPORT_STATE[a.code] === state);
+      if (match) return match;
+      return syntheticAirport(beforeComma);
+    }
+    if (country) {
+      const match = candidates.find((a) => a.country === country || (country === "US" && a.country === "PR"));
+      if (match) return match;
+      // "Paris, Texas" style mismatches are caught above; an unknown city in a known country stays synthetic.
+      return syntheticAirport(beforeComma);
+    }
+    const byPrefix = candidates[0] ?? airportForCity(cityKey);
     if (byPrefix) return byPrefix;
-    return syntheticAirport(beforeComma);
+    return syntheticAirport(beforeComma || raw);
   }
 
   return syntheticAirport(raw);

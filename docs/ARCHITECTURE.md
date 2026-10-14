@@ -18,7 +18,7 @@ npm workspaces, three packages:
 | Package | Folder | What | Runs / deploys |
 | --- | --- | --- | --- |
 | `@preflight/frontend` | `frontend/` | Next.js 16.4 app: participant flow, dashboard, team results page | `npm run dev -w frontend` → :3000 · Vercel (root dir `frontend`) |
-| `@preflight/backend` | `backend/` | Hono 4 API on Node: receives session records, stores them (Supabase / local file), serves them to the results page | `npm run dev -w backend` → :8787 · Railway or any Node host (root dir `backend`) |
+| `@preflight/backend` | `backend/` | Hono 4 API on Node: receives session records, stores them (Supabase / local file), serves them to the results page | `npm run dev -w backend` → :8787 · Railway or any Node host (root dir empty, built from the repo root: `npm run build -w backend` / `npm run start:api`; the shared workspace is not on npm) |
 | `@preflight/shared` | `shared/` | Plain TypeScript used by both: types, section registry, date helpers, forecast helpers, the fake-flight generator, record validation, stats, CSV | no build step; imported as `@preflight/shared/<module>` |
 
 Import conventions:
@@ -88,10 +88,11 @@ API (`backend/`, JSON everywhere, `Cache-Control: no-store`):
 | Endpoint | What |
 | --- | --- |
 | `GET /health` | `{ ok: true, storage: "supabase" \| "file" \| "none" }` |
-| `POST /responses` | Upsert one `SessionRecord` by `sessionId` (body: JSON as `application/json` or `text/plain`; ≤ 100 KB). `200 {ok:true, storage}`; `400` invalid; `413` too large; `503 {error:"not_configured"}` when storage is `"none"`; `500 {error:"db_error"}`. |
+| `POST /responses` | Upsert one `SessionRecord` by `sessionId` (body: JSON as `application/json` or `text/plain`; ≤ 100 KB). `200 {ok:true, storage}`; `400` invalid; `413` too large; `503 {error:"not_configured"}` when storage is `"none"`; `500 {error:"db_error"}`; `429 {error:"rate_limited"}` with `Retry-After: 60` (per IP, `RATE_LIMIT_PER_MINUTE`, default 1000). |
 | `GET /responses` | All records newest first. Needs `x-admin-key: <ADMIN_KEY>` or `?key=`; `401` otherwise. `503` when storage is `"none"`. |
 
 Storage adapter is chosen from the environment: Supabase when `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`) are set; otherwise a local JSON file when `DATA_FILE` is set (dev only — the API logs a warning); otherwise `"none"`.
+`CORS_ORIGIN` sets the allowed origin for direct browser calls (default `*`; unneeded behind the `/api/*` rewrite).
 
 ## Folder map and ownership
 
@@ -179,6 +180,18 @@ bodies log extra interactions with `useTracker()?.event(type, sectionId, detail)
 `event("seat_selected", "seat", "14C")`. The alerts toggle calls `useTracker()?.alertToggled(on)`.
 Every section body must render without crashing for any generated flight (short-haul
 narrow-body through 15-hour wide-body, any date).
+
+Tracker guarantees worth knowing when analysing `events`: the log is capped at 300 entries, but
+lifecycle events (`section_open/close`, `page_hidden/visible`, `alert_toggle`, `dashboard_resumed/done`)
+evict the oldest detail event rather than being dropped, so the timeline always has its shape. On
+resume after a reload `tracker.openSections()` returns the sections that were open at the last
+checkpoint (rebuilt from the log, no counters touched); `Dashboard` seeds its open set from it, so
+`count(section_open) == stats.opens` still holds. `maxScrollPct` is re-based by the dashboard right
+before every checkpoint (share of the page as last laid out); a restored value is only a floor.
+
+**Headings and focus.** Each screen has exactly one `<h1>` (sr-only on the dashboard) that
+`StudyFlow` focuses on screen change; `<SectionCard>` titles are `<h2>`, `BlockLabel` is `<h3>`.
+The focus ring is `breeze-500` (3.8:1 on white): use `focus:ring-breeze-500` on inputs, never `breeze-400`.
 
 ## Design system
 

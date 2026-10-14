@@ -6,7 +6,9 @@ import { responses } from "./routes/responses";
 
 export const app = new Hono();
 
-if (process.env.NODE_ENV !== "test") app.use("*", logger());
+// The admin key may arrive as ?key= (routes/responses.ts); never let it reach the host's logs.
+const redactKey = (line: string) => line.replace(/([?&]key=)[^&\s]*/gi, "$1[redacted]");
+if (process.env.NODE_ENV !== "test") app.use("*", logger((line) => console.log(redactKey(line))));
 
 // The web app normally reaches this API through its own same-origin proxy
 // (see frontend/next.config.ts), so CORS only matters for direct calls.

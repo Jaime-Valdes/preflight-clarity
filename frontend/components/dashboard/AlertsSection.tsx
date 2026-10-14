@@ -111,6 +111,7 @@ export function AlertsSection({ flight, ctx }: SectionProps) {
           A meaningful change means your smoothness score moves by 5 points or more, a bumpy stretch appears or clears,
           or your departure time or gate changes.
         </p>
+        <p>Noted here for you &mdash; nothing is sent during this study.</p>
       </div>
     </div>
   );

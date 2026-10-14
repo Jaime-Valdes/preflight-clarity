@@ -160,6 +160,23 @@ function haversineMi(a: Airport, b: Airport): number {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/** Point a fraction f (0–1) along the great circle from a to b. */
+function alongRoute(a: Airport, b: Airport, f: number): { lat: number; lon: number } {
+  const vec = (lat: number, lon: number) => {
+    const la = toRad(lat);
+    const lo = toRad(lon);
+    return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+  };
+  const p = vec(a.lat, a.lon);
+  const q = vec(b.lat, b.lon);
+  const omega = Math.acos(clamp(p[0] * q[0] + p[1] * q[1] + p[2] * q[2], -1, 1));
+  if (omega < 1e-9) return { lat: a.lat, lon: a.lon };
+  const s1 = Math.sin((1 - f) * omega) / Math.sin(omega);
+  const s2 = Math.sin(f * omega) / Math.sin(omega);
+  const v = [s1 * p[0] + s2 * q[0], s1 * p[1] + s2 * q[1], s1 * p[2] + s2 * q[2]];
+  return { lat: (Math.asin(v[2]) * 180) / Math.PI, lon: (Math.atan2(v[1], v[0]) * 180) / Math.PI };
+}
+
 function lonDelta(a: Airport, b: Airport): number {
   let d = b.lon - a.lon;
   while (d > 180) d -= 360;
@@ -180,7 +197,7 @@ interface MountainRange {
 }
 
 const RANGES: MountainRange[] = [
-  { name: "the Rocky Mountains", short: "the Rockies", lonMin: -116, lonMax: -104, latMin: 31, latMax: 55 },
+  { name: "the Rocky Mountains", short: "the Rockies", lonMin: -115, lonMax: -104, latMin: 35, latMax: 55 },
   { name: "the Sierra Nevada", short: "the Sierra Nevada", lonMin: -121, lonMax: -118, latMin: 35, latMax: 41 },
   { name: "the Alps", short: "the Alps", lonMin: 5.5, lonMax: 14, latMin: 44, latMax: 48 },
   { name: "the Pyrenees", short: "the Pyrenees", lonMin: -2, lonMax: 3, latMin: 42, latMax: 43.3 },
@@ -193,11 +210,22 @@ const COASTAL = new Set([
   "HKG", "SIN", "MNL", "DPS", "BOM", "SYD", "BNE", "PER", "AKL", "CPT", "LOS", "ACC", "CMN", "YVR", "KEF", "CPH",
 ]);
 
+/**
+ * Perimeter rules: LaGuardia and Reagan National only fly short routes, from
+ * gates built for narrow-bodies. Longer trips really leave from JFK / Dulles.
+ */
+const PERIMETER: Record<string, { limitMi: number; exempt: readonly string[]; fallback: string }> = {
+  LGA: { limitMi: 1500, exempt: ["DEN"], fallback: "JFK" },
+  DCA: { limitMi: 1250, exempt: ["LAX", "SFO", "SEA", "LAS", "PHX", "SLC", "DEN", "SAN", "AUS", "PDX"], fallback: "IAD" },
+};
+
 interface RouteContext {
   origin: Airport;
   destination: Airport;
   distanceMi: number;
   synthetic: boolean;
+  /** LGA / DCA: narrow-body gates only. */
+  narrowOnly: boolean;
   domestic: boolean;
   oceanic: boolean;
   longHaul: boolean;
@@ -239,7 +267,7 @@ function withContext(a: Airport, other: Airport): Airport {
   };
 }
 
-function buildRoute(input: FlightInput, rng: Rng): RouteContext {
+function buildRoute(input: FlightInput): RouteContext {
   let origin = resolveAirport(input.origin);
   let destination = resolveAirport(input.destination);
   const synthetic = !origin.known || !destination.known;
@@ -248,11 +276,25 @@ function buildRoute(input: FlightInput, rng: Rng): RouteContext {
   else if (!origin.known && !destination.known) destination = withContext(destination, origin);
 
   const sameAirport = origin.code === destination.code && origin.known && destination.known;
-  let distanceMi: number;
-  if (sameAirport) distanceMi = 150;
-  else if (synthetic) distanceMi = 400 + rng.int(0, 2400);
-  else distanceMi = Math.round(haversineMi(origin, destination));
-  distanceMi = Math.max(120, distanceMi);
+  // Synthetic endpoints sit at a date-independent spot near the known one, so the
+  // same typed route is always the same short or medium hop.
+  const measure = () =>
+    sameAirport ? 150 : synthetic ? clamp(Math.round(haversineMi(origin, destination)), 180, 1600) : Math.max(120, Math.round(haversineMi(origin, destination)));
+  let distanceMi = measure();
+
+  // A trip beyond LaGuardia's or National's perimeter really leaves from JFK / Dulles.
+  for (const side of ["origin", "destination"] as const) {
+    const here = side === "origin" ? origin : destination;
+    const there = side === "origin" ? destination : origin;
+    const rule = PERIMETER[here.code];
+    if (!rule || !here.known || rule.exempt.includes(there.code) || distanceMi <= rule.limitMi) continue;
+    const moved = getAirport(rule.fallback);
+    if (!moved) continue;
+    if (side === "origin") origin = moved;
+    else destination = moved;
+    distanceMi = measure();
+  }
+  const narrowOnly = origin.code in PERIMETER || destination.code in PERIMETER;
 
   const { y, m } = parseISODate(input.date);
   const dLon = lonDelta(origin, destination);
@@ -268,8 +310,7 @@ function buildRoute(input: FlightInput, rng: Rng): RouteContext {
       if (range === originRange || range === destRange) continue;
       for (let i = 2; i <= 38; i++) {
         const f = i / 40;
-        const lat = origin.lat + (destination.lat - origin.lat) * f;
-        const lon = origin.lon + dLon * f;
+        const { lat, lon } = alongRoute(origin, destination, f);
         if (inRange(lat, lon, range)) {
           crossings.push({ range, frac: f });
           break;
@@ -283,6 +324,7 @@ function buildRoute(input: FlightInput, rng: Rng): RouteContext {
     destination,
     distanceMi,
     synthetic,
+    narrowOnly,
     domestic,
     oceanic,
     longHaul: oceanic || distanceMi > 2600,
@@ -316,28 +358,74 @@ interface Timing {
 const round5 = (n: number) => Math.round(n / 5) * 5;
 
 function airborneFor(rng: Rng, ctx: RouteContext, distanceMi: number): number {
-  const base = distanceMi / 8.2 + 18;
-  const wind = 1 + 0.08 * ctx.ewStrength * (ctx.eastbound ? -1 : 1);
+  // Wide-bodies cruise faster and spend proportionally less of the trip climbing and
+  // descending: effective speed ramps from ~490 mph on short hops to ~545 mph on ultra-long routes.
+  const milesPerMin = 8.2 + clamp((distanceMi - 2500) / 6000, 0, 0.9);
+  const base = distanceMi / milesPerMin + 18;
+  // Jet-stream asymmetry fades on near-antipodal pairs, which are flown over the pole
+  // (SIN–JFK and HKG–JFK schedules differ by only ~10 min each way).
+  const polar = clamp((Math.abs(lonDelta(ctx.origin, ctx.destination)) - 140) / 40, 0, 1);
+  const windAmp = (distanceMi > 5000 ? 0.055 : 0.08) * (1 - 0.6 * polar);
+  const wind = 1 + windAmp * ctx.ewStrength * (ctx.eastbound ? -1 : 1);
   return Math.max(30, Math.round(base * wind * rng.float(0.98, 1.02)));
 }
 
-function departTimeFor(rng: Rng, slot: Slot): string {
-  const ranges: Record<Slot, [number, number]> = {
-    morning: [6 * 60, 9 * 60 + 55],
-    midday: [10 * 60, 13 * 60 + 55],
-    afternoon: [14 * 60, 17 * 60 + 55],
-    evening: [18 * 60, 21 * 60 + 30],
-    overnight: [17 * 60, 23 * 60 + 30],
+const SLOT_RANGES: Record<Slot, [number, number]> = {
+  morning: [6 * 60, 9 * 60 + 55],
+  midday: [10 * 60, 13 * 60 + 55],
+  afternoon: [14 * 60, 17 * 60 + 55],
+  evening: [18 * 60, 21 * 60 + 30],
+  overnight: [17 * 60, 23 * 60 + 30],
+};
+
+/** Airports closed to landings overnight: [closes at, reopens at] in local hours. */
+const CURFEW: Record<string, [number, number]> = { SYD: [23, 6], FRA: [23, 5], ZRH: [23.5, 6], LHR: [23.5, 4.5] };
+/** Round-the-clock hubs where a 3 AM arrival is normal. */
+const ALL_NIGHT_HUBS = new Set(["DXB", "DOH", "AUH", "IST", "SIN", "KUL", "BKK"]);
+
+function arrivalAcceptable(destination: Airport, arriveHour: number): boolean {
+  const curfew = CURFEW[destination.code];
+  if (curfew && (arriveHour >= curfew[0] || arriveHour < curfew[1])) return false;
+  if (ALL_NIGHT_HUBS.has(destination.code)) return true;
+  return !(arriveHour >= 0.75 && arriveHour < 5.5);
+}
+
+/**
+ * A departure time in the wanted slot whose arrival lands at a sensible hour —
+ * not in the dead of night and never inside the destination's curfew. When no
+ * time in that slot works (LAX–SYD in the afternoon), the next slots are tried
+ * in the order real airlines schedule such routes.
+ */
+function scheduleDeparture(
+  rng: Rng,
+  date: string,
+  wanted: Slot,
+  ctx: RouteContext,
+  blockMin: number,
+  taken: ReadonlySet<string> = new Set(),
+): { departTime: string; slot: Slot } {
+  const order: Slot[] = [wanted, "evening", "overnight", "morning", "midday", "afternoon"];
+  const timesIn = (slot: Slot) => {
+    const [lo, hi] = SLOT_RANGES[slot];
+    const times: string[] = [];
+    for (let m = lo; m <= hi; m += 5) times.push(minutesToTime(m));
+    return times;
   };
-  const [lo, hi] = ranges[slot];
-  return minutesToTime(round5(rng.int(lo, hi)));
+  for (const slot of order) {
+    const ok = timesIn(slot).filter(
+      (t) => !taken.has(t) && arrivalAcceptable(ctx.destination, arrivalFor(date, t, ctx.origin.tz, blockMin, ctx.destination.tz).arriveHour),
+    );
+    if (ok.length > 0) return { departTime: rng.pick(ok), slot };
+  }
+  const any = timesIn(wanted).filter((t) => !taken.has(t));
+  return { departTime: rng.pick(any.length > 0 ? any : timesIn(wanted)), slot: wanted };
 }
 
 function buildTiming(rng: Rng, ctx: RouteContext, date: string): Timing {
   const airborneMin = airborneFor(rng, ctx, ctx.distanceMi);
   const blockMin = airborneMin + rng.int(15, 35);
   const overnight = ctx.longHaul && ctx.eastbound && airborneMin >= 360;
-  const slot: Slot = overnight
+  const wanted: Slot = overnight
     ? "overnight"
     : rng.weighted<Slot>([
         ["morning", 35],
@@ -345,7 +433,7 @@ function buildTiming(rng: Rng, ctx: RouteContext, date: string): Timing {
         ["afternoon", 25],
         ["evening", 15],
       ]);
-  const departTime = departTimeFor(rng, slot);
+  const { departTime, slot } = scheduleDeparture(rng, date, wanted, ctx, blockMin);
   const [h, mi] = departTime.split(":").map(Number);
   const arr = arrivalFor(date, departTime, ctx.origin.tz, blockMin, ctx.destination.tz);
   return {
@@ -684,11 +772,15 @@ function causesFor(phase: FlightPhase, ctx: RouteContext, timing: Timing, wx: { 
   const d = wx.destination.condition;
   const originCloudy = o === "cloudy" || o === "light_rain" || o === "showers" || o === "light_snow";
   const destCloudy = d === "cloudy" || d === "light_rain" || d === "showers" || d === "light_snow";
+  // The weather card for the same airport says "Clear": never blame clouds there.
+  const clearOrigin = o === "clear" || o === "mostly_clear" || o === "breezy";
+  const clearDest = d === "clear" || d === "mostly_clear" || d === "breezy";
 
   if (phase === "climb") {
     const list: Cause[] = [
-      { text: "Climbing through a layer of fair-weather clouds.", tag: "while climbing through a cloud layer", where: "during the climb", weight: originCloudy ? 6 : 3 },
-      { text: "Passing through a thin cloud layer on the way up — the air above it is usually smooth.", tag: "while climbing through a thin cloud layer", where: "during the climb", weight: 2 },
+      { text: "Climbing through a layer of fair-weather clouds.", tag: "while climbing through a cloud layer", where: "during the climb", weight: originCloudy ? 6 : clearOrigin ? 0 : 3 },
+      { text: "Passing through a thin cloud layer on the way up — the air above it is usually smooth.", tag: "while climbing through a thin cloud layer", where: "during the climb", weight: clearOrigin ? 0 : 2 },
+      { text: "Wind shifting with altitude in the first few thousand feet.", tag: "as the wind shifts with altitude", where: "during the climb", weight: clearOrigin ? 3 : 1.5 },
     ];
     if (summer && departAfternoon && !ctx.oceanic)
       list.push({ text: "Warm air rising from the ground on a sunny afternoon.", tag: "in the warm afternoon air", where: "during the climb", weight: 4 });
@@ -712,7 +804,7 @@ function causesFor(phase: FlightPhase, ctx: RouteContext, timing: Timing, wx: { 
     for (const c of ctx.crossings) {
       list.push({ text: `Air flowing over ${c.range.name}.`, tag: `over ${c.range.name}`, where: `over ${c.range.short}`, weight: c.range.short === "the Rockies" ? 3.5 : 2.5, frac: c.frac });
     }
-    if (ctx.tropical) list.push({ text: "Warm, moist air building afternoon clouds over the sea and coast.", tag: "near tropical clouds", where: "mid-flight", weight: departAfternoon ? 3.5 : 2.5 });
+    if (ctx.tropical) list.push({ text: "Warm, moist air building clouds over the sea and coast.", tag: "near tropical clouds", where: "mid-flight", weight: departAfternoon ? 3.5 : 2.5 });
     if (summer && departAfternoon && !ctx.oceanic) list.push({ text: "Warm air rising over the land on a sunny afternoon.", tag: "over sun-warmed land", where: "mid-flight", weight: 2.5 });
     // Coastal mixing happens near the coastal endpoint, not mid-continent.
     const coastalOrigin = COASTAL.has(ctx.origin.code);
@@ -726,13 +818,14 @@ function causesFor(phase: FlightPhase, ctx: RouteContext, timing: Timing, wx: { 
 
   // descent
   const list: Cause[] = [
-    { text: "Descending through a layer of clouds.", tag: "on the way down through the clouds", where: "during descent", weight: destCloudy ? 5 : 3, beforeLanding: [8, 24] },
+    { text: "Descending through a layer of clouds.", tag: "on the way down through the clouds", where: "during descent", weight: destCloudy ? 5 : clearDest ? 0 : 3, beforeLanding: [8, 24] },
     { text: "A breezy approach — wind near the ground.", tag: "in the wind near the ground", where: "on the approach", weight: wx.destination.windKts >= 12 ? 5 : 2, beforeLanding: [5, 16] },
+    { text: "Wind shifting as the plane slows and descends.", tag: "as the wind shifts on the way down", where: "during descent", weight: clearDest ? 3 : 1.5, beforeLanding: [6, 20] },
   ];
-  if (summer && arriveAfternoon && !ctx.tropical) list.push({ text: `Afternoon heating clouds near ${ctx.destination.city}.`, tag: "near afternoon clouds", where: "during descent", weight: 3, beforeLanding: [8, 26] });
+  if (summer && arriveAfternoon && !ctx.tropical && !clearDest) list.push({ text: `Afternoon heating clouds near ${ctx.destination.city}.`, tag: "near afternoon clouds", where: "during descent", weight: 3, beforeLanding: [8, 26] });
   if (COASTAL.has(ctx.destination.code)) list.push({ text: "A sea breeze near the coast.", tag: "in the sea breeze near the coast", where: "during descent", weight: 2, beforeLanding: [5, 16] });
   if (ctx.destRange) list.push({ text: `Air flowing over ${ctx.destRange.name} on the way into ${ctx.destination.city}.`, tag: `over ${ctx.destRange.short}`, where: `over ${ctx.destRange.short}`, weight: 3.5, beforeLanding: [12, 34] });
-  if (ctx.tropical && arriveAfternoon) list.push({ text: `Afternoon showers building near ${ctx.destination.city}.`, tag: "near afternoon showers", where: "during descent", weight: 3, beforeLanding: [8, 22] });
+  if (ctx.tropical && arriveAfternoon && (d === "showers" || d === "light_rain")) list.push({ text: `Afternoon showers building near ${ctx.destination.city}.`, tag: "near afternoon showers", where: "during descent", weight: 3, beforeLanding: [8, 22] });
   return list;
 }
 
@@ -833,6 +926,8 @@ function phaseNote(
         return `Moderate bumps possible ${mw.cause.tag} about ${formatOffset(mw.startMin)} into the flight, for about ${formatOffset(mw.durationMin)} — the seatbelt sign will likely come on.`;
       }
       if (windows.length > 1) {
+        if (windows[0].cause.tag === windows[1].cause.tag)
+          return `Mostly smooth, with light bumps ${w.cause.tag} about ${formatOffset(windows[0].startMin)} into the flight and again about ${formatOffset(windows[1].startMin)} in.`;
         return `Mostly smooth, with light bumps ${windows[0].cause.tag} and later ${windows[1].cause.tag}.`;
       }
       return `Mostly smooth, with light bumps ${w.cause.tag} about ${formatOffset(w.startMin)} into the flight.`;
@@ -898,8 +993,11 @@ function buildTurbulence(
     if (descentPossible && used.descent < 1) options.push(["descent", 35]);
     if (options.length === 0) break;
     const phase = rng.weighted(options);
-    const causes = causesFor(phase, ctx, timing, wx);
-    const cause = rng.weighted(causes.map((c): [Cause, number] => [c, c.weight]));
+    const causes = causesFor(phase, ctx, timing, wx).filter((c) => c.weight > 0);
+    // A second cruise window never repeats the first one's story.
+    const prevCruise = phase === "cruise" && used.cruise === 1 ? drafts.find((d) => d.phase === "cruise") : undefined;
+    const pool = prevCruise ? causes.filter((c) => c.text !== prevCruise.cause.text) : causes;
+    const cause = rng.weighted((pool.length > 0 ? pool : causes).map((c): [Cause, number] => [c, c.weight]));
 
     let grid = phase === "climb" ? climbGrid : phase === "descent" ? descentGrid : gridFor(byPhase.cruise);
     if (phase === "descent" && cause.beforeLanding) {
@@ -910,13 +1008,10 @@ function buildTurbulence(
       };
       if (narrowed.end - narrowed.start >= 5) grid = narrowed;
     }
-    if (phase === "cruise" && used.cruise === 1) {
-      const prev = drafts.find((d) => d.phase === "cruise");
-      if (prev) {
-        const after = { start: prev.startMin + prev.durationMin + 10, end: grid.end };
-        const before = { start: grid.start, end: prev.startMin - 10 };
-        grid = after.end - after.start >= before.end - before.start ? after : before;
-      }
+    if (prevCruise) {
+      const after = { start: prevCruise.startMin + prevCruise.durationMin + 10, end: grid.end };
+      const before = { start: grid.start, end: prevCruise.startMin - 10 };
+      grid = after.end - after.start >= before.end - before.start ? after : before;
     }
     const durations = phase === "cruise" ? LIGHT_DURATIONS : SHORT_DURATIONS;
     const preferred = cause.frac !== undefined ? cause.frac * airborneMin : undefined;
@@ -1341,7 +1436,7 @@ function buildSounds(
       sense: "both",
       title: "The engines go quiet and the nose tips down",
       detail: "Engine noise drops and you may feel a slight downhill tilt.",
-      why: "Pilots begin the descent at low power, usually 30–40 minutes before landing. Gliding down gently is the normal, efficient way to arrive.",
+      why: "Pilots begin the descent at low power — usually 25–40 minutes before landing on longer flights, sooner on short hops. Gliding down gently is the normal, efficient way to arrive.",
     },
     {
       id: "approach-gear",
@@ -1473,6 +1568,13 @@ function buildSounds(
   return all;
 }
 
+/** The airline's fleet, limited to narrow-bodies at LGA / DCA (every carrier serving them has some). */
+function fleetFor(airline: AirlineProfile, ctx: RouteContext): readonly string[] {
+  if (!ctx.narrowOnly) return airline.fleet;
+  const narrow = airline.fleet.filter((k) => getAircraftModel(k)?.bodyType === "narrow");
+  return narrow.length > 0 ? narrow : airline.fleet;
+}
+
 // ── Alternatives ────────────────────────────────────────────────────────────
 
 type AltKind = "same-day" | "day-before" | "day-after";
@@ -1495,13 +1597,17 @@ function buildAlternatives(
   const usedNumbers = new Set([flightNumber]);
   const usedTimes = new Set([timing.departTime]);
   const userSlot = timing.slot;
+  const userInBestSlot = bestSlot === userSlot || (bestSlot === "overnight" && userSlot === "evening");
+  // The jet stream only features in the story at mid-latitudes; "north" is away from a northern route.
+  const jet: "north" | "south" | null = Math.abs(ctx.midLat) >= 25 ? (ctx.midLat < 0 ? "south" : "north") : null;
 
-  const alternatives: AlternativeFlight[] = kinds.map((kind, i) => {
+  const alternatives: AlternativeFlight[] = kinds.map((plannedKind, i) => {
+    let kind: AltKind = plannedKind;
     // The first option is always the participant's own airline at another time.
     const sameAirline = others.length === 0 || i === 0 || rng.chance(0.5);
     const altAirline = sameAirline ? airline : rng.weighted(others);
-    let altModel = chooseAircraftModel(rng, altAirline.fleet, ctx.distanceMi, ctx.oceanic);
-    if (model.bodyType === "narrow" && ctx.distanceMi >= 1500 && rng.chance(0.35)) {
+    let altModel = chooseAircraftModel(rng, fleetFor(altAirline, ctx), ctx.distanceMi, ctx.oceanic);
+    if (!ctx.narrowOnly && model.bodyType === "narrow" && ctx.distanceMi >= 1500 && rng.chance(0.35)) {
       const wideOptions = altAirline.fleet.filter((k) => {
         const m = getAircraftModel(k);
         return m && m.bodyType === "wide" && m.rangeMi >= ctx.distanceMi;
@@ -1521,29 +1627,39 @@ function buildAlternatives(
     const altScore = clamp(score + delta, 58, 97);
     delta = altScore - score;
 
-    // Pick a time of day that matches the story.
+    // Already flying in the window the route history calls smoothest: never claim another
+    // same-day window is smoother — offer an adjacent day instead (its reason is forecast-based).
+    if (kind === "same-day" && delta > 0 && !wideUpgrade && userInBestSlot) kind = rng.chance(0.5) ? "day-before" : "day-after";
+
+    // Pick a time of day that matches the story — and never one that argues with the
+    // route-history tile ("Morning departures are usually the smoothest…").
     let slot: Slot;
     if (kind === "same-day") {
-      if (delta > 0) slot = bestSlot !== userSlot ? bestSlot : userSlot === "morning" ? "evening" : "morning";
-      else if (delta < 0) slot = userSlot !== "afternoon" ? "afternoon" : rng.pick(["midday", "evening"]);
-      else slot = userSlot === "midday" ? "morning" : "midday";
+      if (delta > 0) slot = wideUpgrade && userInBestSlot ? userSlot : bestSlot;
+      else if (delta < 0) {
+        // Blame a slot that is neither the participant's nor the one history calls smoothest.
+        const bumpier = (["afternoon", "midday", "evening"] as Slot[]).filter(
+          (x) => x !== userSlot && x !== bestSlot && !(x === "evening" && bestSlot === "overnight"),
+        );
+        slot = bumpier[0];
+      } else slot = userSlot === "midday" ? "morning" : "midday";
     } else {
       slot = userSlot;
     }
     if (ctx.longHaul && ctx.eastbound && userSlot === "evening") slot = "overnight";
 
-    let departTime = departTimeFor(rng, slot);
-    for (let tries = 0; usedTimes.has(departTime) && tries < 5; tries++) departTime = departTimeFor(rng, slot);
-    usedTimes.add(departTime);
     const altDate = kind === "day-before" ? addDays(date, -1) : kind === "day-after" ? addDays(date, 1) : date;
     const blockMin = Math.round(timing.airborneMin * rng.float(0.97, 1.03)) + rng.int(15, 35);
+    const scheduled = scheduleDeparture(rng, altDate, slot, ctx, blockMin, usedTimes);
+    const departTime = scheduled.departTime;
+    usedTimes.add(departTime);
     const arr = arrivalFor(altDate, departTime, ctx.origin.tz, blockMin, ctx.destination.tz);
 
     let number = makeFlightNumber(rng, altAirline, ctx.longHaul);
     for (let tries = 0; usedNumbers.has(number) && tries < 5; tries++) number = makeFlightNumber(rng, altAirline, ctx.longHaul);
     usedNumbers.add(number);
 
-    const reason = reasonFor(delta, kind, slot, wideUpgrade, narrowDowngrade, score, ctx.season === "winter" || ctx.oceanic, rng);
+    const reason = reasonFor(delta, kind, slot, wideUpgrade, narrowDowngrade, score, ctx.season === "winter" || ctx.oceanic, jet, rng);
     let fare = rng.int(-8, 32) * 5;
     if (wideUpgrade || !sameAirline) fare += rng.int(0, 4) * 5;
     fare = clamp(fare, -40, 160);
@@ -1578,11 +1694,12 @@ function reasonFor(
   narrowDowngrade: boolean,
   score: number,
   windsNotHeat: boolean,
+  jet: "north" | "south" | null,
   rng: Rng,
 ): string {
   if (delta > 0) {
     if (wideUpgrade) return "Wide-body jet — larger planes feel bumps less.";
-    if (kind === "day-before") return rng.pick(["A day earlier — the jet stream is forecast to sit farther north.", "A day earlier — calmer air is forecast along the route."]);
+    if (kind === "day-before") return jet && rng.chance(0.5) ? `A day earlier — the jet stream is forecast to sit farther ${jet}.` : "A day earlier — calmer air is forecast along the route.";
     if (kind === "day-after") return rng.pick(["A day later — calmer air is forecast along the route.", "A day later — the forecast shows lighter winds aloft."]);
     if (slot === "morning") return windsNotHeat ? "Morning departure — winds aloft are usually calmest early in the day." : "Morning departure — before afternoon heating builds clouds.";
     if (slot === "evening" || slot === "overnight") return "Evening departure — the air usually settles after sunset.";
@@ -1591,11 +1708,15 @@ function reasonFor(
   }
   if (delta < 0) {
     if (narrowDowngrade) return "Smaller jet — feels bumps a little more.";
-    if (kind === "day-before") return rng.pick(["A day earlier — a little more wind aloft is forecast.", "A day earlier — the jet stream sits closer to the route."]);
+    if (kind === "day-before") return jet && rng.chance(0.5) ? "A day earlier — the jet stream sits closer to the route." : "A day earlier — a little more wind aloft is forecast.";
     if (kind === "day-after") return rng.pick(["A day later — a little more wind aloft is forecast.", "A day later — the forecast shows a few more clouds along the route."]);
-    if (slot === "afternoon") return windsNotHeat ? "Afternoon departure — crosses the jet stream at a breezier time of day." : "Afternoon departure — more heat-driven clouds along the route.";
+    if (slot === "afternoon") {
+      if (!windsNotHeat) return "Afternoon departure — more heat-driven clouds along the route.";
+      return jet ? "Afternoon departure — crosses the jet stream at a breezier time of day." : "Afternoon departure — a little more wind aloft at that time of day.";
+    }
     if (slot === "midday") return windsNotHeat ? "Midday departure — a little more wind aloft at that time of day." : "Midday departure — the air gets a little livelier as the ground warms up.";
-    if (slot === "evening" || slot === "overnight") return "Evening departure — crosses the jet stream at a breezier time.";
+    if (slot === "evening") return jet ? "Evening departure — crosses the jet stream at a breezier time." : "Evening departure — a little more wind aloft is forecast at that time.";
+    if (slot === "overnight") return jet ? "Its planned track crosses a breezier stretch of the jet stream." : "A little more wind aloft is forecast along its track.";
     return "Slightly more wind aloft is forecast at this time of day.";
   }
   return score >= 92
@@ -1611,7 +1732,7 @@ export function generateFlight(input: FlightInput): Flight {
   const seed = `${norm.origin}|${norm.destination}|${norm.date}`;
   const root = createRng(seed);
 
-  const ctx = buildRoute(norm, root.fork("route"));
+  const ctx = buildRoute(norm);
   const timing = buildTiming(root.fork("timing"), ctx, norm.date);
 
   const airlineRng = root.fork("airline");
@@ -1619,7 +1740,7 @@ export function generateFlight(input: FlightInput): Flight {
   const flightNumber = makeFlightNumber(airlineRng, airline, ctx.longHaul);
 
   const aircraftRng = root.fork("aircraft");
-  const model = chooseAircraftModel(aircraftRng, airline.fleet, ctx.distanceMi, ctx.oceanic);
+  const model = chooseAircraftModel(aircraftRng, fleetFor(airline, ctx), ctx.distanceMi, ctx.oceanic);
   const aircraft: Aircraft = buildAircraft(aircraftRng, model, airline.tailPatterns, ctx.year);
 
   const gate = buildGate(root.fork("gate"), ctx.origin, airline);

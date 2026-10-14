@@ -23,6 +23,8 @@ interface AirportFieldProps {
   placeholder?: string;
   /** Quiet line under the field (validation or help). */
   hint?: ReactNode;
+  /** The hint is a validation message: sets aria-invalid and announces the hint. */
+  invalid?: boolean;
   /** Show popular airports as one-tap chips while the field is empty. */
   quickPicks?: boolean;
   /** Something rendered at the right of the label row (e.g. a swap button). */
@@ -55,6 +57,7 @@ export function AirportField({
   onChange,
   placeholder = "City or airport",
   hint,
+  invalid = false,
   quickPicks = true,
   labelAction,
   className,
@@ -89,7 +92,13 @@ export function AirportField({
       if (value) onChange("");
       return;
     }
-    const known = getAirport(trimmed);
+    // A 3-letter partial ("los", "san") means the city the list ranks first (what Enter
+    // would pick), not an accidental code match (Lagos, San Diego). A code typed in
+    // caps, or one that is itself the top result ("BOS"), stays a code.
+    const code = getAirport(trimmed);
+    const top = /^[A-Za-z]{3}$/.test(trimmed) ? searchAirports(trimmed, 1)[0] : undefined;
+    const typedAsCode = trimmed === trimmed.toUpperCase();
+    const known = code && (typedAsCode || top?.code === code.code) ? code : top;
     onChange(known ? known.code : trimmed.slice(0, 60));
   }
 
@@ -149,6 +158,17 @@ export function AirportField({
         else inputRef.current?.blur();
         break;
       }
+      case "Tab":
+        // Keyboard highlight + Tab picks the highlighted option (hover never sets this path).
+        if (showList && active >= 0) {
+          const pick = options[active];
+          // draftRef is null before the native blur, so onBlur won't commit the raw text.
+          setDraftBoth(null);
+          setOpen(false);
+          setActive(-1);
+          onChange(pick.kind === "airport" ? pick.airport.code : pick.text);
+        }
+        break;
       case "Escape":
         if (open) {
           e.preventDefault();
@@ -182,6 +202,7 @@ export function AirportField({
           aria-controls={listId}
           aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
           aria-describedby={hint ? hintId : undefined}
+          aria-invalid={invalid || undefined}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="words"
@@ -193,7 +214,7 @@ export function AirportField({
           onBlur={onBlur}
           onChange={onInput}
           onKeyDown={onKeyDown}
-          className="h-12 w-full rounded-2xl bg-surface px-4 text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-400 focus:outline-none"
+          className="h-12 w-full rounded-2xl bg-surface px-4 text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-500 focus:outline-none"
         />
         {showList ? (
           <ul
@@ -251,13 +272,15 @@ export function AirportField({
         ) : null}
       </div>
       {chips.length ? (
-        <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Popular airports">
+        <div role="group" className="mt-2 flex flex-wrap gap-2" aria-label="Popular airports">
           {chips.map((code) => (
             <button
               key={code}
               type="button"
               onClick={() => onChange(code)}
-              className="h-9 rounded-full bg-surface px-3.5 text-[13px] font-semibold text-ink-700 ring-1 ring-inset ring-line-strong transition-colors hover:bg-canvas active:bg-line/60"
+              aria-label={`${code}, ${getAirport(code)?.city ?? code}`}
+              // before:-inset-y-1 pads the hit area to 44px without changing the chip's size.
+              className="relative h-9 rounded-full before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] bg-surface px-3.5 text-[13px] font-semibold text-ink-700 ring-1 ring-inset ring-line-strong transition-colors hover:bg-canvas active:bg-line/60"
             >
               {code}
             </button>
@@ -265,7 +288,7 @@ export function AirportField({
         </div>
       ) : null}
       {hint ? (
-        <p id={hintId} className="mt-1.5 text-[13px] leading-snug text-sand-700">
+        <p id={hintId} role={invalid ? "alert" : undefined} className="mt-1.5 text-[13px] leading-snug text-sand-700">
           {hint}
         </p>
       ) : null}

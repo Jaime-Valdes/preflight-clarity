@@ -9,14 +9,14 @@ interface WelcomeScreenProps {
 }
 
 const POINTS: Array<{ icon: ReactNode; title: string; detail: string }> = [
-  { icon: <UserRound />, title: "Anonymous", detail: "No account, no name. We only keep your answers." },
+  { icon: <UserRound />, title: "Anonymous", detail: "No account, no name. We keep your answers, the flight you enter and basic device and browser info (for example phone or desktop, screen size)." },
   { icon: <Clock3 />, title: "About 5 minutes", detail: "A few questions, one screen to explore, a few more questions." },
   {
     icon: <Sparkles />,
     title: "Illustrative data",
     detail: "The flight details you'll see are made up for this study. They are not a real forecast.",
   },
-  { icon: <DoorOpen />, title: "Stop anytime", detail: "Just close the page. Nothing else is needed." },
+  { icon: <DoorOpen />, title: "Stop anytime", detail: "Just close the page. Answers you've already given are kept." },
 ];
 
 export function WelcomeScreen({ onAgree }: WelcomeScreenProps) {
@@ -32,8 +32,8 @@ export function WelcomeScreen({ onAgree }: WelcomeScreenProps) {
 
       <div className="mt-9 animate-fade-up [animation-delay:60ms]">
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-calm-700">A short study</p>
-        <h1 className="mt-1.5 text-[28px] font-bold leading-[1.12] tracking-[-0.01em] text-ink-900">
-          A calmer way to look at an upcoming flight
+        <h1 tabIndex={-1} className="mt-1.5 text-[28px] font-bold leading-[1.12] tracking-[-0.01em] text-ink-900 outline-none">
+          A closer look at an upcoming flight
         </h1>
         <p className="mt-4 text-[15px] leading-relaxed text-ink-700">
           We&rsquo;re testing a prototype for nervous flyers. It takes about 5 minutes. All data shown is

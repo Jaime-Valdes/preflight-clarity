@@ -37,7 +37,7 @@ export function OptionalDetailsScreen({ pre, onChange, onContinue }: OptionalDet
     <Screen
       footer={
         <Button block onClick={onContinue} icon={<ArrowRight aria-hidden className="size-4" />}>
-          {touched ? "Continue" : "Skip for now"}
+          {touched ? "Continue" : "Skip"}
         </Button>
       }
     >
@@ -50,7 +50,7 @@ export function OptionalDetailsScreen({ pre, onChange, onContinue }: OptionalDet
       <div className="flex flex-col gap-3">
         <Card className="animate-fade-up" style={fadeUp()}>
           <p className="text-[15px] font-semibold leading-snug text-ink-900">
-            The flight you have in mind, if there is one
+            The flight you just rated, if you know the route
           </p>
           <div className="mt-3 flex flex-col gap-3">
             <AirportField

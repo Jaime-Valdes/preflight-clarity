@@ -7,7 +7,7 @@ import { AccessCard, ErrorCard } from "@/components/results/StatusCards";
 import { fetchResults } from "@/lib/api.server";
 
 export const metadata: Metadata = {
-  title: "Team results · Pre-Flight Clarity",
+  title: "Team results",
 };
 
 /**

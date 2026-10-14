@@ -53,7 +53,7 @@ export function TurbulenceSection({ flight, ctx }: SectionProps) {
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
           <Eyebrow>{historyMode ? "Typical pattern" : "Expected intensity"}</Eyebrow>
-          <span className="text-[11px] text-ink-400">Tap the chart for details</span>
+          <span className="text-[11px] text-ink-500">Tap the chart for details</span>
         </div>
         <TurbulenceChart
           points={turbulence.points}
@@ -217,9 +217,9 @@ function BumpWindows({ windows, airborneMin, mode }: { windows: BumpWindow[]; ai
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold" style={{ color: band.text }}>
                     <Clock3 aria-hidden className="size-3.5 shrink-0" />
-                    <span className="truncate">{windowMoment(w, airborneMin)}</span>
+                    <span className="min-w-0 leading-snug">{windowMoment(w, airborneMin)}</span>
                   </span>
-                  <Pill tone={band.tone} className="bg-surface/80">
+                  <Pill tone={band.tone} className="shrink-0 bg-surface/80">
                     {band.short} · {formatOffset(w.durationMin)}
                   </Pill>
                 </div>

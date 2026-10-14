@@ -332,7 +332,7 @@ export const PILOT_BADGES: ReadonlyArray<readonly [string, number]> = [
   ["Gentle turns", 6],
   ["Explains the bumps", 6],
   ["On-time arrivals", 5],
-  ["Great with nervous flyers", 5],
+  ["Steady in bumpy air", 5],
   ["Warm goodbye at the door", 4],
 ];
 

@@ -640,7 +640,7 @@ group("routes", () => {
     assert.deepEqual(await json(res), { ok: false, storage: "file", error: "invalid_variant" });
   });
 
-  test("POST too large → 413 (declared Content-Length, and an actual oversized body)", async () => {
+  test("POST too large → 413 (declared Content-Length, and a streamed body with no Content-Length)", async () => {
     const declared = await post("{}", { "content-length": "200000" });
     assert.equal(declared.status, 413);
     assert.equal((await json(declared)).error, "too_large");

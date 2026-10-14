@@ -47,7 +47,7 @@ export function SectionCard({
         className,
       )}
     >
-      <h3>
+      <h2>
         <button
           type="button"
           aria-expanded={open}
@@ -80,15 +80,14 @@ export function SectionCard({
             )}
           />
         </button>
-      </h3>
+      </h2>
       <div
         id={bodyId}
-        role="region"
-        aria-label={title}
         className="grid transition-[grid-template-rows] duration-300 ease-out"
         style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
       >
-        <div className="min-h-0 overflow-hidden" inert={!open}>
+        {/* The landmark sits on the inert element so collapsed sections add no empty region to the tree. */}
+        <div role="region" aria-label={title} className="min-h-0 overflow-hidden" inert={!open}>
           {hasOpened ? <div className="px-4 pb-5 pt-1">{children}</div> : null}
         </div>
       </div>

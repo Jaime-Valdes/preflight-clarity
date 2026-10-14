@@ -10,16 +10,15 @@ import { cn } from "@/lib/cn";
 
 /**
  * Chart colours (values mirror app/globals.css). Pre/post is one hue in two
- * steps (an ordinal pair); dropped/same/rose and better/worse are two soft
- * hues around a neutral midpoint. Soft by design — the visible value labels
- * and the responses table carry every number the fills do.
+ * steps (an ordinal pair); better/same/worse are two soft hues around a
+ * neutral midpoint (the change bars colour by hypothesis direction). Soft by
+ * design — the visible value labels and the responses table carry every
+ * number the fills do.
  */
 export const SERIES = {
   pre: "#6aa2d4", // breeze-400
   post: "#2d5680", // breeze-700
-  dropped: "#3c9e89", // calm-500
   same: "#aab6c5", // ink-300
-  rose: "#c98f3f", // sand-500
   better: "#3c9e89", // calm-500
   worse: "#c98f3f", // sand-500
   magnitude: "#4a87c0", // breeze-500 — single-series bars
@@ -64,7 +63,7 @@ export function Block({ title, subtitle, aside, children, className, id }: Block
           <h2 className="text-base font-bold leading-snug text-ink-900">{title}</h2>
           {subtitle ? <p className="mt-0.5 text-[13px] leading-snug text-ink-500">{subtitle}</p> : null}
         </div>
-        {aside ? <div className="shrink-0">{aside}</div> : null}
+        {aside ? <div className="max-w-full shrink-0">{aside}</div> : null}
       </div>
       {children}
     </Card>
@@ -92,7 +91,8 @@ export function Segmented<T extends string>({ options, value, onChange, label }:
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
             className={cn(
-              "h-9 rounded-full px-3.5 text-[13px] font-semibold transition-colors",
+              // The ::before fills the group's padding so the tap target reaches 44 px.
+              "relative h-9 rounded-full px-3.5 text-[13px] font-semibold transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
               selected ? "bg-surface text-ink-900 shadow-soft ring-1 ring-line/80" : "text-ink-500 hover:text-ink-900",
             )}
           >

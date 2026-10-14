@@ -222,6 +222,8 @@ export function reduceFlow(state: FlowState, action: FlowAction): FlowState {
     case "consent":
       return { ...state, session: state.session ?? action.session, screen: "pre" };
     case "goto":
+      // Only welcome can be shown without a session (history entries may predate a reset).
+      if (!state.session && action.screen !== "welcome") return state;
       return state.screen === action.screen ? state : { ...state, screen: action.screen };
     case "pre":
       return { ...state, pre: { ...state.pre, ...action.patch } };

@@ -60,10 +60,13 @@ export function DashboardHeader({ flight, daysUntil, className }: DashboardHeade
       <div className="relative px-5 pb-4 pt-5">
         {/* Airline + flight number */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold leading-snug [overflow-wrap:anywhere]">{flight.airline.name}</p>
-            <p className="mt-0.5 text-xs text-white/60 tabular-nums">Flight {flight.flightNumber}</p>
-          </div>
+          <h1 className="min-w-0">
+            <span className="block text-sm font-semibold leading-snug [overflow-wrap:anywhere]">{flight.airline.name}</span>
+            <span className="mt-0.5 block text-xs text-white/60 tabular-nums">Flight {flight.flightNumber}</span>
+            <span className="sr-only">
+              , {origin.code} to {destination.code}
+            </span>
+          </h1>
           <Chip className="mt-0.5">
             <Plane aria-hidden className="size-3 rotate-45 text-calm-200" />
             Nonstop

@@ -79,7 +79,7 @@ export function EngagementBlock({ records, className }: { records: SessionRecord
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tile label="Active time" value={formatMs(t.medianActiveMs)} hint={`median · mean ${formatMs(t.meanActiveMs)}`} />
         <Tile label="Wall-clock time" value={formatMs(t.medianTotalMs)} hint={`median · ${t.n} reached the dashboard`} />
-        <Tile label="Scroll depth" value={t.medianScrollPct === null ? "—" : `${Math.round(t.medianScrollPct)}%`} hint="median of the deepest point" />
+        <Tile label="Scroll depth" value={t.medianScrollPct === null ? "—" : `${Math.round(t.medianScrollPct)}%`} hint="median of the deepest scroll position as a share of the page" />
         <Tile
           label="Alert toggle"
           value={formatPct(a.tapRate)}

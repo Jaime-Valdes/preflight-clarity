@@ -141,7 +141,7 @@ export function SeatSection({ flight }: SectionProps) {
                 {isChosen ? "Selected" : "Select this seat"}
               </Button>
               {isChosen ? (
-                <p className="mt-2 text-center text-xs text-ink-400">Noted here for you — your booking isn&rsquo;t changed.</p>
+                <p className="mt-2 text-center text-xs text-ink-500">Noted here for you — your booking isn&rsquo;t changed.</p>
               ) : null}
             </div>
             {otherPicks.length > 0 ? (

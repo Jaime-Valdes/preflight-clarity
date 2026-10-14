@@ -44,13 +44,13 @@ export function PostHabitsScreen({ post, onChange, onFinish }: PostHabitsScreenP
           <Button block disabled={!complete} onClick={onFinish} icon={<Check aria-hidden className="size-4" />}>
             Finish
           </Button>
-          <p className="mt-2 h-4 text-center text-xs text-ink-400" aria-live="polite">
+          <p className="mt-2 h-4 text-center text-xs text-ink-500" aria-live="polite">
             {complete ? "" : "The first two questions are needed to finish"}
           </p>
         </div>
       }
     >
-      <StepHeader stage={4} eyebrow="After the dashboard" title="Last few questions" />
+      <StepHeader stage={4} eyebrow="After the briefing" title="Last few questions" />
       <div className="flex flex-col gap-3">
         <Card className="animate-fade-up" style={fadeUp()}>
           <ChoiceGroup

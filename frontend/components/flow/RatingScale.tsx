@@ -111,7 +111,7 @@ export function RatingScale({ question, value, onChange, minLabel, maxLabel, cla
         {question}
       </p>
 
-      <div className="mt-3 h-5 text-center text-[13px] text-ink-400" aria-hidden>
+      <div className="mt-3 h-5 text-center text-[13px] text-ink-500" aria-hidden>
         {isSet ? (
           <span className="font-semibold text-ink-700 tabular-nums">{value} out of 10</span>
         ) : (
@@ -175,7 +175,7 @@ export function RatingScale({ question, value, onChange, minLabel, maxLabel, cla
               key={tick}
               className={cn(
                 "absolute top-0 -translate-x-1/2 text-[11px] leading-4 tabular-nums",
-                tick === value ? "font-bold text-ink-900" : "text-ink-400",
+                tick === value ? "font-bold text-ink-900" : "text-ink-500",
               )}
               style={{ left: `${((tick - MIN) / (MAX - MIN)) * 100}%` }}
             >

@@ -69,7 +69,7 @@ export function CompareSection({ flight, ctx }: SectionProps) {
         </p>
       )}
 
-      <p className="text-xs leading-relaxed text-ink-400">
+      <p className="text-xs leading-relaxed text-ink-500">
         {forecastNote(ctx)} Holding an option only keeps it here for you — nothing is booked or charged.
       </p>
     </div>

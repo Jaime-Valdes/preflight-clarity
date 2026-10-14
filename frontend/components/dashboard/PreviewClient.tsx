@@ -43,7 +43,10 @@ export function PreviewClient() {
   const origin = originParam?.trim() || DEFAULT_ORIGIN;
   const destination = destinationParam?.trim() || DEFAULT_DESTINATION;
   const requestedDate = dateParam?.trim() ?? "";
-  const date = isISODate(requestedDate) ? requestedDate : today ? addDays(today, DEFAULT_DAYS_AHEAD) : null;
+  // A malformed or past date is ignored (the study flow validates dates; this is the team's demo link).
+  const dateUsable = isISODate(requestedDate) && (!today || requestedDate >= today);
+  const date = dateUsable ? requestedDate : today ? addDays(today, DEFAULT_DAYS_AHEAD) : null;
+  const dateIgnored = requestedDate !== "" && !dateUsable && date !== null;
 
   const generated = useMemo<Generated | null>(() => {
     if (!date) return null;
@@ -67,7 +70,9 @@ export function PreviewClient() {
         <div className="mx-auto flex max-w-[440px] items-center justify-between gap-3 px-5 py-2 text-xs">
           <span className="min-w-0 truncate">
             <span className="font-semibold">Preview</span>
-            <span className="text-white/70"> — nothing is saved</span>
+            <span className="text-white/70">
+              {dateIgnored ? ` — date ignored, using ${date}` : " — nothing is saved"}
+            </span>
           </span>
           <span className="flex shrink-0 items-center gap-2 text-white/80">
             <span>Variant {variant}</span>
