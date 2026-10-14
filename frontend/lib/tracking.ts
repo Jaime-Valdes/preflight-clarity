@@ -14,11 +14,15 @@ export const MAX_EXPLORED_FLIGHTS = 6;
 /** Hard cap so a busy participant can't grow the record without bound. */
 export const MAX_EVENTS = 300;
 
+/** Compare pairs kept per session (the record keeps 50 too). */
+const MAX_COMPARE_PAIRS = 50;
+
 /**
  * Events that mark the shape of the timeline (opens/closes, visibility,
- * the alert toggle, resume/done). Once the log is full these evict the
- * oldest detail event instead of being dropped, so a very active participant
- * still gets a complete timeline (only a log of 300 lifecycle events can drop one).
+ * the alert toggle, resume/done, and which flight or overlay is on screen).
+ * Once the log is full these evict the oldest detail event instead of being
+ * dropped, so a very active participant still gets a complete timeline (only
+ * a log of 300 lifecycle events can drop one).
  */
 const LIFECYCLE: ReadonlySet<string> = new Set([
   "section_open",
@@ -28,6 +32,13 @@ const LIFECYCLE: ReadonlySet<string> = new Set([
   "alert_toggle",
   "dashboard_resumed",
   "dashboard_done",
+  "flight_added",
+  "flight_switched",
+  "flight_shown",
+  "compare_open",
+  "compare_close",
+  "whatif_opened",
+  "whatif_close",
 ]);
 
 /**
@@ -37,6 +48,9 @@ const LIFECYCLE: ReadonlySet<string> = new Set([
  *
  * Time only accrues to `activeMs` and to open sections while the page is
  * visible, so a participant who switches apps doesn't inflate the numbers.
+ * With free exploration, visible time goes to exactly one place: the compare
+ * view, the what-if sheet, or else the flight on screen (and its open
+ * sections, which pause while either overlay covers them).
  *
  * Lifecycle (client only — uses `document` and `performance`):
  *   const [tracker] = useState(() => new DashboardTracker(order, resumed));
@@ -77,6 +91,9 @@ export class DashboardTracker {
   private exploration: ExplorationMetrics | null = null;
   private activeFlightId: string | null = null;
   private compareOpen = false;
+  /** "idA|idB" on screen while the compare view is open. */
+  private comparePair: string | null = null;
+  private whatIfOpen = false;
 
   /**
    * @param exploration pass `{ reference }` to enable free exploration (variant A).
@@ -96,6 +113,7 @@ export class DashboardTracker {
             flights: saved.flights.map((f) => ({ ...f })),
             flightMs: { ...saved.flightMs },
             comparePairs: [...saved.comparePairs],
+            whatIfMs: saved.whatIfMs ?? 0,
           }
         : {
             flights: [{ ...exploration.reference }],
@@ -104,6 +122,7 @@ export class DashboardTracker {
             compares: 0,
             compareMs: 0,
             comparePairs: [],
+            whatIfMs: 0,
             alternativesOpened: 0,
             whatIfs: 0,
             endedOnFlightId: exploration.reference.id,
@@ -145,7 +164,12 @@ export class DashboardTracker {
     if (this.t0 === null) {
       this.t0 = now;
       this.startedAt ??= new Date().toISOString();
-      if (this.resumed) this.pushEvent("dashboard_resumed");
+      if (this.resumed) {
+        // An overlay that was open at the last checkpoint didn't survive the reload: close it in the log.
+        if (this.lastOf("compare_open", "compare_close") === "compare_open") this.pushEvent("compare_close", "compare", "reload");
+        if (this.lastOf("whatif_opened", "whatif_close") === "whatif_opened") this.pushEvent("whatif_close", undefined, "reload");
+        this.pushEvent("dashboard_resumed");
+      }
     }
     if (!this.listening) {
       document.addEventListener("visibilitychange", this.onVisibilityChange);
@@ -165,20 +189,28 @@ export class DashboardTracker {
     }
   }
 
-  /** Record a section being expanded or collapsed. */
-  setSectionOpen(id: SectionId, isOpen: boolean): void {
+  /**
+   * Record a section being expanded or collapsed. `viaSwitch` = it only came
+   * into or out of view because another explored flight was shown (each flight
+   * keeps its own open sections): open time and the log follow what is on
+   * screen (detail "switch"), but it doesn't count as an open.
+   */
+  setSectionOpen(id: SectionId, isOpen: boolean, viaSwitch = false): void {
     if (this.finished) return;
     const stats = this.sections[id];
     if (!stats) return;
     this.flush();
+    const detail = viaSwitch ? "switch" : undefined;
     if (isOpen && !this.open.has(id)) {
       this.open.add(id);
-      stats.opens += 1;
-      if (stats.firstOpenAtMs === null) stats.firstOpenAtMs = this.elapsedMs();
-      this.pushEvent("section_open", id);
+      if (!viaSwitch) {
+        stats.opens += 1;
+        if (stats.firstOpenAtMs === null) stats.firstOpenAtMs = this.elapsedMs();
+      }
+      this.pushEvent("section_open", id, detail);
     } else if (!isOpen && this.open.has(id)) {
       this.open.delete(id);
-      this.pushEvent("section_close", id);
+      this.pushEvent("section_close", id, detail);
     }
   }
 
@@ -203,6 +235,39 @@ export class DashboardTracker {
   /** Sections that were expanded when the metrics were last saved (restored across a reload), so the UI can start from them. */
   openSections(): SectionId[] {
     return this.sectionOrder.filter((id) => this.open.has(id));
+  }
+
+  /**
+   * Free exploration: the sections expanded on each explored flight (restored
+   * across a reload), so every flight in the strip comes back as it was left.
+   * Rebuilt from the log: participant opens and closes (not the "switch" ones)
+   * belong to the flight shown at the time (flight_switched / flight_shown);
+   * the flight on screen uses openSections(). Empty without exploration.
+   */
+  openSectionsByFlight(): Record<string, SectionId[]> {
+    const x = this.exploration;
+    if (!x || x.flights.length === 0) return {};
+    const byFlight = new Map<string, Set<SectionId>>();
+    let shown = x.flights[0].id;
+    for (const e of this.events) {
+      if (e.type === "flight_switched" || e.type === "flight_shown") {
+        if (e.detail) shown = e.detail;
+        continue;
+      }
+      if ((e.type !== "section_open" && e.type !== "section_close") || e.detail === "switch") continue;
+      if (!e.section || !this.sections[e.section]) continue;
+      let set = byFlight.get(shown);
+      if (!set) byFlight.set(shown, (set = new Set()));
+      if (e.type === "section_open") set.add(e.section);
+      else set.delete(e.section);
+    }
+    if (this.activeFlightId) byFlight.set(this.activeFlightId, this.open);
+    const out: Record<string, SectionId[]> = {};
+    for (const f of x.flights) {
+      const set = byFlight.get(f.id);
+      if (set) out[f.id] = this.sectionOrder.filter((id) => set.has(id));
+    }
+    return out;
   }
 
   /**
@@ -243,7 +308,11 @@ export class DashboardTracker {
     return true;
   }
 
-  /** Show another explored flight. `viaUser` = the participant chose it (counts as a switch). */
+  /**
+   * Show another explored flight. `viaUser` = the participant tapped its chip
+   * (counts as a switch, logs flight_switched); otherwise the dashboard showed
+   * it after "Open this flight" or a what-if (logs flight_shown).
+   */
   setActiveFlight(id: string, viaUser: boolean): void {
     const x = this.exploration;
     if (this.finished || !x || id === this.activeFlightId) return;
@@ -251,28 +320,50 @@ export class DashboardTracker {
     this.flush();
     this.activeFlightId = id;
     x.endedOnFlightId = id;
-    if (viaUser) {
-      x.switches += 1;
-      this.pushEvent("flight_switched", undefined, id);
-    }
+    if (viaUser) x.switches += 1;
+    this.pushEvent(viaUser ? "flight_switched" : "flight_shown", undefined, id);
   }
 
+  /**
+   * The compare view opened (counts a compare, logs compare_open) or, while it
+   * is open, shows another pair (logs compare_pair). Each pair shown is
+   * appended to comparePairs.
+   */
   compareOpened(idA: string, idB: string): void {
     const x = this.exploration;
     if (this.finished || !x) return;
-    this.flush();
     const pair = `${idA}|${idB}`;
-    if (!this.compareOpen) x.compares += 1;
+    if (this.compareOpen && pair === this.comparePair) return;
+    this.flush();
+    const fresh = !this.compareOpen;
+    if (fresh) x.compares += 1;
     this.compareOpen = true;
-    if (x.comparePairs[x.comparePairs.length - 1] !== pair && x.comparePairs.length < 50) x.comparePairs.push(pair);
-    this.pushEvent("compare_open", "compare", pair);
+    this.comparePair = pair;
+    if (x.comparePairs.length < MAX_COMPARE_PAIRS) x.comparePairs.push(pair);
+    this.pushEvent(fresh ? "compare_open" : "compare_pair", "compare", pair);
   }
 
   compareClosed(): void {
     if (this.finished || !this.exploration || !this.compareOpen) return;
     this.flush();
     this.compareOpen = false;
+    this.comparePair = null;
     this.pushEvent("compare_close", "compare");
+  }
+
+  /** The "Try a different flight" sheet opened: its time goes to whatIfMs, not to the flight behind it. */
+  whatIfOpened(): void {
+    if (this.finished || !this.exploration || this.whatIfOpen) return;
+    this.flush();
+    this.whatIfOpen = true;
+    this.pushEvent("whatif_opened");
+  }
+
+  whatIfClosed(): void {
+    if (this.finished || !this.exploration || !this.whatIfOpen) return;
+    this.flush();
+    this.whatIfOpen = false;
+    this.pushEvent("whatif_close");
   }
 
   /** "I'd prefer this one" (null = cleared). Recorded only. */
@@ -295,6 +386,7 @@ export class DashboardTracker {
       this.flush();
       for (const id of [...this.open]) this.setSectionOpen(id, false);
       if (this.compareOpen) this.compareClosed();
+      if (this.whatIfOpen) this.whatIfClosed();
       this.pushEvent("dashboard_done");
       this.endedAt = new Date().toISOString();
       this.pause();
@@ -312,7 +404,11 @@ export class DashboardTracker {
     this.pushEvent(this.visible ? "page_visible" : "page_hidden");
   };
 
-  /** Accrue time since the last tick to active time and open sections. */
+  /**
+   * Accrue time since the last tick to active time and to whatever is on
+   * screen: an open overlay (compare view, what-if sheet) covers the
+   * dashboard, so its time goes to the overlay and the open sections pause.
+   */
   private flush(): void {
     if (this.lastTick === null) return;
     const now = performance.now();
@@ -320,17 +416,29 @@ export class DashboardTracker {
     this.lastTick = now;
     if (!this.visible) return;
     this.activeMs += dt;
-    if (this.exploration) {
-      if (this.compareOpen) this.exploration.compareMs += dt;
-      else if (this.activeFlightId) {
-        const ms = this.exploration.flightMs;
-        ms[this.activeFlightId] = (ms[this.activeFlightId] ?? 0) + dt;
-      }
+    const x = this.exploration;
+    if (x && this.compareOpen) {
+      x.compareMs += dt;
+      return;
     }
+    if (x && this.whatIfOpen) {
+      x.whatIfMs = (x.whatIfMs ?? 0) + dt;
+      return;
+    }
+    if (x && this.activeFlightId) x.flightMs[this.activeFlightId] = (x.flightMs[this.activeFlightId] ?? 0) + dt;
     for (const id of this.open) {
       const stats = this.sections[id];
       if (stats) stats.openMs += dt;
     }
+  }
+
+  /** Which of two event types was logged last (null if neither is in the log). */
+  private lastOf(a: string, b: string): string | null {
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const type = this.events[i].type;
+      if (type === a || type === b) return type;
+    }
+    return null;
   }
 
   /** ms since the dashboard first started, including time before a reload. */
@@ -384,6 +492,7 @@ function cloneExploration(x: ExplorationMetrics, round = false): ExplorationMetr
     flightMs,
     compareMs: round ? Math.round(x.compareMs) : x.compareMs,
     comparePairs: [...x.comparePairs],
+    whatIfMs: round ? Math.round(x.whatIfMs ?? 0) : (x.whatIfMs ?? 0),
   };
 }
 

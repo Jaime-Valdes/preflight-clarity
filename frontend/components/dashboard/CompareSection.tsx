@@ -1,14 +1,14 @@
 "use client";
 
 import { Check, ChevronDown } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { formatDuration, formatLongDate, formatShortDate, formatTime12 } from "@preflight/shared/dates";
 import type { AlternativeFlight, Flight, SectionContext, SectionProps } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
 import { TONE_CLASSES } from "@/lib/theme";
-import { useTracker } from "@/lib/tracking";
+import { MAX_EXPLORED_FLIGHTS, useTracker } from "@/lib/tracking";
 import {
   BODY_LABEL,
   compareTeaserLine,
@@ -20,7 +20,7 @@ import {
   scoreTone,
   visibleAlternatives,
 } from "./control/compare";
-import { useExplore } from "./explore/context";
+import { useExplore, useFlightState } from "./explore/context";
 
 // ── Section body ────────────────────────────────────────────────────────────
 
@@ -29,8 +29,9 @@ export function CompareSection({ flight, ctx }: SectionProps) {
   const explore = useExplore();
   /** Variant B, or variant A showing the set-up flight: "your flight". An explored option is "this flight". */
   const ownFlight = explore?.showingOwnFlight ?? true;
-  const [expanded, setExpanded] = useState<string[]>([]);
-  const [held, setHeld] = useState<string[]>([]);
+  // Kept per explored flight, so switching away and back doesn't reset them.
+  const [expanded, setExpanded] = useFlightState<string[]>("compare.expanded", []);
+  const [held, setHeld] = useFlightState<string[]>("compare.held", []);
   const alternatives = visibleAlternatives(flight, ctx.daysUntil);
 
   function toggleExpanded(alt: AlternativeFlight) {
@@ -66,33 +67,34 @@ export function CompareSection({ flight, ctx }: SectionProps) {
               onToggle={() => toggleExpanded(alt)}
               onHold={() => hold(alt)}
               onOpen={explore ? () => explore.openAlternative(alt) : undefined}
+              canOpen={explore ? explore.canOpen(alt) : true}
               ownFlight={ownFlight}
             />
           ))}
         </div>
       ) : (
         <p className="rounded-2xl bg-canvas/70 px-4 py-3 text-sm text-ink-500 ring-1 ring-inset ring-line/70">
-          No other flights were found on this route around your date.
+          No other flights were found on this route around {ownFlight ? "your date" : "this date"}.
         </p>
       )}
 
       <p className="text-xs leading-relaxed text-ink-500">
-        {forecastNote(ctx)} Holding an option only keeps it here for you — nothing is booked or charged.
+        {forecastNote(ctx, ownFlight)} Holding an option only keeps it here for you — nothing is booked or charged.
         {explore ? " Opening one adds it to the flights at the top so you can look through it." : null}
       </p>
     </div>
   );
 }
 
-/** One calm line for the collapsed header. */
-export function compareTeaser(flight: Flight, ctx: SectionContext): string {
-  return compareTeaserLine(flight, ctx.daysUntil);
+/** One calm line for the collapsed header. `ownFlight` false on an explored option ("this one", not "yours"). */
+export function compareTeaser(flight: Flight, ctx: SectionContext, ownFlight = true): string {
+  return compareTeaserLine(flight, ctx.daysUntil, ownFlight);
 }
 
-function forecastNote(ctx: SectionContext): string {
+function forecastNote(ctx: SectionContext, ownFlight: boolean): string {
   switch (ctx.forecast.mode) {
     case "history":
-      return "Scores are early estimates from past flights on this route; they sharpen as your date gets closer.";
+      return `Scores are early estimates from past flights on this route; they sharpen as ${ownFlight ? "your" : "this"} date gets closer.`;
     case "outlook":
       return "Scores are a seasonal outlook and update daily from about 10 days before departure.";
     default:
@@ -137,14 +139,17 @@ interface AlternativeCardProps {
   onHold: () => void;
   /** Variant A: show this option as a full flight in the dashboard. */
   onOpen?: () => void;
+  /** false when the flights at the top are full and this option isn't one of them ("Open this flight" is disabled). */
+  canOpen: boolean;
   /** false while an explored option (not the participant's own flight) is on screen. */
   ownFlight: boolean;
 }
 
-function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, ownFlight }: AlternativeCardProps) {
+function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, canOpen, ownFlight }: AlternativeCardProps) {
   const delta = Math.round(alt.scoreDelta);
   const fare = fareLabel(alt.fareDiffUsd);
   const marker = dayMarker(alt.arriveDayOffset);
+  const fullNoteId = useId();
 
   return (
     <article
@@ -231,6 +236,9 @@ function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, 
             block
             variant="secondary"
             onClick={onOpen}
+            aria-label={`Open this flight: ${alt.airline.name} ${alt.flightNumber}, ${safeShortDate(alt.date)}, ${formatTime12(alt.departTime)}`}
+            disabled={!canOpen}
+            aria-describedby={canOpen ? undefined : fullNoteId}
             className="whitespace-nowrap px-2 text-[13px]"
           >
             Open this flight
@@ -247,6 +255,11 @@ function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, 
         >
           {isHeld ? "Held" : "Hold this option"}
         </Button>
+        {onOpen && !canOpen ? (
+          <p id={fullNoteId} className="col-span-full text-center text-xs text-ink-500">
+            You can look at up to {MAX_EXPLORED_FLIGHTS} flights.
+          </p>
+        ) : null}
       </div>
     </article>
   );

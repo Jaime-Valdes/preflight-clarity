@@ -384,6 +384,8 @@ function parseExploration(value: unknown): ExplorationMetrics | null {
     compares: int(value.compares, 0, MAX_COUNT) ?? 0,
     compareMs: int(value.compareMs, 0, MAX_MS) ?? 0,
     comparePairs,
+    // Added later (time in the what-if sheet); older records parse as 0.
+    whatIfMs: int(value.whatIfMs, 0, MAX_MS) ?? 0,
     alternativesOpened: int(value.alternativesOpened, 0, MAX_COUNT) ?? 0,
     whatIfs: int(value.whatIfs, 0, MAX_COUNT) ?? 0,
     endedOnFlightId: text(value.endedOnFlightId, MAX_SHORT_CHARS) || ids[0],

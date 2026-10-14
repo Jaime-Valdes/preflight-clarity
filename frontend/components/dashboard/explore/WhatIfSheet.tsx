@@ -1,14 +1,17 @@
 "use client";
 
 import { ArrowUpDown, CalendarDays, CalendarRange, Check, Clock3, Map as MapIcon, Plane } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { addDays, daysBetween, formatLongDate, isISODate } from "@preflight/shared/dates";
-import { departWindowOf, DEPART_WINDOWS, generateFlight } from "@preflight/shared/fakeFlight";
+import { departWindowOf, DEPART_WINDOWS, flightSeed, generateFlight } from "@preflight/shared/fakeFlight";
+import { hashId } from "@preflight/shared/random";
 import type { AddedVia, DepartWindow, Flight, FlightInput, FlightPrefs } from "@preflight/shared/types";
 import { AirportField } from "@/components/flow/AirportField";
 import { MAX_DAYS_AHEAD, validateSetup, type SetupErrors } from "@/components/flow/FlightSetupScreen";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
+import { MAX_EXPLORED_FLIGHTS } from "@/lib/tracking";
 import { Sheet } from "./Sheet";
 
 export interface WhatIfRequest {
@@ -40,6 +43,18 @@ const DATE_INPUT = cn(
   "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0",
 );
 
+const NO_WIDE = "No larger plane flies this route on that day.";
+
+/** The window whose range ("5–11 PM"…) this departure falls inside; null outside all three (e.g. 11:15 PM). */
+function windowContaining(time: string): DepartWindow | null {
+  const h = Number(time.slice(0, 2));
+  return h >= 6 && h < 23 ? departWindowOf(time) : null;
+}
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 function clampDate(iso: string, min: string, max: string): string {
   return iso < min ? min : iso > max ? max : iso;
 }
@@ -49,6 +64,15 @@ function dateNote(iso: string, today: string): string {
   return `${formatLongDate(iso)} · ${days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}`;
 }
 
+/** The id generateFlight would give this request, without generating it (null if it would reject the input). */
+function flightIdOf(req: WhatIfRequest): string | null {
+  try {
+    return hashId(flightSeed(req.input, req.prefs));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * "Try a different flight": four calm options, each building another
  * deterministic flight for the strip. Nothing here ranks or recommends.
@@ -56,6 +80,9 @@ function dateNote(iso: string, today: string): string {
 export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetProps) {
   const maxDate = addDays(today, MAX_DAYS_AHEAD);
   const currentWindow = departWindowOf(current.departTime);
+  /** The time-of-day choice that is this flight (disabled), if its departure falls inside one. */
+  const thisWindow = windowContaining(current.departTime);
+  const wideNoteId = useId();
   const isWide = current.aircraft.bodyType === "wide";
 
   const [choice, setChoice] = useState<Choice | null>(null);
@@ -101,36 +128,84 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
     }
   }
 
+  /** The windows that can be picked: every one but this flight's own. */
+  const windowChoices = DEPART_WINDOWS.filter((w) => w !== thisWindow);
+
+  function chooseWindow(w: DepartWindow) {
+    setDepWindow(w);
+    setNote(null);
+  }
+
+  // The radio keyboard model (as in the flow's ChoiceGroup), skipping this flight's own window.
+  function onWindowKeyDown(e: KeyboardEvent<HTMLButtonElement>, w: DepartWindow) {
+    const n = windowChoices.length;
+    const i = windowChoices.indexOf(w);
+    const target =
+      e.key === "ArrowDown" || e.key === "ArrowRight"
+        ? (i + 1) % n
+        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+          ? (i - 1 + n) % n
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? n - 1
+              : -1;
+    if (target < 0) return;
+    e.preventDefault();
+    const next = windowChoices[target];
+    chooseWindow(next);
+    e.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-window="${next}"]`)?.focus();
+  }
+
   function submit() {
     const req = request();
     if (!req) {
-      if (choice === "route") setAttempted(true);
+      if (choice === "route" && !routeCheck.ok) {
+        // Render the errors first, so the field's description is the error when it gets focus.
+        flushSync(() => setAttempted(true));
+        const { errors } = routeCheck;
+        const first = errors.origin ? "whatif-origin" : errors.destination ? "whatif-destination" : "whatif-date";
+        document.getElementById(first)?.focus();
+      }
       return;
     }
     const result = onSubmit(req);
-    if (result === "full") setNote("The strip holds up to 6 flights.");
+    if (result === "full") setNote(`You can look at up to ${MAX_EXPLORED_FLIGHTS} flights.`);
     else if (result === "error") setNote("That flight couldn’t be put together. Try another choice.");
   }
 
+  // A choice can give back the flight on screen ("A different route" as prefilled, or this flight's own
+  // date): say so and keep "Show this flight" off rather than closing the sheet with nothing new.
+  const candidate = request();
+  const sameAsCurrent = candidate !== null && flightIdOf(candidate) === current.id;
+  const message =
+    note ??
+    (sameAsCurrent
+      ? choice === "day"
+        ? "That’s the flight on screen now — pick another date."
+        : "That’s the flight on screen now — change the route or date."
+      : null);
+  const noWide = choice === "wide" && !wideAvailable;
+
   const ready =
-    (choice === "day" && dayValid) ||
-    (choice === "time" && depWindow !== null) ||
-    (choice === "wide" && wideAvailable) ||
-    choice === "route";
+    !sameAsCurrent &&
+    ((choice === "day" && dayValid) ||
+      (choice === "time" && depWindow !== null) ||
+      (choice === "wide" && wideAvailable) ||
+      choice === "route");
 
   return (
     <Sheet
       title="Try a different flight"
-      description="Each choice builds another illustrative flight to look through. Your flight stays in the strip."
+      description="Each choice builds another illustrative flight to look through. Your flight stays at the top."
       onClose={onClose}
       footer={
         <>
-          {note ? (
-            <p role="status" className="mb-2.5 text-center text-[13px] leading-snug text-ink-500">
-              {note}
-            </p>
-          ) : null}
-          <Button block onClick={submit} disabled={!ready}>
+          {/* Always mounted, so a message that appears is announced. The no-larger-plane line is shown in its option. */}
+          <p role="status" className={cn("text-center text-[13px] leading-snug text-ink-500", message && "mb-2.5")}>
+            {message ?? (noWide ? <span className="sr-only">{NO_WIDE}</span> : null)}
+          </p>
+          <Button block onClick={submit} disabled={!ready} aria-describedby={noWide && !message ? wideNoteId : undefined}>
             Show this flight
           </Button>
         </>
@@ -164,20 +239,21 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
         >
           <div role="radiogroup" aria-label="Departure time" className="grid grid-cols-3 gap-2">
             {DEPART_WINDOWS.map((w) => {
-              const isCurrent = w === currentWindow;
+              const isCurrent = w === thisWindow;
               const on = depWindow === w;
               return (
                 <button
                   key={w}
                   type="button"
                   role="radio"
+                  data-window={w}
                   aria-checked={on}
                   aria-disabled={isCurrent || undefined}
                   disabled={isCurrent}
-                  onClick={() => {
-                    setDepWindow(w);
-                    setNote(null);
-                  }}
+                  // One tab stop for the group (the checked window, else the first open one); arrows move within it.
+                  tabIndex={w === (depWindow ?? windowChoices[0]) ? 0 : -1}
+                  onKeyDown={(e) => onWindowKeyDown(e, w)}
+                  onClick={() => chooseWindow(w)}
                   className={cn(
                     "flex min-h-14 flex-col items-center justify-center rounded-2xl px-1 py-2 text-center ring-1 ring-inset transition-colors",
                     isCurrent
@@ -205,10 +281,10 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
             selected={choice === "wide"}
             onSelect={() => pick("wide")}
           >
-            <p className="text-[13px] leading-snug text-ink-500" role="status">
+            <p id={wideNoteId} className="text-[13px] leading-snug text-ink-500">
               {wideAvailable
                 ? `A wide-body ${WINDOW_UI[currentWindow].label.toLowerCase()} departure, ${current.origin.code} → ${current.destination.code}.`
-                : "No larger plane flies this route on that day."}
+                : NO_WIDE}
             </p>
           </Option>
         )}
@@ -220,37 +296,40 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
           selected={choice === "route"}
           onSelect={() => pick("route")}
         >
-          <AirportField
-            id="whatif-origin"
-            label="From"
-            value={route.origin}
-            onChange={(v) => setRoute((r) => ({ ...r, origin: v }))}
-            hint={routeErrors.origin}
-            invalid={!!routeErrors.origin}
-            quickPicks={false}
-          />
-          <AirportField
-            id="whatif-destination"
-            label="To"
-            value={route.destination}
-            onChange={(v) => setRoute((r) => ({ ...r, destination: v }))}
-            hint={routeErrors.destination}
-            invalid={!!routeErrors.destination}
-            quickPicks={false}
-            className="mt-3"
-            labelAction={
-              <button
-                type="button"
-                onClick={() => setRoute((r) => ({ ...r, origin: r.destination, destination: r.origin }))}
-                aria-label="Swap origin and destination"
-                className="-my-2 flex h-11 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-ink-500 transition-colors hover:bg-line/50 hover:text-ink-900"
-              >
-                <ArrowUpDown aria-hidden className="size-4" />
-                Swap
-              </button>
-            }
-          />
+          <div onFocus={liftField}>
+            <AirportField
+              id="whatif-origin"
+              label="From"
+              value={route.origin}
+              onChange={(v) => setRoute((r) => ({ ...r, origin: v }))}
+              hint={routeErrors.origin}
+              invalid={!!routeErrors.origin}
+              quickPicks={false}
+            />
+            <AirportField
+              id="whatif-destination"
+              label="To"
+              value={route.destination}
+              onChange={(v) => setRoute((r) => ({ ...r, destination: v }))}
+              hint={routeErrors.destination}
+              invalid={!!routeErrors.destination}
+              quickPicks={false}
+              className="mt-3"
+              labelAction={
+                <button
+                  type="button"
+                  onClick={() => setRoute((r) => ({ ...r, origin: r.destination, destination: r.origin }))}
+                  aria-label="Swap origin and destination"
+                  className="-my-2 flex h-11 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-ink-500 transition-colors hover:bg-line/50 hover:text-ink-900"
+                >
+                  <ArrowUpDown aria-hidden className="size-4" />
+                  Swap
+                </button>
+              }
+            />
+          </div>
           <DateField
+            id="whatif-date"
             className="mt-3"
             label="Departure date"
             value={route.date}
@@ -263,6 +342,33 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
         </Option>
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * A focused From/To field moves to the top of the sheet's scroll area, so its suggestions open
+ * in view rather than under the pinned footer (or an on-screen keyboard). Once the keyboard has
+ * had time to rise, and again whenever the visible area resizes while the field has focus.
+ */
+function liftField(e: FocusEvent<HTMLDivElement>) {
+  const field = e.target;
+  if (!(field instanceof HTMLInputElement) || field.type !== "text") return;
+  const lift = () => {
+    const scroller = field.closest<HTMLElement>("[data-sheet-scroll]");
+    if (!scroller || document.activeElement !== field) return;
+    const top = scroller.scrollTop + field.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 36;
+    scroller.scrollTo({ top, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+  };
+  const timer = window.setTimeout(lift, 300);
+  const viewport = window.visualViewport;
+  viewport?.addEventListener("resize", lift);
+  field.addEventListener(
+    "blur",
+    () => {
+      window.clearTimeout(timer);
+      viewport?.removeEventListener("resize", lift);
+    },
+    { once: true },
   );
 }
 
@@ -295,7 +401,10 @@ function Option({
   useEffect(() => {
     if (!selected) return;
     const el = ref.current;
-    const timer = window.setTimeout(() => el?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 60);
+    const timer = window.setTimeout(
+      () => el?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" }),
+      60,
+    );
     return () => window.clearTimeout(timer);
   }, [selected]);
   return (
@@ -343,6 +452,7 @@ function Option({
 }
 
 function DateField({
+  id: idProp,
   label,
   value,
   min,
@@ -352,6 +462,7 @@ function DateField({
   invalid,
   className,
 }: {
+  id?: string;
   label: string;
   value: string;
   min: string;
@@ -361,7 +472,8 @@ function DateField({
   invalid?: boolean;
   className?: string;
 }) {
-  const id = useId();
+  const autoId = useId();
+  const id = idProp ?? autoId;
   const hintId = useId();
   return (
     <div className={className}>
@@ -369,7 +481,7 @@ function DateField({
         {label}
       </label>
       <div className="relative">
-        <CalendarDays aria-hidden className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
+        <CalendarDays aria-hidden className="pointer-events-none absolute left-4 top-1/2 z-[1] size-4 -translate-y-1/2 text-ink-400" />
         <input
           id={id}
           type="date"

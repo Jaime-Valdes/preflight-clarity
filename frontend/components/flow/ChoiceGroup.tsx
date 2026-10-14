@@ -1,7 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
-import { useId, type KeyboardEvent, type ReactNode } from "react";
+import { useId, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { cn } from "@/lib/cn";
 
 export interface ChoiceOption<T extends string> {
@@ -18,6 +18,8 @@ interface BaseProps<T extends string> {
   /** 1 (default) = full-width rows, 2 = two-column grid for short labels. */
   columns?: 1 | 2;
   className?: string;
+  /** When set, the question label becomes a programmatic focus target (tabIndex -1). */
+  labelRef?: Ref<HTMLParagraphElement>;
 }
 
 interface SingleProps<T extends string> extends BaseProps<T> {
@@ -44,7 +46,7 @@ type ChoiceGroupProps<T extends string> = SingleProps<T> | MultiProps<T>;
 export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
   const labelId = useId();
   const hintId = useId();
-  const { label, hint, options, columns = 1, className } = props;
+  const { label, hint, options, columns = 1, className, labelRef } = props;
   const isMulti = props.kind === "multi";
   // Radio group: one Tab stop (the checked option, else the first) and arrow keys move + select.
   const anyChecked = props.kind === "single" && options.some((o) => o.value === props.value);
@@ -90,7 +92,12 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
 
   return (
     <div className={className}>
-      <p id={labelId} className="text-[15px] font-semibold leading-snug text-ink-900">
+      <p
+        id={labelId}
+        ref={labelRef}
+        tabIndex={labelRef ? -1 : undefined}
+        className="text-[15px] font-semibold leading-snug text-ink-900 outline-none"
+      >
         {label}
       </p>
       {hint ? (

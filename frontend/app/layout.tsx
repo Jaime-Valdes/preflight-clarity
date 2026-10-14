@@ -8,9 +8,9 @@ const manrope = Manrope({
   display: "swap",
 });
 
-const SHARE_TITLE = "Pre-Flight Clarity · A 5-minute study for nervous flyers";
+const SHARE_TITLE = "Pre-Flight Clarity · A 5–10 minute study for nervous flyers";
 const DESCRIPTION =
-  "Explore a detailed briefing for an upcoming flight, then tell us how it feels. Takes about 5 minutes on your phone. All flight data is illustrative.";
+  "Explore a detailed briefing for an upcoming flight, then tell us how it feels. Takes about 5–10 minutes on your phone. All flight data is illustrative.";
 
 /**
  * Base URL for absolute social-image URLs. On Vercel, Next.js derives it from

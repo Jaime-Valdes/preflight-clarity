@@ -16,6 +16,7 @@ import {
   precipLabel,
   windArrowRotation,
 } from "./env/weather";
+import { useExplore } from "./explore/context";
 
 type Unit = "F" | "C";
 
@@ -27,6 +28,7 @@ type Unit = "F" | "C";
 export function WeatherSection({ flight, ctx }: SectionProps) {
   const tracker = useTracker();
   const [unit, setUnit] = useState<Unit>("F");
+  const ownFlight = useExplore()?.showingOwnFlight ?? true;
 
   const changeUnit = (next: Unit) => {
     if (next === unit) return;
@@ -37,7 +39,7 @@ export function WeatherSection({ flight, ctx }: SectionProps) {
   const basis =
     ctx.daysUntil > FORECAST_HORIZON_DAYS
       ? `Typical conditions for ${safeMonthName(flight.input.date)} · live forecast about ${FORECAST_HORIZON_DAYS} days before departure`
-      : "Forecast for your departure and arrival times";
+      : `Forecast for ${ownFlight ? "your" : "this flight’s"} departure and arrival times`;
 
   return (
     <div className="flex flex-col gap-3">

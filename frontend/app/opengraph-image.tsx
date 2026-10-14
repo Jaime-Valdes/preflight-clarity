@@ -11,7 +11,7 @@ import { ImageResponse } from "next/og";
  */
 
 export const alt =
-  "Pre-Flight Clarity — a 5-minute study for nervous flyers. Student research prototype.";
+  "Pre-Flight Clarity — a 5–10 minute study for nervous flyers. Student research prototype.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -168,13 +168,13 @@ export default function OpenGraphImage() {
           <div
             style={{
               marginTop: 54,
-              fontSize: 86,
+              fontSize: 78,
               lineHeight: 1.02,
               letterSpacing: -2.5,
               color: "#ffffff",
             }}
           >
-            A 5-minute study for nervous flyers
+            A 5–10 minute study for nervous flyers
           </div>
 
           <div

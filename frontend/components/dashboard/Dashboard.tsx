@@ -13,8 +13,9 @@ import {
   type ReactNode,
 } from "react";
 import { daysBetween } from "@preflight/shared/dates";
-import { generateFlight, normalizePrefs } from "@preflight/shared/fakeFlight";
+import { flightSeed, generateFlight, normalizePrefs } from "@preflight/shared/fakeFlight";
 import { getForecastStatus, summarizeFlight } from "@preflight/shared/forecast";
+import { hashId } from "@preflight/shared/random";
 import { VARIANT_SECTIONS, sectionMeta } from "@preflight/shared/sections";
 import type {
   AddedVia,
@@ -66,7 +67,7 @@ export interface DashboardProps {
 interface SectionUi {
   icon: ReactNode;
   tone: Tone;
-  teaser: (flight: Flight, ctx: SectionContext) => string;
+  teaser: (flight: Flight, ctx: SectionContext, ownFlight?: boolean) => string;
   Body: ComponentType<SectionProps>;
 }
 
@@ -87,10 +88,30 @@ const CHECKPOINT_EVERY_MS = 20_000;
 const SCROLL_WHEN_BELOW = 0.55;
 /** Just past SectionCard's 300 ms expand transition. */
 const SCROLL_AFTER_MS = 330;
+/**
+ * A sheet's footer button sits where "I'm done exploring" is, and the sheet
+ * closes on the first tap: a tap on "done" this soon after is the tail of a
+ * double tap, not a decision to finish.
+ */
+const OVERLAY_SETTLE_MS = 600;
 
 const NO_SECTIONS: ReadonlySet<SectionId> = new Set();
 
 type AddResult = "added" | "existing" | "full" | "error";
+
+/** What opens an alternative as a full flight (alternatives generated before input/prefs existed fall back to its date and carrier). */
+function alternativeRequest(alt: AlternativeFlight, from: Flight): { input: FlightInput; prefs: FlightPrefs } {
+  return { input: alt.input ?? { ...from.input, date: alt.date }, prefs: alt.prefs ?? { airline: alt.airline.code } };
+}
+
+/** The id generateFlight(input, prefs) gives, without generating the flight; null for an input it would reject. */
+function flightIdFor(input: FlightInput, prefs: FlightPrefs): string | null {
+  try {
+    return hashId(flightSeed(input, prefs));
+  } catch {
+    return null;
+  }
+}
 
 function exploredFor(flight: Flight, today: string, addedVia: AddedVia, prefs?: FlightPrefs): ExploredFlight {
   return {
@@ -130,9 +151,9 @@ function restoreEntries(tracker: DashboardTracker, flight: Flight): ExploredEntr
 }
 
 /** A section's teaser must never take the whole dashboard down. */
-function safeTeaser(ui: SectionUi, flight: Flight, ctx: SectionContext): string {
+function safeTeaser(ui: SectionUi, flight: Flight, ctx: SectionContext, ownFlight: boolean): string {
   try {
-    return ui.teaser(flight, ctx);
+    return ui.teaser(flight, ctx, ownFlight);
   } catch {
     return "";
   }
@@ -163,28 +184,38 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
     const saved = t.activeFlight();
     const active = saved && entries.some((e) => e.meta.id === saved) ? saved : flight.id;
     if (exploring && active !== saved) t.setActiveFlight(active, false);
+    // Starts from the sections that were open when the metrics were last saved (resume after a reload),
+    // on every explored flight; the flight on screen matches the tracker exactly.
+    const open: Record<string, ReadonlySet<SectionId>> = {};
+    for (const [id, ids] of Object.entries(t.openSectionsByFlight())) open[id] = new Set(ids);
+    open[active] = new Set(t.openSections());
     return {
       tracker: t,
       entries,
       active,
       preferred: t.explorationState()?.preferredFlightId ?? null,
-      // Starts from the sections that were open when the metrics were last saved (resume after a reload).
-      open: { [active]: new Set(t.openSections()) } as Record<string, ReadonlySet<SectionId>>,
+      open,
     };
   });
   const tracker = boot.tracker;
   const [explored, setExplored] = useState<ExploredEntry[]>(boot.entries);
   const [activeId, setActiveId] = useState(boot.active);
-  // Each explored flight keeps its own open/closed sections.
+  // Each explored flight keeps its own open/closed sections…
   const [openByFlight, setOpenByFlight] = useState<Record<string, ReadonlySet<SectionId>>>(boot.open);
+  // …and what its section bodies hold (held options, the chosen seat; see useFlightState).
+  const [bodyState, setBodyState] = useState<Record<string, Readonly<Record<string, unknown>>>>({});
   const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [comparePair, setComparePair] = useState<readonly [string, string] | null>(null);
   const [preferredId, setPreferredId] = useState<string | null>(boot.preferred);
   const [announcement, setAnnouncement] = useState("");
+  /** A flight shown by anything but its strip chip: focus moves to that chip after the commit (a new object per request). */
+  const [chipFocus, setChipFocus] = useState<{ id: string } | null>(null);
   const [done, setDone] = useState(false);
   const finishedRef = useRef(false);
   const checkpointRef = useRef(onCheckpoint);
   const sectionEls = useRef(new Map<SectionId, HTMLDivElement>());
+  /** performance.now() when a sheet last closed (double-tap guard for "done"). */
+  const overlayClosedAt = useRef(-Infinity);
 
   const activeIndex = exploring ? Math.max(0, explored.findIndex((e) => e.meta.id === activeId)) : 0;
   const shown = exploring ? (explored[activeIndex]?.flight ?? flight) : flight;
@@ -205,6 +236,14 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
     tracker.start();
     return () => tracker.pause();
   }, [tracker]);
+
+  // A flight shown by "Open this flight" or a what-if: the control that did it has gone (the sections
+  // remount, the sheet closed), so keyboard and screen-reader focus lands on the new flight's strip chip.
+  // Runs after a closing sheet hands focus back to its opener.
+  useEffect(() => {
+    if (!chipFocus) return;
+    document.querySelector<HTMLElement>(`[data-flight-id="${CSS.escape(chipFocus.id)}"]`)?.focus({ preventScroll: true });
+  }, [chipFocus]);
 
   // Scroll depth is kept in pixels and only turned into a percentage when a
   // snapshot is saved, so the page growing as sections open re-bases it instead
@@ -292,8 +331,8 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
 
   /**
    * Show another flight: the tracker's open sections follow what is on screen
-   * (the leaving flight's sections close, the arriving flight's reopen), then
-   * the page returns to the top.
+   * (the leaving flight's sections close, the arriving flight's reopen — as
+   * "switch" events, not opens), then the page returns to the top.
    */
   const activate = (id: string, viaUser: boolean, entries: readonly ExploredEntry[]) => {
     if (id === activeId) return;
@@ -301,35 +340,39 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
     if (index < 0) return;
     const from = openByFlight[activeId] ?? NO_SECTIONS;
     const to = openByFlight[id] ?? NO_SECTIONS;
-    for (const s of from) if (!to.has(s)) tracker.setSectionOpen(s, false);
-    for (const s of to) if (!from.has(s)) tracker.setSectionOpen(s, true);
+    // Logged in screen order: the leaving flight's sections close, the flight changes, the arriving ones open.
+    for (const s of from) if (!to.has(s)) tracker.setSectionOpen(s, false, true);
     tracker.setActiveFlight(id, viaUser);
+    for (const s of to) if (!from.has(s)) tracker.setSectionOpen(s, true, true);
     setActiveId(id);
+    // A chip keeps focus itself; anything else hands focus to the new flight's chip (see the effect above).
+    if (!viaUser) setChipFocus({ id });
     const f = entries[index].flight;
     setAnnouncement(`Showing ${exploreLabel(index)}: ${f.origin.city} to ${f.destination.city}, ${chipDate(f.input.date)}.`);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
 
-  const addFlight = (input: FlightInput, prefs: FlightPrefs, addedVia: AddedVia): AddResult => {
+  /** Adds the flight to the strip and shows it (or shows it, if it is already there). */
+  const addFlight = (input: FlightInput, prefs: FlightPrefs, addedVia: AddedVia): { result: AddResult; id: string | null } => {
     let generated: Flight;
     try {
       generated = generateFlight(input, prefs);
     } catch {
-      return "error";
+      return { result: "error", id: null };
     }
     if (explored.some((e) => e.meta.id === generated.id)) {
       activate(generated.id, false, explored);
-      return "existing";
+      return { result: "existing", id: generated.id };
     }
-    if (explored.length >= MAX_EXPLORED_FLIGHTS) return "full";
+    if (explored.length >= MAX_EXPLORED_FLIGHTS) return { result: "full", id: generated.id };
     const meta = exploredFor(generated, today, addedVia, prefs);
-    if (!tracker.addFlight(meta)) return "full";
+    if (!tracker.addFlight(meta)) return { result: "full", id: generated.id };
     // The tracker stamps addedAtMs.
     const stored = tracker.explorationState()?.flights.find((f) => f.id === meta.id) ?? meta;
     const next = [...explored, { meta: stored, flight: generated }];
     setExplored(next);
     activate(generated.id, false, next);
-    return "added";
+    return { result: "added", id: generated.id };
   };
 
   const openCompare = () => {
@@ -340,17 +383,36 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
     setComparePair([a, b]);
   };
 
+  const closeCompare = () => {
+    tracker.compareClosed();
+    setComparePair(null);
+    overlayClosedAt.current = performance.now();
+  };
+
+  const closeWhatIf = () => {
+    tracker.whatIfClosed();
+    setWhatIfOpen(false);
+    overlayClosedAt.current = performance.now();
+  };
+
   const explore: ExploreApi | null = exploring
     ? {
         openAlternative(alt: AlternativeFlight) {
-          tracker.event("alternative_opened", "compare", alt.id);
-          const input = alt.input ?? { ...shown.input, date: alt.date };
-          const result = addFlight(input, alt.prefs ?? { airline: alt.airline.code }, "alternative");
-          if (result === "full") setAnnouncement(`The strip holds up to ${MAX_EXPLORED_FLIGHTS} flights.`);
+          const req = alternativeRequest(alt, shown);
+          const { result, id } = addFlight(req.input, req.prefs, "alternative");
+          // Logged once the outcome is known; nothing is logged when nothing opened.
+          if (result === "added" || result === "existing") tracker.event("alternative_opened", "compare", `${alt.id}:${id}:${result}`);
+          else if (result === "full") setAnnouncement(`You can look at up to ${MAX_EXPLORED_FLIGHTS} flights.`);
+        },
+        canOpen(alt: AlternativeFlight) {
+          if (explored.length < MAX_EXPLORED_FLIGHTS) return true;
+          const req = alternativeRequest(alt, shown);
+          const id = flightIdFor(req.input, req.prefs);
+          return id !== null && explored.some((e) => e.meta.id === id);
         },
         openWhatIf() {
           if (explored.length >= MAX_EXPLORED_FLIGHTS) return;
-          tracker.event("whatif_opened");
+          tracker.whatIfOpened();
           setWhatIfOpen(true);
         },
         switchTo(id: string) {
@@ -358,17 +420,24 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
         },
         compare: openCompare,
         showingOwnFlight: activeIndex === 0,
+        flightState(key: string) {
+          return bodyState[activeId]?.[key];
+        },
+        setFlightState(key: string, value: unknown) {
+          setBodyState((prev) => ({ ...prev, [activeId]: { ...prev[activeId], [key]: value } }));
+        },
       }
     : null;
 
   const submitWhatIf = (req: WhatIfRequest): AddResult => {
-    const result = addFlight(req.input, req.prefs, req.addedVia);
-    if (result === "added" || result === "existing") setWhatIfOpen(false);
+    const { result } = addFlight(req.input, req.prefs, req.addedVia);
+    if (result === "added" || result === "existing") closeWhatIf();
     return result;
   };
 
   const handleDone = () => {
     if (finishedRef.current) return;
+    if (performance.now() - overlayClosedAt.current < OVERLAY_SETTLE_MS) return;
     finishedRef.current = true;
     setDone(true);
     reportScroll();
@@ -386,7 +455,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
           }
         >
           <h1 tabIndex={-1} data-focus-start className="sr-only outline-none">
-            Your flight briefing
+            {explore && activeIndex > 0 ? "Flight briefing" : "Your flight briefing"}
           </h1>
           {explore ? (
             <>
@@ -433,7 +502,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
                       title={sectionMeta(id).title}
                       icon={ui.icon}
                       tone={ui.tone}
-                      teaser={safeTeaser(ui, shown, ctx)}
+                      teaser={safeTeaser(ui, shown, ctx, !explore || activeIndex === 0)}
                       open={openIds.has(id)}
                       onToggle={(next) => toggleSection(id, next)}
                     >
@@ -451,7 +520,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
         </Screen>
 
         {explore && whatIfOpen ? (
-          <WhatIfSheet current={shown} today={today} onSubmit={submitWhatIf} onClose={() => setWhatIfOpen(false)} />
+          <WhatIfSheet current={shown} today={today} onSubmit={submitWhatIf} onClose={closeWhatIf} />
         ) : null}
         {explore && comparePair ? (
           <CompareView
@@ -467,10 +536,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
               setPreferredId(id);
             }}
             today={today}
-            onClose={() => {
-              tracker.compareClosed();
-              setComparePair(null);
-            }}
+            onClose={closeCompare}
           />
         ) : null}
       </ExploreContext.Provider>

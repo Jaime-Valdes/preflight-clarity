@@ -182,12 +182,17 @@ Every section body must render without crashing for any generated flight (short-
 narrow-body through 15-hour wide-body, any date).
 
 Tracker guarantees worth knowing when analysing `events`: the log is capped at 300 entries, but
-lifecycle events (`section_open/close`, `page_hidden/visible`, `alert_toggle`, `dashboard_resumed/done`)
+lifecycle events (`section_open/close`, `page_hidden/visible`, `alert_toggle`, `dashboard_resumed/done`,
+and in variant A `flight_added/switched/shown`, `compare_open/close`, `whatif_opened/close`)
 evict the oldest detail event rather than being dropped, so the timeline always has its shape. On
 resume after a reload `tracker.openSections()` returns the sections that were open at the last
-checkpoint (rebuilt from the log, no counters touched); `Dashboard` seeds its open set from it, so
-`count(section_open) == stats.opens` still holds. `maxScrollPct` is re-based by the dashboard right
-before every checkpoint (share of the page as last laid out); a restored value is only a floor.
+checkpoint (rebuilt from the log, no counters touched); `Dashboard` seeds its open set from it.
+In variant A a section that only comes into or out of view because the participant switched flights
+is logged with detail `"switch"` and is not an open, so `count(section_open without detail "switch")
+== stats.opens` (in variant B no event has that detail). Section `openMs` pauses while the compare
+view or the what-if sheet covers the dashboard (see `docs/EXPLORATION.md`). `maxScrollPct` is
+re-based by the dashboard right before every checkpoint (share of the page as last laid out); a
+restored value is only a floor.
 
 **Headings and focus.** Each screen has exactly one `<h1>` (sr-only on the dashboard) that
 `StudyFlow` focuses on screen change; `<SectionCard>` titles are `<h2>`, `BlockLabel` is `<h3>`.

@@ -16,6 +16,7 @@ import type {
 import { Pill } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
 import { INTENSITY, PHASE_LABEL, TONE_CLASSES } from "@/lib/theme";
+import { useExplore } from "./explore/context";
 import { TurbulenceChart } from "./turbulence/TurbulenceChart";
 import { rangeLabel, windowMoment } from "./turbulence/format";
 
@@ -43,10 +44,11 @@ export function TurbulenceSection({ flight, ctx }: SectionProps) {
   const { turbulence } = flight;
   const { forecast } = ctx;
   const historyMode = forecast.mode === "history";
+  const ownFlight = useExplore()?.showingOwnFlight ?? true;
 
   return (
     <div className="flex flex-col gap-4">
-      <ConfidenceTile forecast={forecast} />
+      <ConfidenceTile forecast={forecast} ownFlight={ownFlight} />
 
       {historyMode ? <HistoryTile history={turbulence.history} emphasized /> : null}
 
@@ -103,19 +105,27 @@ function ConfidenceMeter({ level }: { level: number }) {
   );
 }
 
-function ConfidenceTile({ forecast }: { forecast: ForecastStatus }) {
+/** The shared forecast copy speaks of "your" flight; on an explored option it is this flight. */
+function forOption(text: string): string {
+  return text
+    .replace("Your forecast", "This flight’s forecast")
+    .replace("your route", "this route")
+    .replace("your planned flight path", "its planned flight path");
+}
+
+function ConfidenceTile({ forecast, ownFlight }: { forecast: ForecastStatus; ownFlight: boolean }) {
   return (
     <div className="rounded-2xl bg-canvas/70 p-3.5 ring-1 ring-inset ring-line/70">
       <div className="flex items-center gap-3">
         <ConfidenceMeter level={forecast.confidenceLevel} />
         <div className="min-w-0">
           <p className="text-sm font-semibold leading-snug text-ink-900">{forecast.confidenceLabel}</p>
-          <p className="mt-0.5 text-xs leading-snug text-ink-500">{forecast.basis}</p>
+          <p className="mt-0.5 text-xs leading-snug text-ink-500">{ownFlight ? forecast.basis : forOption(forecast.basis)}</p>
         </div>
       </div>
       <p className="mt-3 flex gap-1.5 text-xs leading-snug text-ink-500">
         <Info aria-hidden className="mt-px size-3.5 shrink-0 text-breeze-500" />
-        <span>{forecast.note}</span>
+        <span>{ownFlight ? forecast.note : forOption(forecast.note)}</span>
       </p>
     </div>
   );

@@ -21,31 +21,37 @@ const CHIP =
 
 /**
  * One chip per explored flight ("Your flight", "Option 2"…), then "+ Another
- * flight" and, with two or more flights, "Compare". Scrolls sideways inside
- * itself (never the page), with soft fades at the screen edges.
+ * flight" and, with two or more flights, "Compare". The flight chips scroll
+ * sideways inside themselves (never the page), with soft fades at the edges;
+ * the two actions stay put after them, shrinking to icons when space is short.
  */
 export function FlightStrip({ entries, activeId, onSelect, onAdd, onCompare, className }: FlightStripProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const full = entries.length >= MAX_EXPLORED_FLIGHTS;
+  const single = entries.length < 2;
 
-  // Keep the active chip in view (e.g. after adding a seventh-from-the-left flight).
+  // Keep the active chip fully in view (e.g. after adding a sixth flight). Scrolls to the chip's own
+  // snap point (start-aligned): any other target would be snapped back to a neighbour's.
   useEffect(() => {
     const scroller = scrollerRef.current;
     const chip = scroller?.querySelector<HTMLElement>(`[data-flight-id="${CSS.escape(activeId)}"]`);
     if (!scroller || !chip) return;
-    const pad = 20;
-    const left = chip.offsetLeft - pad;
-    const right = chip.offsetLeft + chip.offsetWidth + pad - scroller.clientWidth;
-    if (scroller.scrollLeft > left) scroller.scrollTo({ left, behavior: "smooth" });
-    else if (scroller.scrollLeft < right) scroller.scrollTo({ left: right, behavior: "smooth" });
+    const fade = 16;
+    const inView =
+      chip.offsetLeft >= scroller.scrollLeft + fade &&
+      chip.offsetLeft + chip.offsetWidth <= scroller.scrollLeft + scroller.clientWidth - fade;
+    if (inView) return;
+    const left = Math.max(0, Math.min(chip.offsetLeft - 20, scroller.scrollWidth - scroller.clientWidth));
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scroller.scrollTo({ left, behavior: reduce ? "auto" : "smooth" });
   }, [activeId, entries.length]);
 
   return (
-    <nav aria-label="Flights you’re exploring" className={cn("-mx-5", className)}>
+    <nav aria-label="Flights you’re exploring" className={cn("@container -mx-5 flex items-center", className)}>
       <div
         ref={scrollerRef}
         className={cn(
-          "relative flex snap-x snap-mandatory scroll-px-5 gap-2 overflow-x-auto overscroll-x-contain px-5 py-1",
+          "relative flex min-w-0 flex-initial snap-x snap-mandatory scroll-px-5 gap-2 overflow-x-auto overscroll-x-contain py-1 pl-5 pr-4",
           "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
           "[mask-image:linear-gradient(to_right,transparent,#000_16px,#000_calc(100%-16px),transparent)]",
         )}
@@ -90,39 +96,58 @@ export function FlightStrip({ entries, activeId, onSelect, onAdd, onCompare, cla
             </button>
           );
         })}
+      </div>
 
+      <div className="flex shrink-0 gap-2 py-1 pr-5">
         <button
           type="button"
-          onClick={onAdd}
-          disabled={full}
+          onClick={full ? undefined : onAdd}
+          aria-disabled={full || undefined}
+          aria-label={full ? `Up to ${MAX_EXPLORED_FLIGHTS} flights — no more can be added` : "Another flight"}
           className={cn(
             CHIP,
-            "gap-1.5 px-4 text-[13px] font-semibold",
+            "w-11 justify-center gap-1.5 text-[13px] font-semibold",
             full
-              ? "cursor-not-allowed border border-line text-ink-400"
+              ? "cursor-not-allowed border border-line text-ink-400 @min-[420px]:w-auto @min-[420px]:px-4"
               : "border border-dashed border-ink-300 text-ink-700 hover:bg-surface",
+            !full && single && "@min-[380px]:w-auto @min-[380px]:px-4",
           )}
         >
           {full ? (
-            `Up to ${MAX_EXPLORED_FLIGHTS}`
+            <>
+              <Plus aria-hidden className="size-4 @min-[420px]:hidden" />
+              <span aria-hidden className="hidden @min-[420px]:inline">
+                Up to {MAX_EXPLORED_FLIGHTS}
+              </span>
+            </>
           ) : (
             <>
               <Plus aria-hidden className="size-4" />
-              Another flight
+              {single ? (
+                <span aria-hidden className="hidden @min-[380px]:inline">
+                  Another flight
+                </span>
+              ) : null}
             </>
           )}
         </button>
 
-        {entries.length >= 2 ? (
+        {single ? null : (
           <button
             type="button"
             onClick={onCompare}
-            className={cn(CHIP, "gap-1.5 bg-breeze-50 px-4 text-[13px] font-semibold text-breeze-700 ring-1 ring-inset ring-breeze-100 hover:bg-breeze-100")}
+            aria-label="Compare flights"
+            className={cn(
+              CHIP,
+              "w-11 justify-center bg-breeze-50 text-[13px] font-semibold text-breeze-700 ring-1 ring-inset ring-breeze-100 hover:bg-breeze-100 @min-[375px]:w-auto @min-[375px]:px-3.5",
+            )}
           >
-            <ArrowLeftRight aria-hidden className="size-4" />
-            Compare
+            <ArrowLeftRight aria-hidden className="size-4 @min-[375px]:hidden" />
+            <span aria-hidden className="hidden @min-[375px]:inline">
+              Compare
+            </span>
           </button>
-        ) : null}
+        )}
       </div>
     </nav>
   );

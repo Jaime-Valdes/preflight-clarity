@@ -26,8 +26,11 @@ export function routeLabel(flight: Flight): string {
   return `${flight.origin.code} → ${flight.destination.code}`;
 }
 
-/** Minutes of the airborne time expected to have some motion (the complement of smoothMinutesPct). */
-export function bumpyMinutes(flight: Flight): number {
-  const pct = Math.max(0, Math.min(100, flight.turbulence.smoothMinutesPct));
-  return Math.round((flight.airborneMin * (100 - pct)) / 100);
+/**
+ * The bumpy stretches the turbulence section lists for this flight: how many and
+ * their total minutes (the same windows, so both screens give the same figure).
+ */
+export function bumpyStretches(flight: Flight): { count: number; minutes: number } {
+  const { windows } = flight.turbulence;
+  return { count: windows.length, minutes: windows.reduce((sum, w) => sum + w.durationMin, 0) };
 }

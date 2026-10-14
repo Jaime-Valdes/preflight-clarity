@@ -72,13 +72,16 @@ export function visibleAlternatives(flight: Flight, daysUntil: number): Alternat
   });
 }
 
-/** Collapsed-header line: "2 smoother options on this route · up to +9". */
-export function compareTeaserLine(flight: Flight, daysUntil: number): string {
+/**
+ * Collapsed-header line: "2 smoother options on this route · up to +9".
+ * `ownFlight` false on an explored option, which is "this one" rather than "yours".
+ */
+export function compareTeaserLine(flight: Flight, daysUntil: number, ownFlight = true): string {
   const alts = visibleAlternatives(flight, daysUntil);
   if (alts.length === 0) return "No other flights found on this route";
   const smoother = alts.filter((a) => a.scoreDelta > 0);
   if (smoother.length === 0) {
-    return `${alts.length} other option${alts.length === 1 ? "" : "s"} · none smoother than yours`;
+    return `${alts.length} other option${alts.length === 1 ? "" : "s"} · none smoother than ${ownFlight ? "yours" : "this one"}`;
   }
   const best = Math.max(...smoother.map((a) => a.scoreDelta));
   const n = smoother.length;

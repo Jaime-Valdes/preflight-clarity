@@ -2,15 +2,17 @@
 
 import { useId, useMemo } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { TurbulencePoint } from "@preflight/shared/types";
+import type { PhaseForecast, TurbulencePoint } from "@preflight/shared/types";
 import { useHydrated } from "@/lib/hooks";
-import { CHART, COLORS, INTENSITY, intensityForLevel } from "@/lib/theme";
+import { CHART, COLORS, INTENSITY, PHASE_LABEL, intensityForLevel } from "@/lib/theme";
 import { compactMinutes } from "../turbulence/format";
 
 export interface CompareSeries {
   /** "Your flight", "Option 2"… */
   label: string;
   points: TurbulencePoint[];
+  /** Expected intensity per phase — the chart's text alternative. */
+  phases: PhaseForecast[];
   airborneMin: number;
 }
 
@@ -27,6 +29,11 @@ const HEIGHT = 200;
 const Y_MAX = 2.3;
 const LEVEL_LABEL: Record<number, string> = { 0: "Smooth", 1: "Light", 2: "Moderate" };
 const TICK_STEPS = [15, 30, 60, 90, 120, 180, 240, 300, 360, 480];
+
+/** "Your flight: Takeoff smooth, Climb light bumps, …" */
+function describe(s: CompareSeries): string {
+  return `${s.label}: ${s.phases.map((p) => `${PHASE_LABEL[p.phase]} ${INTENSITY[p.intensity].label.toLowerCase()}`).join(", ")}.`;
+}
 
 interface Row {
   minute: number;
@@ -100,7 +107,7 @@ export function CompareChart({ a, b }: CompareChartProps) {
           data={data}
           margin={{ top: 8, right: 26, bottom: 0, left: 0 }}
           title={`Expected turbulence over time: ${a.label} and ${b.label}`}
-          desc="Both timelines start at takeoff. The side-by-side numbers below the chart give the same comparison."
+          desc={`Both timelines start at takeoff. ${describe(a)} ${describe(b)}`}
         >
           <defs>
             {(["a", "b"] as const).map((key) => (

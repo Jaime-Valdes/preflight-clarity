@@ -10,6 +10,7 @@ import { departWindowOf, flightSeed, generateFlight, normalizeInput, normalizePr
 import { AIRPORTS, getAirport, resolveAirport, searchAirports } from "../src/airports";
 import { candidateAirlines, isRetiredFlightNumber } from "../src/airlines";
 import { getAircraftModel } from "../src/aircraft";
+import { addDays, timeToMinutes } from "../src/dates";
 import type { AlternativeFlight, DepartWindow, Flight, FlightInput, FlightPhase, FlightPrefs } from "../src/types";
 
 const INPUTS: FlightInput[] = [
@@ -84,6 +85,9 @@ const FORBIDDEN =
 const DISCOURAGED = /\b(storm\w*|thunder\w*|lightning|fail\w*|plunge\w*|stall\w*|fear\w*|panic\w*|scary|alarm\w*|violent\w*|rough)\b/i;
 
 const PHASES: FlightPhase[] = ["takeoff", "climb", "cruise", "descent", "landing"];
+
+/** Alternative reasons that credit the time of day (only fair more than an hour apart). */
+const TIME_OF_DAY = /at its departure time|at its time|at that time|time of day|early in the day|after sunset|afternoon heating|heat-driven|day's warmth|breezier time/;
 
 let failures = 0;
 let warnings = 0;
@@ -199,7 +203,7 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
     const phase = t.phases.find((p) => p.phase === w.phase)!;
     check(w.startMin >= phase.startMin && w.startMin + w.durationMin < phase.endMin, `${tag}: window not inside its phase`);
     check(w.label.startsWith(w.intensity === "moderate" ? "Moderate bumps possible" : "Light bumps likely"), `${tag}: label "${w.label}"`);
-    check(w.typicalLabel.startsWith("On this route,"), `${tag}: typicalLabel`);
+    check(w.typicalLabel.startsWith("On flights like this one,"), `${tag}: typicalLabel`);
     check(w.cause.endsWith("."), `${tag}: cause without period "${w.cause}"`);
     if (w.intensity === "moderate") check(w.seatbeltSign, `${tag}: moderate window without seatbelt sign`);
     const inside = t.points.filter((p) => p.minute >= w.startMin && p.minute <= w.startMin + w.durationMin);
@@ -316,6 +320,15 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
     if (alt.scoreDelta > 0) check(reasonSlot === tileSlot, `${tag}: smoother alt says "${alt.reason}" but history says "${t.history.bestDepartureWindow}"`);
     if (alt.scoreDelta < 0) check(reasonSlot !== tileSlot, `${tag}: bumpier alt blames the history-best slot: "${alt.reason}"`);
     check(!isRetiredFlightNumber(alt.flightNumber), `${tag}: alt retired flight number ${alt.flightNumber}`);
+  }
+  // The time of day is credited only more than an hour apart; within the hour it's "a similar time",
+  // and a plane named as larger / smaller really is.
+  for (const alt of alts.filter((a) => a.date === flight.input.date)) {
+    const gap = Math.abs(timeToMinutes(alt.departTime) - timeToMinutes(flight.departTime));
+    if (TIME_OF_DAY.test(alt.reason)) check(gap > 60, `${tag}: "${alt.reason}" leaves ${gap} min from this flight`);
+    if (/similar time|slightly (earlier|later)/.test(alt.reason)) check(gap <= 60, `${tag}: "${alt.reason}" leaves ${gap} min from this flight`);
+    if (/on a larger plane/.test(alt.reason)) check(alt.bodyType === "wide" && ac.bodyType === "narrow", `${tag}: "${alt.reason}" on a ${alt.bodyType}-body`);
+    if (/on a smaller plane/.test(alt.reason)) check(alt.bodyType === "narrow" && ac.bodyType === "wide", `${tag}: "${alt.reason}" on a ${alt.bodyType}-body`);
   }
 
   // Words
@@ -525,6 +538,63 @@ for (const [o, d] of [["JFK", "LAX"], ["JFK", "BOS"], ["ATL", "DEN"], ["LHR", "C
 }
 check(generateFlight({ origin: "LGA", destination: "ORD", date: "2027-01-10" }, { bodyType: "wide" }).aircraft.bodyType === "narrow", "wide-body at LaGuardia");
 
+// Shared facts. The route history is one per route and month (any day, year or prefs); the weather
+// one per airport, date and hour; the airborne time one per route and day. Options leaving within an
+// hour of the day's reference flight fly in its air: the same bumps, which a wide-body feels less.
+const weatherFacts = (w: Flight["weather"]["origin"]) =>
+  JSON.stringify([w.condition, w.label, w.tempC, w.windKts, w.windDir, w.gustKts, w.visibilityMi, w.precipPct, w.impact]);
+const bumpsOf = (f: Flight) => JSON.stringify(f.turbulence.windows.map((w) => [w.phase, w.startMin, w.durationMin, w.intensity]));
+let sameAir = 0;
+let wideInSameAir = 0;
+for (const input of INPUTS) {
+  const ref = generateFlight(input);
+  const tag = `${input.origin}→${input.destination} ${input.date}`;
+  const history = JSON.stringify(ref.turbulence.history);
+  const sameDay = [
+    ref,
+    ...(["morning", "afternoon", "evening"] as DepartWindow[]).map((w) => generateFlight(input, { departWindow: w })),
+    generateFlight(input, { bodyType: "wide", departWindow: departWindowOf(ref.departTime) }),
+    generateFlight(input, { bodyType: "wide" }),
+    ...ref.alternatives.filter((a) => a.date === input.date).map((a) => generateFlight(a.input!, a.prefs)),
+  ];
+  const month = input.date.slice(0, 8);
+  const sameMonth = [
+    generateFlight({ ...input, date: `${month}01` }),
+    generateFlight({ ...input, date: `${month}28` }, { departWindow: "evening" }),
+    generateFlight({ ...input, date: `${Number(input.date.slice(0, 4)) + 1}${input.date.slice(4, 8)}12` }),
+    ...ref.alternatives.filter((a) => a.date !== input.date && a.date.startsWith(month)).map((a) => generateFlight(a.input!, a.prefs)),
+  ];
+  for (const f of [...sameDay, ...sameMonth])
+    check(JSON.stringify(f.turbulence.history) === history, `${tag}: route history differs on ${f.input.date} ${JSON.stringify(f.prefs)}`);
+
+  const weatherByHour = new Map<string, string>();
+  for (const f of sameDay) {
+    const which = `${tag} ${JSON.stringify(f.prefs)}`;
+    check(f.airborneMin === ref.airborneMin, `${which}: airborne ${f.airborneMin} min vs ${ref.airborneMin} for the day's reference`);
+    const sides: Array<[string, Flight["weather"]["origin"]]> = [
+      [`${f.origin.code} ${f.input.date} ${f.departTime.slice(0, 2)}h`, f.weather.origin],
+      [`${f.destination.code} ${addDays(f.input.date, f.arriveDayOffset)} ${f.arriveTime.slice(0, 2)}h`, f.weather.destination],
+    ];
+    for (const [hour, w] of sides) {
+      const seen = weatherByHour.get(hour);
+      check(seen === undefined || seen === weatherFacts(w), `${which}: different weather at ${hour} than another flight then`);
+      weatherByHour.set(hour, weatherFacts(w));
+    }
+    if (f === ref || Math.abs(timeToMinutes(f.departTime) - timeToMinutes(ref.departTime)) > 60) continue;
+    sameAir++;
+    check(bumpsOf(f) === bumpsOf(ref), `${which}: leaves within an hour of the reference but has other bumps`);
+    if (f.aircraft.bodyType === ref.aircraft.bodyType) {
+      check(JSON.stringify(f.turbulence.points) === JSON.stringify(ref.turbulence.points) && f.smoothness.score === ref.smoothness.score, `${which}: same air and body type but a different series`);
+    } else if (f.aircraft.bodyType === "wide") {
+      wideInSameAir++;
+      const below = f.turbulence.points.every((p, i) => p.level <= ref.turbulence.points[i].level);
+      check(below && f.smoothness.score >= ref.smoothness.score, `${which}: a wide-body at a similar time is bumpier (${f.smoothness.score} vs ${ref.smoothness.score})`);
+    }
+  }
+}
+console.log(`Shared air: ${sameAir} options within an hour of their reference (${wideInSameAir} wide-body vs narrow-body)`);
+check(sameAir >= 20 && wideInSameAir >= 3, "shared-air sample too small");
+
 // Every alternative row equals the full flight it opens; opened alternatives pass every flight check.
 let altRows = 0;
 let opened = 0;
@@ -535,6 +605,7 @@ for (const input of INPUTS) {
     altRows++;
     const full = generateFlight(alt.input!, alt.prefs);
     check(summarize(alt) === summarize(full), `${input.origin}→${input.destination}: alt row ≠ its flight\n    row  ${summarize(alt)}\n    full ${summarize(full)}`);
+    check(alt.id === full.id, `${input.origin}→${input.destination}: alt id ${alt.id} is not the id of the flight it opens (${full.id})`);
     check(JSON.stringify(full.prefs) === JSON.stringify(alt.prefs), `${input.origin}→${input.destination}: alt prefs not round-tripped`);
     kindsSeen.add(Object.keys(alt.prefs ?? {}).sort().join("+") + (alt.date === flight.input.date ? "" : " other-day"));
     if (opened < 60) {

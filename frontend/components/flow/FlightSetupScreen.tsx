@@ -159,7 +159,7 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
             Departure date
           </label>
           <div className="relative">
-            <CalendarDays aria-hidden className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
+            <CalendarDays aria-hidden className="pointer-events-none absolute left-4 top-1/2 z-[1] size-4 -translate-y-1/2 text-ink-400" />
             <input
               id={dateId}
               type="date"

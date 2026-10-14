@@ -8,6 +8,7 @@ import type { Flight, SectionContext, SectionProps } from "@preflight/shared/typ
 import { useTracker } from "@/lib/tracking";
 import { Reveal } from "./env/Reveal";
 import { SwitchRow } from "./env/Switch";
+import { useExplore, useFlightState } from "./explore/context";
 
 type OptionId = "turbulence" | "weather" | "gate_time";
 
@@ -47,9 +48,13 @@ const ALL_ON: Record<OptionId, boolean> = { turbulence: true, weather: true, gat
  */
 export function AlertsSection({ flight, ctx }: SectionProps) {
   const tracker = useTracker();
+  // Alerts are about the participant's own flight (one setting, recorded as dashboard.alert): on an
+  // explored option the switch only shows that setting, so every toggle refers to their own flight.
+  const onOption = useExplore()?.showingOwnFlight === false;
   // Start from the tracker so a reload mid-dashboard keeps the switch where the participant left it.
   const [on, setOn] = useState(() => tracker?.alertState().finalOn ?? false);
-  const [options, setOptions] = useState<Record<OptionId, boolean>>(ALL_ON);
+  // Kept by the dashboard in variant A, so looking at another flight and coming back doesn't reset them.
+  const [options, setOptions] = useFlightState<Record<OptionId, boolean>>("alerts.options", ALL_ON);
 
   const toggleMain = (next: boolean) => {
     setOn(next);
@@ -61,18 +66,32 @@ export function AlertsSection({ flight, ctx }: SectionProps) {
     tracker?.event("alert_option", "alerts", `${id}:${next ? "on" : "off"}`);
   };
 
+  const mainSwitch = (
+    <SwitchRow
+      size="md"
+      checked={on}
+      onChange={toggleMain}
+      label="Notify me if the forecast changes"
+      description="Only when something meaningful changes — no daily noise."
+      className="rounded-2xl bg-canvas/70 px-4 py-3 ring-1 ring-inset ring-line/70"
+    />
+  );
+
   return (
     <div>
-      <SwitchRow
-        size="md"
-        checked={on}
-        onChange={toggleMain}
-        label="Notify me if the forecast changes"
-        description="Only when something meaningful changes — no daily noise."
-        className="rounded-2xl bg-canvas/70 px-4 py-3 ring-1 ring-inset ring-line/70"
-      />
+      {onOption ? (
+        <>
+          {/* A disabled fieldset disables the switch inside it (shown in its current state). */}
+          <fieldset disabled role="presentation" className="min-w-0 opacity-60">
+            {mainSwitch}
+          </fieldset>
+          <p className="mt-2 px-1 text-xs leading-snug text-ink-500">Alerts are set on your own flight.</p>
+        </>
+      ) : (
+        mainSwitch
+      )}
 
-      <Reveal open={on}>
+      <Reveal open={on && !onOption}>
         <div className="pt-3">
           <div className="rounded-2xl bg-calm-50/60 p-4 ring-1 ring-inset ring-calm-100">
             <div className="flex items-start gap-2.5">
@@ -106,7 +125,7 @@ export function AlertsSection({ flight, ctx }: SectionProps) {
       </Reveal>
 
       <div className="mt-3 flex flex-col gap-1.5 px-1 text-xs leading-snug text-ink-500">
-        <p>{horizonNote(flight, ctx)}</p>
+        <p>{horizonNote(flight, ctx, onOption)}</p>
         <p>
           A meaningful change means your smoothness score moves by 5 points or more, a bumpy stretch appears or clears,
           or your departure time or gate changes.
@@ -126,15 +145,17 @@ export function alertsTeaser(flight: Flight, ctx: SectionContext): string {
 
 // ── Copy ────────────────────────────────────────────────────────────────────
 
-function horizonNote(flight: Flight, ctx: SectionContext): string {
+function horizonNote(flight: Flight, ctx: SectionContext, onOption: boolean): string {
   if (ctx.daysUntil > FORECAST_HORIZON_DAYS) {
     const around = safeShortDate(addDays(flight.input.date, -FORECAST_HORIZON_DAYS));
     return `Detailed forecasts start about ${FORECAST_HORIZON_DAYS} days before departure${
       around ? ` — around ${around} for this flight` : ""
     }. Until then, you'd only hear about changes to the seasonal outlook.`;
   }
-  if (ctx.daysUntil > 2) return "Your forecast updates every 6 hours until departure.";
-  return "Your forecast updates every hour until departure.";
+  // Uses the date on screen, so on an explored option it is that flight's forecast.
+  const whose = onOption ? "This flight’s" : "Your";
+  if (ctx.daysUntil > 2) return `${whose} forecast updates every 6 hours until departure.`;
+  return `${whose} forecast updates every hour until departure.`;
 }
 
 /** The date helpers throw on malformed input; a generated flight's date is valid, but never crash a section over it. */

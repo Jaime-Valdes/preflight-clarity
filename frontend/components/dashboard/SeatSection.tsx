@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { COLORS, SEAT_ZONE } from "@/lib/theme";
 import { useTracker } from "@/lib/tracking";
+import { useFlightState } from "./explore/context";
 import {
   describeSeat,
   focusRowFor,
@@ -32,8 +33,9 @@ const MAP_MAX_HEIGHT_PX = 420;
 export function SeatSection({ flight }: SectionProps) {
   const { seatMap } = flight;
   const tracker = useTracker();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<string | null>(null);
+  // Kept per explored flight, so switching away and back doesn't reset them.
+  const [selected, setSelected] = useFlightState<string | null>("seat.selected", null);
+  const [chosen, setChosen] = useFlightState<string | null>("seat.chosen", null);
   const [whyOpen, setWhyOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);

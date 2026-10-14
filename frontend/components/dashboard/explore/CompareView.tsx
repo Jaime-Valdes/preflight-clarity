@@ -1,8 +1,8 @@
 "use client";
 
 import { Check } from "lucide-react";
-import type { ReactNode } from "react";
-import { daysBetween, formatDuration, formatShortDate, formatTime12 } from "@preflight/shared/dates";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { daysBetween, formatDuration, formatOffset, formatShortDate, formatTime12 } from "@preflight/shared/dates";
 import { getForecastStatus } from "@preflight/shared/forecast";
 import type { Flight } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 import { INTENSITY } from "@/lib/theme";
 import { BODY_LABEL, dayMarker, scoreLabel } from "../control/compare";
 import { CompareChart, SERIES_COLOR } from "./CompareChart";
-import { bumpyMinutes, exploreLabel, routeLabel, type ExploredEntry } from "./model";
+import { bumpyStretches, exploreLabel, routeLabel, type ExploredEntry } from "./model";
 import { Sheet } from "./Sheet";
 
 interface CompareViewProps {
@@ -46,6 +46,24 @@ function daysAway(today: string, iso: string): string {
  * one" is recorded only — it never changes anything.
  */
 export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer, today, onClose }: CompareViewProps) {
+  const pickersRef = useRef<HTMLDivElement>(null);
+  // Set by a tap on "I'd prefer this one" only, so changing the pair never re-announces it.
+  const [noted, setNoted] = useState(false);
+
+  // Each picker row scrolls sideways: keep its selected chip in view (the default
+  // second flight is the most recent one, i.e. the last chip).
+  useEffect(() => {
+    for (const row of pickersRef.current?.querySelectorAll<HTMLElement>("[data-picker-row]") ?? []) {
+      const chip = row.querySelector<HTMLElement>('[aria-pressed="true"]');
+      if (!chip) continue;
+      const r = row.getBoundingClientRect();
+      const c = chip.getBoundingClientRect();
+      const visibleRight = r.right - 40; // the row's right padding and fade
+      if (c.right > visibleRight) row.scrollLeft += c.right - visibleRight;
+      else if (c.left < r.left) row.scrollLeft -= r.left - c.left;
+    }
+  }, [pair]);
+
   const index = new Map(entries.map((e, i) => [e.meta.id, i]));
   const ia = index.get(pair[0]) ?? 0;
   const ib = index.get(pair[1]) ?? Math.min(1, entries.length - 1);
@@ -60,12 +78,17 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
   function choose(side: Side, id: string) {
     if (side === "a" && id !== pair[0] && id !== pair[1]) onPairChange(id, pair[1]);
     if (side === "b" && id !== pair[1] && id !== pair[0]) onPairChange(pair[0], id);
+    setNoted(false);
+  }
+
+  function prefer(id: string | null) {
+    onPrefer(id);
+    setNoted(id !== null);
   }
 
   const fa = a.flight;
   const fb = b.flight;
   const conf = (f: Flight) => getForecastStatus(Math.max(0, daysBetween(today, f.input.date)), f.turbulence.history).confidenceLabel;
-  const preferredHere = preferredId !== null && (preferredId === a.meta.id || preferredId === b.meta.id);
 
   return (
     <Sheet
@@ -80,11 +103,11 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
       }
     >
       {/* Which two flights */}
-      <div className="mt-2 space-y-2">
+      <div ref={pickersRef} className="mt-2 space-y-2">
         {(["a", "b"] as const).map((side) => (
           <div key={side} role="group" aria-label={side === "a" ? "First flight" : "Second flight"} className="flex items-center gap-2">
             <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ background: SERIES_COLOR[side] }} />
-            <div className="-my-1 -mr-5 flex min-w-0 flex-1 snap-x gap-1.5 overflow-x-auto py-1 pr-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,#000_calc(100%-16px),transparent)]">
+            <div data-picker-row className="-my-1 -mr-5 flex min-w-0 flex-1 snap-x gap-1.5 overflow-x-auto py-1 pr-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,#000_calc(100%-16px),transparent)]">
               {entries.map((e, i) => {
                 const selected = e.meta.id === pair[side === "a" ? 0 : 1];
                 const taken = e.meta.id === pair[side === "a" ? 1 : 0];
@@ -141,9 +164,10 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
               <button
                 type="button"
                 aria-pressed={preferred}
-                onClick={() => onPrefer(preferred ? null : entry.meta.id)}
+                aria-label={`I’d prefer this one: ${label}, ${f.origin.code} to ${f.destination.code}, ${safeShort(f.input.date)}, ${formatTime12(f.departTime)}`}
+                onClick={() => prefer(preferred ? null : entry.meta.id)}
                 className={cn(
-                  "mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-full px-2 py-2 text-[13px] font-semibold leading-tight ring-1 ring-inset transition-colors",
+                  "mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-full px-2 py-2 text-[13px] font-semibold leading-tight text-balance ring-1 ring-inset transition-colors",
                   preferred ? "bg-calm-50 text-calm-700 ring-calm-200" : "bg-surface text-ink-900 ring-line-strong hover:bg-canvas",
                 )}
               >
@@ -155,7 +179,7 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
         })}
       </div>
       <p role="status" className="mt-2.5 min-h-[18px] text-center text-xs text-ink-500">
-        {preferredHere ? "Noted — nothing is booked." : null}
+        {noted ? "Noted — nothing is booked." : null}
       </p>
 
       {/* Overlaid timelines */}
@@ -166,7 +190,7 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
             <span key={side} className="inline-flex items-center gap-1.5">
               <span
                 aria-hidden
-                className={cn("h-0.5 w-4 rounded-full", side === "b" && "bg-transparent border-t-2 border-dashed")}
+                className={cn("h-0.5 w-4", side === "a" ? "rounded-full" : "border-t-2 border-dashed bg-transparent")}
                 style={side === "a" ? { background: SERIES_COLOR.a } : { borderColor: SERIES_COLOR.b }}
               />
               {sides[side].label}
@@ -175,8 +199,8 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
         </div>
         <div className="mt-2">
           <CompareChart
-            a={{ label: sides.a.label, points: fa.turbulence.points, airborneMin: fa.airborneMin }}
-            b={{ label: sides.b.label, points: fb.turbulence.points, airborneMin: fb.airborneMin }}
+            a={{ label: sides.a.label, points: fa.turbulence.points, phases: fa.turbulence.phases, airborneMin: fa.airborneMin }}
+            b={{ label: sides.b.label, points: fb.turbulence.points, phases: fb.turbulence.phases, airborneMin: fb.airborneMin }}
           />
         </div>
         <p className="mt-1 text-[11px] leading-snug text-ink-500">Minutes after takeoff. Each line ends when that flight lands.</p>
@@ -184,7 +208,7 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
 
       {/* Side-by-side facts */}
       <dl className="mt-3 rounded-3xl bg-surface px-4 py-1 shadow-soft ring-1 ring-line/80">
-        <Fact names={[sides.a.label, sides.b.label]} label="Bumpy minutes" a={`${bumpyMinutes(fa)} min`} b={`${bumpyMinutes(fb)} min`} />
+        <Fact names={[sides.a.label, sides.b.label]} label="Bumpy stretches" a={bumpy(fa)} b={bumpy(fb)} />
         <Fact
           names={[sides.a.label, sides.b.label]}
           label="Strongest motion"
@@ -221,7 +245,7 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
             </>
           }
         />
-        <Fact names={[sides.a.label, sides.b.label]} label="Departs" a={`${formatTime12(fa.departTime)} · ${fa.origin.code}`} b={`${formatTime12(fb.departTime)} · ${fb.origin.code}`} />
+        <Fact names={[sides.a.label, sides.b.label]} label="Departs" a={departs(fa)} b={departs(fb)} />
         <Fact names={[sides.a.label, sides.b.label]} label="Arrives" a={arrives(fa)} b={arrives(fb)} />
         <Fact names={[sides.a.label, sides.b.label]} label="Gate to gate" a={formatDuration(fa.blockMin)} b={formatDuration(fb.blockMin)} />
         <Fact names={[sides.a.label, sides.b.label]} label="Days away" a={daysAway(today, fa.input.date)} b={daysAway(today, fb.input.date)} />
@@ -231,9 +255,39 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
   );
 }
 
-function arrives(f: Flight): string {
+/** "25 min" over "1 stretch" — the windows the turbulence section lists. */
+function bumpy(f: Flight): ReactNode {
+  const { count, minutes } = bumpyStretches(f);
+  if (count === 0) return "None expected";
+  return (
+    <>
+      {formatOffset(minutes)}
+      <span className="block text-ink-500">
+        {count} stretch{count === 1 ? "" : "es"}
+      </span>
+    </>
+  );
+}
+
+/** Time over the airport code (like Aircraft and Airline), so the code never dangles after a wrap. */
+function departs(f: Flight): ReactNode {
+  return (
+    <>
+      {formatTime12(f.departTime)}
+      <span className="block text-ink-500">{f.origin.code}</span>
+    </>
+  );
+}
+
+function arrives(f: Flight): ReactNode {
   const m = dayMarker(f.arriveDayOffset);
-  return `${formatTime12(f.arriveTime)}${m ? ` (${m} day)` : ""} · ${f.destination.code}`;
+  return (
+    <>
+      {formatTime12(f.arriveTime)}
+      {m ? ` (${m} day)` : ""}
+      <span className="block text-ink-500">{f.destination.code}</span>
+    </>
+  );
 }
 
 function Fact({

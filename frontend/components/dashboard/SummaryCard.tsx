@@ -6,6 +6,7 @@ import type { Flight, ForecastStatus, Intensity, SectionContext } from "@preflig
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import { COLORS, INTENSITY, PHASE_LABEL } from "@/lib/theme";
+import { useExplore } from "./explore/context";
 
 interface SummaryCardProps {
   flight: Flight;
@@ -18,15 +19,15 @@ const STROKE = 9;
 const RADIUS = (RING - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-/** Short "how we know" line under the score. */
-function basisLine(forecast: ForecastStatus): string {
+/** Short "how we know" line under the score. `ownFlight` false on an explored option ("this flight"). */
+function basisLine(forecast: ForecastStatus, ownFlight: boolean): string {
   switch (forecast.mode) {
     case "history":
       return `${forecast.confidenceLabel} · based on route history`;
     case "outlook":
       return `${forecast.confidenceLabel} · seasonal outlook and route history`;
     case "forecast":
-      return `${forecast.confidenceLabel} · latest forecast for your flight`;
+      return `${forecast.confidenceLabel} · latest forecast for ${ownFlight ? "your" : "this"} flight`;
   }
 }
 
@@ -92,6 +93,7 @@ export function SummaryCard({ flight, ctx, className }: SummaryCardProps) {
   const { smoothness, turbulence } = flight;
   const present = new Set<Intensity>(turbulence.phases.map((p) => p.intensity));
   const legend = (["none", "light", "moderate"] as const).filter((level) => present.has(level));
+  const ownFlight = useExplore()?.showingOwnFlight ?? true;
 
   return (
     <Card className={cn("p-5", className)}>
@@ -107,7 +109,7 @@ export function SummaryCard({ flight, ctx, className }: SummaryCardProps) {
       <p className="mt-4 text-[15px] leading-relaxed text-ink-700">{smoothness.summary}</p>
       <p className="mt-2.5 flex items-start gap-1.5 text-xs leading-snug text-ink-500">
         <Info aria-hidden className="mt-px size-3.5 shrink-0 text-breeze-500" />
-        <span>{basisLine(ctx.forecast)}</span>
+        <span>{basisLine(ctx.forecast, ownFlight)}</span>
       </p>
 
       <div className="mt-4 border-t border-line/70 pt-4">

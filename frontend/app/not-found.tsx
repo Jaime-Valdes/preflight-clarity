@@ -23,7 +23,7 @@ export default function NotFound() {
         <h1 className="mt-5 text-2xl font-bold leading-tight text-ink-900">We couldn’t find that page</h1>
         <p className="mt-3 text-[15px] leading-relaxed text-ink-700">
           The link may be incomplete or out of date. The study starts from the home page, and it
-          takes about 5 minutes.
+          takes about 5–10 minutes.
         </p>
 
         <Link

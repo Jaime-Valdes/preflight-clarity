@@ -345,6 +345,7 @@ export interface SoundCue {
 }
 
 export interface AlternativeFlight {
+  /** Id of the flight it opens (= generateFlight(input, prefs).id); unique within the list. */
   id: string;
   airline: Airline;
   flightNumber: string;
@@ -443,9 +444,9 @@ export interface SectionProps {
 // ── Tracking ────────────────────────────────────────────────────────────────
 
 export interface SectionStats {
-  /** Times the section was expanded. */
+  /** Times the participant expanded the section (not counting it coming back into view on a flight switch). */
   opens: number;
-  /** Total time expanded while the page was visible, ms. */
+  /** Total time expanded while the page was visible, ms (paused while the compare view or the what-if sheet covers it). */
   openMs: number;
   /** ms after the dashboard started when the section was first expanded. */
   firstOpenAtMs: number | null;
@@ -526,14 +527,20 @@ export interface ExplorationMetrics {
   flights: ExploredFlight[];
   /** Chip taps that changed the active flight. */
   switches: number;
-  /** Visible time per flight id, ms. */
+  /** Visible time per flight id, ms (not counting time in the compare view or the what-if sheet). */
   flightMs: Record<string, number>;
   /** Times the compare view was opened. */
   compares: number;
   /** Visible time in the compare view, ms. */
   compareMs: number;
-  /** "idA|idB" per compare, in order. */
+  /** "idA|idB" for each opening of the compare view and each pair change while it is open, in order (≤ 50). */
   comparePairs: string[];
+  /**
+   * Visible time in the "Try a different flight" sheet, ms. Absent in older
+   * records (parsed as 0), when that time went to the flight behind the sheet.
+   * sum(flightMs) + compareMs + whatIfMs ≈ activeMs.
+   */
+  whatIfMs?: number;
   alternativesOpened: number;
   whatIfs: number;
   /** Active flight when "done" was tapped (or at the last snapshot). */

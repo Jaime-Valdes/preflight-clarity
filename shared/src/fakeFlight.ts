@@ -8,10 +8,13 @@
  * `${origin}|${destination}|${date}` (+ a stable suffix for non-empty prefs,
  * see flightSeed), so a change in one facet never shifts another.
  *
- * Flights with empty prefs (every flight set up before the dashboard) follow
- * the original model exactly, so existing sessions regenerate identically.
- * Flights with prefs (explored options and alternatives) add an explicit
- * time-of-day and body-type model; see todModelFor.
+ * Facts that are not about one flight are shared by every flight they cover,
+ * whatever its prefs: the route history by route and month (routeMonthFor),
+ * the weather by airport, date and hour (weatherAt), the airborne time by
+ * route and day. Options leaving within an hour of the same day's reference
+ * flight (empty prefs) fly in its air: they share its bump draw, and a
+ * wide-body feels it a little less (referenceDay). Other options add an
+ * explicit time-of-day model; see todModelFor.
  *
  * Every string here is shown verbatim to anxious flyers: calm, plain,
  * specific, never alarming and never promising.
@@ -53,7 +56,7 @@ import {
 } from "./airlines";
 import { buildAircraft, chooseAircraftModel, columnGroupsFor, getAircraftModel, type AircraftModel } from "./aircraft";
 import { pickBackground, pickBadges, pickCrewNames } from "./names";
-import { addDays, daysBetween, formatOffset, isISODate, minutesToTime, monthName, parseISODate } from "./dates";
+import { addDays, daysBetween, formatOffset, isISODate, minutesToTime, monthName, parseISODate, timeToMinutes } from "./dates";
 
 // ── Input ───────────────────────────────────────────────────────────────────
 
@@ -413,7 +416,9 @@ interface Timing {
 
 const round5 = (n: number) => Math.round(n / 5) * 5;
 
-function airborneFor(rng: Rng, ctx: RouteContext, distanceMi: number): number {
+/** Airborne minutes in the route's typical winds, before the day's ±2% variation. */
+function typicalAirborne(ctx: RouteContext): number {
+  const distanceMi = ctx.distanceMi;
   // Wide-bodies cruise faster and spend proportionally less of the trip climbing and
   // descending: effective speed ramps from ~490 mph on short hops to ~545 mph on ultra-long routes.
   const milesPerMin = 8.2 + clamp((distanceMi - 2500) / 6000, 0, 0.9);
@@ -423,7 +428,16 @@ function airborneFor(rng: Rng, ctx: RouteContext, distanceMi: number): number {
   const polar = clamp((Math.abs(lonDelta(ctx.origin, ctx.destination)) - 140) / 40, 0, 1);
   const windAmp = (distanceMi > 5000 ? 0.055 : 0.08) * (1 - 0.6 * polar);
   const wind = 1 + windAmp * ctx.ewStrength * (ctx.eastbound ? -1 : 1);
-  return Math.max(30, Math.round(base * wind * rng.float(0.98, 1.02)));
+  return base * wind;
+}
+
+function airborneFor(rng: Rng, ctx: RouteContext): number {
+  return Math.max(30, Math.round(typicalAirborne(ctx) * rng.float(0.98, 1.02)));
+}
+
+/** Long eastbound routes are flown overnight. A route fact, so the schedule and the route history agree. */
+function overnightRoute(ctx: RouteContext): boolean {
+  return ctx.longHaul && ctx.eastbound && typicalAirborne(ctx) >= 360;
 }
 
 const SLOT_RANGES: Record<Slot, [number, number]> = {
@@ -498,8 +512,13 @@ function slotOfHour(hour: number): Slot {
   return hour < 10 ? "morning" : hour < 14 ? "midday" : hour < 18 ? "afternoon" : "evening";
 }
 
-function buildTiming(rng: Rng, ctx: RouteContext, date: string, window?: DepartWindow): Timing {
-  const airborneMin = airborneFor(rng, ctx, ctx.distanceMi);
+/**
+ * `dayAirborneMin`: options fly in the same day's winds as the reference flight, so they
+ * take its airborne time (their own draw is still made, keeping the rest of the stream in place).
+ */
+function buildTiming(rng: Rng, ctx: RouteContext, date: string, window?: DepartWindow, dayAirborneMin?: number): Timing {
+  const drawn = airborneFor(rng, ctx);
+  const airborneMin = dayAirborneMin ?? drawn;
   const blockMin = airborneMin + rng.int(15, 35);
   if (window) {
     const departTime = scheduleInWindow(rng, date, window, ctx, blockMin);
@@ -507,8 +526,7 @@ function buildTiming(rng: Rng, ctx: RouteContext, date: string, window?: DepartW
     const arr = arrivalFor(date, departTime, ctx.origin.tz, blockMin, ctx.destination.tz);
     return { airborneMin, blockMin, departTime, departHour: h + mi / 60, slot: slotOfHour(h + mi / 60), ...arr };
   }
-  const overnight = ctx.longHaul && ctx.eastbound && airborneMin >= 360;
-  const wanted: Slot = overnight
+  const wanted: Slot = overnightRoute(ctx)
     ? "overnight"
     : rng.weighted<Slot>([
         ["morning", 35],
@@ -666,20 +684,20 @@ function monthBlend(month: number): number {
   return (1 - Math.cos((2 * Math.PI * (month - 1)) / 12)) / 2;
 }
 
+/** Every value but `localTime` and the notes depends only on the rng, the airport, the date and the clock hour. */
 function buildWeather(rng: Rng, airport: Airport, moment: "departure" | "arrival", localTime: string, dateIso: string): WeatherReport {
   const { m: month } = parseISODate(dateIso);
   const climate = climateOf(airport);
   const w = monthBlend(month);
   const tempMean = climate.janC + (climate.julC - climate.janC) * w;
   const rainPct = climate.rainJanPct + (climate.rainJulPct - climate.rainJanPct) * w;
-  const [hh, mm] = localTime.split(":").map(Number);
-  const hour = hh + mm / 60;
+  const hour = Number(localTime.slice(0, 2));
   const diurnal = 3 * Math.sin((2 * Math.PI * (hour - 9)) / 24);
   const tempC = Math.round(tempMean + diurnal + rng.float(-3.5, 3.5));
   const tropical = Math.abs(airport.lat) < 23.5;
   const season = seasonFor(month, airport.lat);
   const afternoon = hour >= 12 && hour < 19;
-  const earlyMorning = hour >= 4 && hour < 9.5;
+  const earlyMorning = hour >= 4 && hour < 10;
   const desert = rainPct < 8;
 
   const wet = rainPct / 100;
@@ -781,6 +799,20 @@ function buildWeather(rng: Rng, airport: Airport, moment: "departure" | "arrival
   };
 }
 
+type FlightWeather = Flight["weather"];
+
+/** The weather at an airport in one clock hour of one day: the same for every flight then, whatever its prefs. */
+function weatherAt(airport: Airport, moment: "departure" | "arrival", localTime: string, dateIso: string): WeatherReport {
+  return buildWeather(createRng(`wx|${airport.code}|${dateIso}|${localTime.slice(0, 2)}`), airport, moment, localTime, dateIso);
+}
+
+function weatherFor(ctx: RouteContext, timing: Timing, date: string): FlightWeather {
+  return {
+    origin: weatherAt(ctx.origin, "departure", timing.departTime, date),
+    destination: weatherAt(ctx.destination, "arrival", timing.arriveTime, timing.arriveDate),
+  };
+}
+
 // ── Turbulence ──────────────────────────────────────────────────────────────
 
 interface PhaseBounds {
@@ -841,8 +873,9 @@ interface Cause {
 }
 
 /**
- * Time-of-day and body-type knobs for flights with prefs. NEUTRAL leaves every
- * draw and value exactly as the original model (flights with empty prefs).
+ * Time-of-day and body-type knobs for options away from the reference flight.
+ * NEUTRAL is the base model (reference flights, and options sharing their air);
+ * there only `wide` changes, and only values, never draws.
  *
  * The causality is real: in summer (and on tropical routes) a morning departure
  * gets fewer and shorter bump windows, a lower chance of a moderate one, a calmer
@@ -999,7 +1032,7 @@ function windowLabel(w: WindowDraft, airborneMin: number): { label: string; typi
   else when = `about ${formatOffset(w.startMin)} into the flight`;
   const label = `${cap} bumps ${verb} ${when}, ${w.phase === "descent" || w.startMin < 60 ? "lasting" : "for"} about ${dur}.`;
   const typical = w.intensity === "moderate" ? "moderate bumps sometimes happen" : "light bumps are common";
-  const typicalLabel = `On this route, ${typical} ${when}, for about ${dur}.`;
+  const typicalLabel = `On flights like this one, ${typical} ${when}, for about ${dur}.`;
   return { label, typicalLabel };
 }
 
@@ -1014,10 +1047,29 @@ function intensityFor(level: number): Intensity {
 }
 
 interface TurbulenceBuild {
-  forecast: TurbulenceForecast;
+  /** Without the route history, which is a fact about the route and month (routeMonthFor). */
+  forecast: Omit<TurbulenceForecast, "history">;
   smoothness: Smoothness;
-  bestSlot: Slot;
   drafts: WindowDraft[];
+}
+
+/**
+ * Bumps drawn from another flight's air (shared draw): keep every cause this
+ * flight's own weather and time also support (in its own wording), and tell the
+ * rest with one that fits, so a cause never argues with the weather card.
+ */
+function recause(rng: Rng, drafts: WindowDraft[], ctx: RouteContext, timing: Timing, wx: FlightWeather, tod: TodModel): void {
+  for (const d of drafts) {
+    const own = causesFor(d.phase, ctx, timing, wx, tod).filter((c) => c.weight > 0);
+    const same = own.find((c) => c.tag === d.cause.tag);
+    if (same) {
+      d.cause = same;
+      continue;
+    }
+    const taken = drafts.filter((o) => o !== d && o.phase === d.phase).map((o) => o.cause.text);
+    const pool = own.filter((c) => !taken.includes(c.text));
+    d.cause = rng.weighted((pool.length > 0 ? pool : own).map((c): [Cause, number] => [c, c.weight]));
+  }
 }
 
 function phaseNote(
@@ -1097,13 +1149,16 @@ function buildTurbulence(
   rng: Rng,
   ctx: RouteContext,
   timing: Timing,
-  wx: { origin: WeatherReport; destination: WeatherReport },
-  date: string,
+  wx: FlightWeather,
   cruiseAltitudeFt: number,
-  /** Flights with prefs: the time-of-day model and the route history copied from the same day's reference flight. */
-  explore?: { tod: TodModel; history: { bestSlot: Slot; flightsAnalyzed: number } },
+  tod: TodModel,
+  /**
+   * Shared draw: the bumps come from this air (the same day's reference flight, same airborne
+   * time, with `rng` its turbulence stream); `timing` and `wx` still word the causes and notes.
+   */
+  shared?: { timing: Timing; wx: FlightWeather },
 ): TurbulenceBuild {
-  const tod = explore?.tod ?? NEUTRAL_TOD;
+  const air = shared ?? { timing, wx };
   const airborneMin = timing.airborneMin;
   const bounds = phaseBoundsFor(rng, airborneMin);
   const byPhase = Object.fromEntries(bounds.map((b) => [b.phase, b])) as Record<FlightPhase, PhaseBounds>;
@@ -1132,7 +1187,7 @@ function buildTurbulence(
     if (descentPossible && used.descent < 1) options.push(["descent", 35]);
     if (options.length === 0) break;
     const phase = rng.weighted(options);
-    const causes = causesFor(phase, ctx, timing, wx, tod).filter((c) => c.weight > 0);
+    const causes = causesFor(phase, ctx, air.timing, air.wx, tod).filter((c) => c.weight > 0);
     // A second cruise window never repeats the first one's story.
     const prevCruise = phase === "cruise" && used.cruise === 1 ? drafts.find((d) => d.phase === "cruise") : undefined;
     const pool = prevCruise ? causes.filter((c) => c.text !== prevCruise.cause.text) : causes;
@@ -1171,9 +1226,10 @@ function buildTurbulence(
     }
   }
   drafts.sort((a, b) => a.startMin - b.startMin);
+  if (shared) recause(rng.fork("causes"), drafts, ctx, timing, wx, tod);
 
   // Per-window peak levels.
-  // Wide-bodies (flights with prefs): light peaks ×0.92, moderate peaks squeezed into 1.65–1.80.
+  // Wide-bodies: light peaks ×0.92, moderate peaks squeezed into 1.65–1.80.
   const peaks = drafts.map((d) => {
     const p = d.intensity === "moderate" ? rng.float(1.65, 1.9) : rng.float(0.9, 1.3);
     if (!tod.wide) return p;
@@ -1211,12 +1267,14 @@ function buildTurbulence(
     points.push({ minute: t, level: Math.round(clamp(level, 0, 2) * 100) / 100, phase });
   }
 
+  // Notes follow this flight's own weather, so they draw from their own stream (a shared draw stays aligned).
+  const noteRng = rng.fork("notes");
   const phases: PhaseForecast[] = bounds.map((b) => {
     const inPhase = points.filter((p) => p.phase === b.phase);
     const peak = inPhase.reduce((m, p) => Math.max(m, p.level), 0);
     const intensity = intensityFor(peak);
     const windows = drafts.filter((d) => d.phase === b.phase);
-    return { phase: b.phase, startMin: b.startMin, endMin: b.endMin, intensity, note: phaseNote(b.phase, intensity, windows, wx, airborneMin, cruiseAltitudeFt, rng) };
+    return { phase: b.phase, startMin: b.startMin, endMin: b.endMin, intensity, note: phaseNote(b.phase, intensity, windows, wx, airborneMin, cruiseAltitudeFt, noteRng) };
   });
 
   const windows: BumpWindow[] = drafts.map((d) => ({
@@ -1241,39 +1299,9 @@ function buildTurbulence(
   const label = score >= 88 ? "Very smooth" : score >= 75 ? "Mostly smooth" : "Some bumps expected";
   const summary = summaryFor(score, label, drafts, rng);
 
-  // Route history for the "months before" mode.
-  const drawnBestSlot: Slot =
-    ctx.longHaul && ctx.eastbound && timing.slot === "evening" ? "overnight"
-    : ctx.tropical || ctx.season === "summer" ? "morning"
-    : rng.chance(0.7) ? "morning" : "evening";
-  const bestSlot = explore ? explore.history.bestSlot : drawnBestSlot;
-  const bestWindowText: Record<Slot, string> = {
-    morning: `Morning departures (6–10 AM) are usually the smoothest on this route in ${monthName(date)}.`,
-    midday: `Midday departures (10 AM–2 PM) are usually the smoothest on this route in ${monthName(date)}.`,
-    afternoon: `Afternoon departures are usually the smoothest on this route in ${monthName(date)}.`,
-    evening: `Early-evening departures (5–8 PM) are usually the smoothest on this route in ${monthName(date)}, after the afternoon warmth fades.`,
-    overnight: `Overnight departures are usually the smoothest on this route in ${monthName(date)} — the air settles after sunset.`,
-  };
-  const rank = (d: WindowDraft) => (d.intensity === "moderate" ? 100 : 0) + d.durationMin;
-  const strongest = drafts.reduce<WindowDraft | null>((m, d) => (!m || rank(d) > rank(m) ? d : m), null);
-  const typicalBumpyPhase: FlightPhase = strongest
-    ? strongest.phase
-    : rng.weighted<FlightPhase>(airborneMin > 180 ? [["cruise", 5], ["descent", 3], ["climb", 2]] : [["descent", 5], ["climb", 4], ["cruise", 1]]);
-  // Same draw order as the original object literal: smoothPct, then flightsAnalyzed.
-  const smoothPct = clamp(Math.round(72 + ((score - 58) * 24) / 39 + rng.int(-3, 3)), 72, 96);
-  const analyzedDraw = roundTo(rng.int(400, 3200), 10);
-  const history: RouteHistory = {
-    month: monthName(date),
-    smoothPct,
-    flightsAnalyzed: explore ? explore.history.flightsAnalyzed : analyzedDraw,
-    typicalBumpyPhase,
-    bestDepartureWindow: bestWindowText[bestSlot],
-  };
-
   return {
-    forecast: { points, phases, windows, maxIntensity, smoothMinutesPct, history },
+    forecast: { points, phases, windows, maxIntensity, smoothMinutesPct },
     smoothness: { score, label, summary },
-    bestSlot,
     drafts,
   };
 }
@@ -1740,31 +1768,15 @@ interface Core {
   ctx: RouteContext;
   airline: AirlineProfile;
   bestSlot: Slot;
+  /** Bumps drawn from the same day's reference air: the reference itself, or an option within an hour of it. */
+  sharedAir: boolean;
 }
 
-/** Route-history facts of the same day's reference flight (empty prefs), shared by every option on that day. */
-const REFERENCE_HISTORY = new Map<string, { bestSlot: Slot; flightsAnalyzed: number }>();
+/** Options leaving within this many minutes of the same day's reference flight fly in its air. */
+const SHARED_AIR_MIN = 60;
 
-function referenceHistory(norm: FlightInput): { bestSlot: Slot; flightsAnalyzed: number } {
-  const key = `${norm.origin}|${norm.destination}|${norm.date}`;
-  const hit = REFERENCE_HISTORY.get(key);
-  if (hit) return hit;
-  const ref = buildCore(norm, {});
-  const value = { bestSlot: ref.bestSlot, flightsAnalyzed: ref.flight.turbulence.history.flightsAnalyzed };
-  if (REFERENCE_HISTORY.size >= 256) REFERENCE_HISTORY.delete(REFERENCE_HISTORY.keys().next().value as string);
-  REFERENCE_HISTORY.set(key, value);
-  return value;
-}
-
-/** Everything but the alternatives. Never recurses (the reference lookup builds an empty-prefs core). */
-function buildCore(norm: FlightInput, prefs: FlightPrefs): Core {
-  const seed = flightSeed(norm, prefs);
-  const explore = hasPrefs(prefs);
-  const root = createRng(seed);
-
-  const ctx = buildRoute(norm);
-  const timing = buildTiming(root.fork("timing"), ctx, norm.date, prefs.departWindow);
-
+/** Carrier, flight number and aircraft model (with the aircraft stream, which goes on to build the airframe). */
+function chooseCarrier(root: Rng, ctx: RouteContext, prefs: FlightPrefs) {
   const airlineRng = root.fork("airline");
   const candidates = candidateAirlines(ctx.origin, ctx.destination, ctx.distanceMi, ctx.oceanic);
   let airline = airlineRng.weighted(candidates);
@@ -1783,22 +1795,112 @@ function buildCore(norm: FlightInput, prefs: FlightPrefs): Core {
     const wides = wideModelsFor(airline, ctx);
     if (wides.length > 0) model = aircraftRng.pick(wides);
   }
+  return { airline, flightNumber, model, aircraftRng };
+}
+
+/** The bumps buildCore(norm, {}) draws for a reference flight, without the rest of the flight. */
+function referenceBumps(norm: FlightInput): TurbulenceBuild {
+  const root = createRng(flightSeed(norm));
+  const ctx = buildRoute(norm);
+  const timing = buildTiming(root.fork("timing"), ctx, norm.date);
+  const { model } = chooseCarrier(root, ctx, {});
+  const tod = { ...NEUTRAL_TOD, wide: model.bodyType === "wide" };
+  return buildTurbulence(root.fork("turbulence"), ctx, timing, weatherFor(ctx, timing, norm.date), model.cruiseAltitudeFt, tod);
+}
+
+interface RouteMonth {
+  bestSlot: Slot;
+  history: RouteHistory;
+}
+
+/** Route history by route and month: every flight it covers (any year, day or prefs) shows the same facts. */
+const ROUTE_MONTHS = new Map<string, RouteMonth>();
+
+/**
+ * The numbers are read off one anchor flight on the route (the reference flight on the
+ * 15th of that month in 2025), so they sit where the generator's flights do. The smoothest
+ * window is the one todModelFor favours; long eastbound routes are flown overnight.
+ */
+function routeMonthFor(norm: FlightInput, ctx: RouteContext): RouteMonth {
+  // Known airports by code (a long LaGuardia trip is the JFK route), free text as typed.
+  const origin = ctx.origin.known ? ctx.origin.code : norm.origin;
+  const destination = ctx.destination.known ? ctx.destination.code : norm.destination;
+  const key = `${origin}|${destination}|${ctx.month}`;
+  const hit = ROUTE_MONTHS.get(key);
+  if (hit) return hit;
+
+  const rng = createRng(`history|${key}`);
+  const anchor = referenceBumps({ origin, destination, date: `2025-${pad2(ctx.month)}-15` });
+  const bestSlot: Slot =
+    overnightRoute(ctx) ? "overnight"
+    : ctx.tropical || ctx.season === "summer" ? "morning"
+    : rng.chance(0.7) ? "morning" : "evening";
+  const month = monthName(norm.date);
+  const bestWindowText: Record<Slot, string> = {
+    morning: `Morning departures (6–10 AM) are usually the smoothest on this route in ${month}.`,
+    midday: `Midday departures (10 AM–2 PM) are usually the smoothest on this route in ${month}.`,
+    afternoon: `Afternoon departures are usually the smoothest on this route in ${month}.`,
+    evening: `Early-evening departures (5–8 PM) are usually the smoothest on this route in ${month}, after the afternoon warmth fades.`,
+    overnight: `Overnight departures are usually the smoothest on this route in ${month} — the air settles after sunset.`,
+  };
+  const rank = (d: WindowDraft) => (d.intensity === "moderate" ? 100 : 0) + d.durationMin;
+  const strongest = anchor.drafts.reduce<WindowDraft | null>((m, d) => (!m || rank(d) > rank(m) ? d : m), null);
+  const typicalBumpyPhase: FlightPhase = strongest
+    ? strongest.phase
+    : rng.weighted<FlightPhase>(typicalAirborne(ctx) > 180 ? [["cruise", 5], ["descent", 3], ["climb", 2]] : [["descent", 5], ["climb", 4], ["cruise", 1]]);
+  const value: RouteMonth = {
+    bestSlot,
+    history: {
+      month,
+      smoothPct: clamp(Math.round(72 + ((anchor.smoothness.score - 58) * 24) / 39 + rng.int(-3, 3)), 72, 96),
+      flightsAnalyzed: roundTo(rng.int(400, 3200), 10),
+      typicalBumpyPhase,
+      bestDepartureWindow: bestWindowText[bestSlot],
+    },
+  };
+  if (ROUTE_MONTHS.size >= 256) ROUTE_MONTHS.delete(ROUTE_MONTHS.keys().next().value as string);
+  ROUTE_MONTHS.set(key, value);
+  return value;
+}
+
+/** The same day's reference flight (empty prefs): its timing and weather, the air options near it share. */
+const REFERENCE_DAY = new Map<string, { timing: Timing; wx: FlightWeather }>();
+
+function referenceDay(norm: FlightInput, ctx: RouteContext): { timing: Timing; wx: FlightWeather } {
+  const seed = flightSeed(norm);
+  const hit = REFERENCE_DAY.get(seed);
+  if (hit) return hit;
+  const timing = buildTiming(createRng(seed).fork("timing"), ctx, norm.date);
+  const value = { timing, wx: weatherFor(ctx, timing, norm.date) };
+  if (REFERENCE_DAY.size >= 256) REFERENCE_DAY.delete(REFERENCE_DAY.keys().next().value as string);
+  REFERENCE_DAY.set(seed, value);
+  return value;
+}
+
+/** Everything but the alternatives. Never recurses (the shared facts are built without a history). */
+function buildCore(norm: FlightInput, prefs: FlightPrefs): Core {
+  const seed = flightSeed(norm, prefs);
+  const root = createRng(seed);
+
+  const ctx = buildRoute(norm);
+  const routeMonth = routeMonthFor(norm, ctx);
+  const reference = hasPrefs(prefs) ? referenceDay(norm, ctx) : undefined;
+  const timing = buildTiming(root.fork("timing"), ctx, norm.date, prefs.departWindow, reference?.timing.airborneMin);
+
+  const { airline, flightNumber, model, aircraftRng } = chooseCarrier(root, ctx, prefs);
   const aircraft: Aircraft = buildAircraft(aircraftRng, model, airline.tailPatterns, ctx.year);
 
   const gate = buildGate(root.fork("gate"), ctx.origin, airline);
   const crew = buildCrew(root.fork("crew"), airline, ctx);
+  const weather = weatherFor(ctx, timing, norm.date);
 
-  const weather = {
-    origin: buildWeather(root.fork("weather-origin"), ctx.origin, "departure", timing.departTime, norm.date),
-    destination: buildWeather(root.fork("weather-destination"), ctx.destination, "arrival", timing.arriveTime, timing.arriveDate),
-  };
-
-  let exploreOpts: Parameters<typeof buildTurbulence>[6];
-  if (explore) {
-    const history = referenceHistory(norm);
-    exploreOpts = { history, tod: todModelFor(ctx, departWindowOf(timing.departTime), history.bestSlot, model.bodyType === "wide") };
-  }
-  const turbulence = buildTurbulence(root.fork("turbulence"), ctx, timing, weather, norm.date, model.cruiseAltitudeFt, exploreOpts);
+  // Within an hour of the same day's reference flight the air is the same: the bumps come from
+  // its draw, and a wide-body feels them a little less. Further away, the time-of-day model applies.
+  const wide = model.bodyType === "wide";
+  const sharedAir = !reference || Math.abs(timeToMinutes(timing.departTime) - timeToMinutes(reference.timing.departTime)) <= SHARED_AIR_MIN;
+  const turbulence = sharedAir
+    ? buildTurbulence((reference ? createRng(flightSeed(norm)) : root).fork("turbulence"), ctx, timing, weather, model.cruiseAltitudeFt, { ...NEUTRAL_TOD, wide }, reference)
+    : buildTurbulence(root.fork("turbulence"), ctx, timing, weather, model.cruiseAltitudeFt, todModelFor(ctx, departWindowOf(timing.departTime), routeMonth.bestSlot, wide));
   const airlineStats = buildAirlineStats(root.fork("airline-stats"), airline, model);
   const seatMap = buildSeatMap(root.fork("seats"), model);
   const wetArrival =
@@ -1825,7 +1927,7 @@ function buildCore(norm: FlightInput, prefs: FlightPrefs): Core {
       gate: gate.gate,
       aircraft,
       crew,
-      turbulence: turbulence.forecast,
+      turbulence: { ...turbulence.forecast, history: { ...routeMonth.history } },
       smoothness: turbulence.smoothness,
       weather,
       airlineStats,
@@ -1834,7 +1936,8 @@ function buildCore(norm: FlightInput, prefs: FlightPrefs): Core {
     },
     ctx,
     airline,
-    bestSlot: turbulence.bestSlot,
+    bestSlot: routeMonth.bestSlot,
+    sharedAir,
   };
 }
 
@@ -1903,11 +2006,18 @@ function buildAlternatives(rng: Rng, norm: FlightInput, prefs: FlightPrefs, pare
     kept.push(b);
   }
 
-  return kept.map(({ c, core, fare }, i): AlternativeFlight => {
+  const parentMin = timeToMinutes(flight.departTime);
+  return kept.map(({ c, core, fare }): AlternativeFlight => {
     const f = core.flight;
     const delta = f.smoothness.score - score;
+    const sameDay = f.input.date === flight.input.date;
+    const near: Nearness = {
+      gapMin: sameDay ? Math.abs(timeToMinutes(f.departTime) - parentMin) : Infinity,
+      sameAir: sameDay && parent.sharedAir && core.sharedAir,
+    };
     return {
-      id: `alt-${i + 1}`,
+      // The id of the flight it opens, so it means the same thing in every list and event.
+      id: f.id,
       airline: f.airline,
       flightNumber: f.flightNumber,
       date: f.input.date,
@@ -1919,7 +2029,7 @@ function buildAlternatives(rng: Rng, norm: FlightInput, prefs: FlightPrefs, pare
       bodyType: f.aircraft.bodyType,
       smoothnessScore: f.smoothness.score,
       scoreDelta: delta,
-      reason: reasonFor(c, delta, refWindow, bestWindow, windsNotHeat, ctx.season === "summer", jet),
+      reason: reasonFor(c, delta, refWindow, bestWindow, windsNotHeat, ctx.season === "summer", jet, near),
       fareDiffUsd: fare,
       input: f.input,
       prefs: c.prefs,
@@ -1927,10 +2037,20 @@ function buildAlternatives(rng: Rng, norm: FlightInput, prefs: FlightPrefs, pare
   });
 }
 
+/** An option's time relation to the flight it is an option for. */
+interface Nearness {
+  /** Minutes between the two departures (Infinity on another day). */
+  gapMin: number;
+  /** Both fly in the same day's reference air, so a score difference can only come from the plane. */
+  sameAir: boolean;
+}
+
 /**
  * Plain reason derived from what the option changes. Never argues with the
  * route-history tile: only the window history calls smoothest is named as
- * smoother by time of day, and that window is never blamed for bumps.
+ * smoother by time of day, and that window is never blamed for bumps. The
+ * time of day is credited only more than an hour apart; within the hour the
+ * option is "at a similar time", and in the same air only the plane differs.
  */
 function reasonFor(
   c: AltCandidate,
@@ -1940,8 +2060,12 @@ function reasonFor(
   windsNotHeat: boolean,
   summer: boolean,
   jet: boolean,
+  near: Nearness,
 ): string {
   const sign = delta > 0 ? 1 : delta < 0 ? -1 : 0;
+  const close = near.gapMin <= SHARED_AIR_MIN;
+  const plane = sign > 0 ? "on a larger plane, which feels bumps less" : "on a smaller plane, which feels bumps a little more";
+  const path = sign > 0 ? "calmer air is forecast along its flight path" : "a little more wind aloft is forecast along its flight path";
   switch (c.kind) {
     case "day-before":
       return sign > 0 ? "Leaves the day before — a calmer pattern is expected."
@@ -1952,17 +2076,27 @@ function reasonFor(
         : sign < 0 ? "Leaves the day after — a few more clouds are forecast along the route."
         : "Leaves the day after — similar conditions are forecast.";
     case "wide":
+      // Never bumpier in the same air (the parent is a narrow-body), so a lower score is the other time's air.
       return sign > 0 ? "Wide-body jet — larger planes feel bumps less."
-        : sign < 0 ? "Wide-body jet — feels bumps less, though more wind aloft is forecast at its time."
+        : sign < 0 ? `Wide-body jet — feels bumps less, though ${close ? path : "more wind aloft is forecast at its time"}.`
         : "Wide-body jet — similar conditions, in a larger cabin.";
     case "airline":
+      if (sign === 0) return `Another airline — similar conditions ${close ? "at a similar time" : "on the same day"}.`;
+      if (near.sameAir) return `Another airline${close ? " at a similar time" : ""} — ${plane}.`;
+      if (close) return `Another airline at a similar time — ${path}.`;
       return sign > 0 ? "Another airline — calmer air is forecast at its departure time."
-        : sign < 0 ? "Another airline — a little more wind aloft is forecast at its departure time."
-        : "Another airline — similar conditions at a similar time.";
+        : "Another airline — a little more wind aloft is forecast at its departure time.";
     case "window": {
       const w = c.prefs.departWindow ?? refWindow;
-      const shift = DEPART_WINDOWS.indexOf(w) < DEPART_WINDOWS.indexOf(refWindow) ? "An earlier" : "A later";
+      const later = DEPART_WINDOWS.indexOf(w) > DEPART_WINDOWS.indexOf(refWindow);
+      const shift = later ? "A later" : "An earlier";
+      if (close) {
+        // Just across a window edge: not a different time of day.
+        const slightly = later ? "A slightly later departure" : "A slightly earlier departure";
+        return sign === 0 ? `${slightly} — similar conditions are forecast.` : `${slightly} — ${near.sameAir ? plane : path}.`;
+      }
       if (sign === 0) return "Similar conditions — a different time on the same route.";
+      if (near.sameAir) return `${shift} departure — ${plane}.`;
       if (w === bestWindow) {
         if (sign < 0) return `${shift} departure — a little more wind aloft is forecast at that time.`;
         if (w === "morning") return windsNotHeat ? "Morning departure — winds aloft are usually calmest early in the day." : "Morning departure — before afternoon heating builds clouds.";
@@ -1984,7 +2118,7 @@ function reasonFor(
 
 /**
  * Deterministic: the same (normalized) input and prefs always return identical
- * data. Empty prefs (undefined or {}) give exactly the original flight.
+ * data. Empty prefs (undefined or {}) give the day's reference flight.
  * Alternatives are generated one level deep only.
  */
 export function generateFlight(input: FlightInput, prefs?: FlightPrefs): Flight {

@@ -24,7 +24,7 @@ npm workspaces, one `package-lock.json` at the root, Node 20.12 or newer.
 
 ## How a session works
 
-One link, one phone, about 5–8 minutes:
+One link, one phone, about 5–10 minutes:
 
 1. **Welcome / consent** — "We're testing a prototype for nervous flyers. All data shown is illustrative."
 2. **Pre-survey** — anxiety, control and predictability about their next flight, each 0–10. Sliders start
@@ -52,7 +52,7 @@ screen. The record is saved to the backend after every step, every ~20 s on the 
 | `/preview?origin=JFK&destination=LAX&date=YYYY-MM-DD&v=A` | The dashboard alone, for demos. No surveys, saves nothing. |
 | `/results?key=<ADMIN_KEY>` | Team results: table, CSV export, pre-vs-post numbers. |
 
-The link preview (iMessage, WhatsApp, Slack…) shows a calm card: "A 5-minute study for nervous flyers ·
+The link preview (iMessage, WhatsApp, Slack…) shows a calm card: "A 5–10 minute study for nervous flyers ·
 Student research prototype". The site is `noindex`, so search engines stay out.
 
 ## Run it locally

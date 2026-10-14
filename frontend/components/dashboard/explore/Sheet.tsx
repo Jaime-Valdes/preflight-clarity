@@ -17,17 +17,21 @@ interface SheetProps {
   kind?: "bottom" | "full";
 }
 
+/** On a short screen (an on-screen keyboard is up), typing in a text field hides the description and the footer for room. */
+const HIDE_WHILE_TYPING = "[@media(max-height:600px)]:group-has-[[type=text]:focus]:hidden";
+
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Modal sheet: role="dialog", focus trapped inside, Escape and the backdrop
- * close it, the page behind doesn't scroll, and focus returns to whatever
- * opened it. Rendered into <body> so it sits above the sticky footer.
+ * close it, the page behind is inert and doesn't scroll, and focus returns to
+ * whatever opened it. Rendered into <body> so it sits above the sticky footer.
  */
 export function Sheet({ title, description, onClose, children, footer, kind = "bottom" }: SheetProps) {
   const titleId = useId();
   const descId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
 
@@ -35,7 +39,7 @@ export function Sheet({ title, description, onClose, children, footer, kind = "b
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Body scroll lock + focus in / focus back.
+  // Body scroll lock, an inert page behind, a focus trap, and focus in / focus back.
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const body = document.body;
@@ -44,48 +48,65 @@ export function Sheet({ title, description, onClose, children, footer, kind = "b
     const scrollbar = window.innerWidth - document.documentElement.clientWidth;
     body.style.overflow = "hidden";
     if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
+    // Everything but this sheet leaves the tab order and the accessibility tree (aria-modal alone isn't honoured everywhere).
+    const inerted: HTMLElement[] = [];
+    for (const el of Array.from(body.children)) {
+      if (el instanceof HTMLElement && el !== rootRef.current && !el.inert) {
+        el.inert = true;
+        inerted.push(el);
+      }
+    }
     panelRef.current?.querySelector<HTMLElement>("[data-sheet-title]")?.focus({ preventScroll: true });
+
+    // On the window (after React's handlers), so it also sees keys pressed while focus is on <body> after a click.
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        // A combobox inside closes its own list first (it prevents default).
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      // -1: the title, plain text that was clicked, or <body>.
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      if (e.shiftKey && i <= 0) {
+        e.preventDefault();
+        items[items.length - 1].focus();
+      } else if (!e.shiftKey && (i < 0 || i === items.length - 1)) {
+        e.preventDefault();
+        items[0].focus();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+
     return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      for (const el of inerted) el.inert = false;
       body.style.overflow = prevOverflow;
       body.style.paddingRight = prevPadding;
+      // Synchronously, so a focus move the dashboard makes in the same commit (to a new strip chip) wins.
       if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+      // The opener has gone or can't take focus (e.g. "+ Another flight" once the strip is full): the flight on screen.
+      if (!opener || document.activeElement !== opener) {
+        document.querySelector<HTMLElement>('[data-flight-id][aria-current="true"]')?.focus({ preventScroll: true });
+      }
     };
   }, []);
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Escape") {
-      // A combobox inside closes its own list first (it prevents default).
-      if (e.defaultPrevented) return;
-      e.preventDefault();
-      onCloseRef.current();
-      return;
-    }
-    if (e.key !== "Tab") return;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-      (el) => el.offsetParent !== null || el === document.activeElement,
-    );
-    if (items.length === 0) {
-      e.preventDefault();
-      return;
-    }
-    const first = items[0];
-    const last = items[items.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || !panel.contains(active))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && (active === last || !panel.contains(active))) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
 
   const full = kind === "full";
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onKeyDown={onKeyDown}>
+    <div ref={rootRef} className="fixed inset-0 z-50 flex items-end justify-center">
       <div
         aria-hidden
         className="absolute inset-0 bg-night-950/45 backdrop-blur-[2px] animate-[sheet-fade_200ms_ease-out]"
@@ -98,7 +119,7 @@ export function Sheet({ title, description, onClose, children, footer, kind = "b
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         className={cn(
-          "relative flex w-full max-w-[440px] flex-col bg-canvas shadow-lift animate-[sheet-rise_260ms_cubic-bezier(0.22,1,0.36,1)]",
+          "group relative flex w-full max-w-[440px] flex-col bg-canvas shadow-lift animate-[sheet-rise_260ms_cubic-bezier(0.22,1,0.36,1)]",
           full ? "h-dvh" : "max-h-[88dvh] rounded-t-3xl",
         )}
       >
@@ -115,7 +136,7 @@ export function Sheet({ title, description, onClose, children, footer, kind = "b
               {title}
             </h2>
             {description ? (
-              <p id={descId} className="mt-1 text-[13px] leading-snug text-ink-500">
+              <p id={descId} className={cn("mt-1 text-[13px] leading-snug text-ink-500", HIDE_WHILE_TYPING)}>
                 {description}
               </p>
             ) : null}
@@ -129,9 +150,14 @@ export function Sheet({ title, description, onClose, children, footer, kind = "b
             <X aria-hidden className="size-5" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">{children}</div>
+        <div data-sheet-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">{children}</div>
         {footer ? (
-          <div className="shrink-0 border-t border-line/70 bg-canvas/95 px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+          <div
+            className={cn(
+              "shrink-0 border-t border-line/70 bg-canvas/95 px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]",
+              HIDE_WHILE_TYPING,
+            )}
+          >
             {footer}
           </div>
         ) : null}

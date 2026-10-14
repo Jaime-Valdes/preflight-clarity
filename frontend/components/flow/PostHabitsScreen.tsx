@@ -1,7 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { CheckFrequency, PostSurvey, ReplaceOption, Variant, WouldSwitch } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -45,11 +45,50 @@ export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabi
   const replaceTextId = useId();
   const scaredId = useId();
   const complete = post.checkFrequency !== null && post.wouldReplace.length > 0;
+  // Variant A: the optional switch question sits last, below the fold. If Finish is tapped before it
+  // was ever on screen, bring it into view once instead of finishing, so a blank answer means "skipped",
+  // not "never seen". A second tap always finishes; no answer is required.
+  const switchLabelRef = useRef<HTMLParagraphElement>(null);
+  const switchSeen = useRef(false);
+  /** performance.now() when Finish scrolled to the question: a tap within ~600 ms is the tail of a double tap. */
+  const broughtIntoViewAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = switchLabelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    // The question counts as seen once it is fully visible above the pinned Finish bar.
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          switchSeen.current = true;
+          io.disconnect();
+        }
+      },
+      { threshold: 1, rootMargin: "0px 0px -120px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  function finish() {
+    if (broughtIntoViewAt.current !== null && performance.now() - broughtIntoViewAt.current < 600) return;
+    if (variant === "A" && post.wouldSwitch == null && !switchSeen.current) {
+      switchSeen.current = true;
+      broughtIntoViewAt.current = performance.now();
+      const label = switchLabelRef.current;
+      // The label's parent is the whole question with its options.
+      label?.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+      label?.focus({ preventScroll: true });
+      return;
+    }
+    onFinish();
+  }
+
   return (
     <Screen
       footer={
         <div>
-          <Button block disabled={!complete} onClick={onFinish} icon={<Check aria-hidden className="size-4" />}>
+          <Button block disabled={!complete} onClick={finish} icon={<Check aria-hidden className="size-4" />}>
             Finish
           </Button>
           <p className="mt-2 h-4 text-center text-xs text-ink-500" aria-live="polite">
@@ -104,6 +143,7 @@ export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabi
           <Card className="animate-fade-up" style={fadeUp(180)}>
             <ChoiceGroup
               kind="single"
+              labelRef={switchLabelRef}
               label="If you could, would you switch to one of the other flights you looked at?"
               hint="Optional."
               options={WOULD_SWITCH_OPTIONS}

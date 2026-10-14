@@ -126,6 +126,7 @@ function explorationFixture(): ExplorationMetrics {
     compares: 2,
     compareMs: 26000,
     comparePairs: ["f3a9c1e2|b71e04aa", "f3a9c1e2|c0ffee12"],
+    whatIfMs: 9000,
     alternativesOpened: 1,
     whatIfs: 1,
     endedOnFlightId: "c0ffee12",
@@ -578,6 +579,7 @@ group("parseSessionRecord", () => {
         x.compares = "2";
         x.compareMs = Number.MAX_SAFE_INTEGER;
         delete x.whatIfs;
+        delete x.whatIfMs;
         x.flightMs = { f3a9c1e2: 1000.6, b71e04aa: "30", c0ffee12: -1, stranger: 5, __proto__: { polluted: 1 } };
         x.comparePairs = ["a|b", "", 7, "p".repeat(400), ...Array.from({ length: 100 }, () => "x|y")];
         x.endedOnFlightId = "";
@@ -590,6 +592,7 @@ group("parseSessionRecord", () => {
     assert.equal(x.compares, 0);
     assert.equal(x.compareMs, 2_147_483_647);
     assert.equal(x.whatIfs, 0);
+    assert.equal(x.whatIfMs, 0, "a block from before whatIfMs parses as 0");
     assert.equal(x.flights.length, MAX_EXPLORED_FLIGHTS);
     assert.deepEqual(x.flightMs, {}, "ids no longer match any flight");
     assert.equal(x.comparePairs.length <= MAX_COMPARE_PAIRS, true);
@@ -633,7 +636,8 @@ group("parseSessionRecord", () => {
     assert.equal(col(records[0], "preferred_flight"), "c0ffee12");
     assert.equal(col(records[0], "ended_on_flight"), "c0ffee12");
     assert.equal(col(records[0], "would_switch"), "not_sure");
-    for (const name of ["participant", "flights_explored", "switches", "compares", "alternatives_opened", "what_ifs", "preferred_flight", "ended_on_flight", "would_switch"]) {
+    assert.equal(col(records[0], "what_if_s"), "9");
+    for (const name of ["participant", "flights_explored", "switches", "compares", "alternatives_opened", "what_ifs", "what_if_s", "preferred_flight", "ended_on_flight", "would_switch"]) {
       assert.equal(col(records[1], name), "", `${name} is blank without exploration`);
     }
   });

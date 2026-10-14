@@ -10,7 +10,7 @@ interface WelcomeScreenProps {
 
 const POINTS: Array<{ icon: ReactNode; title: string; detail: string }> = [
   { icon: <UserRound />, title: "Anonymous", detail: "No account, no name. We keep your answers, the flight you enter and basic device and browser info (for example phone or desktop, screen size)." },
-  { icon: <Clock3 />, title: "About 5 minutes", detail: "A few questions, one screen to explore, a few more questions." },
+  { icon: <Clock3 />, title: "About 5–10 minutes", detail: "A few questions, one screen to explore, a few more questions." },
   {
     icon: <Sparkles />,
     title: "Illustrative data",
@@ -36,7 +36,7 @@ export function WelcomeScreen({ onAgree }: WelcomeScreenProps) {
           A closer look at an upcoming flight
         </h1>
         <p className="mt-4 text-[15px] leading-relaxed text-ink-700">
-          We&rsquo;re testing a prototype for nervous flyers. It takes about 5 minutes. All data shown is
+          We&rsquo;re testing a prototype for nervous flyers. It takes about 5–10 minutes. All data shown is
           illustrative.
         </p>
       </div>
