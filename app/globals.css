@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+/*
+ * Pre-Flight Clarity design tokens.
+ * Mood: aviation app × wellness app — calm, premium, soft, generous whitespace.
+ * Never use red/rose/orange (or Tailwind's default amber/yellow) anywhere;
+ * the strongest "caution" colour is the soft `sand` scale.
+ * Raw values used from JS (charts, SVG) are mirrored in lib/theme.ts.
+ */
+@theme {
+  --color-canvas: #f3f6f9;
+  --color-surface: #ffffff;
+  --color-line: #e3e9f0;
+  --color-line-strong: #cfd8e3;
+
+  --color-ink-900: #0e1a2b;
+  --color-ink-700: #2f3f55;
+  --color-ink-500: #5f6f85;
+  --color-ink-400: #8493a7;
+  --color-ink-300: #aab6c5;
+
+  /* Deep aviation navy — headers, primary buttons. */
+  --color-night-950: #0b1a2c;
+  --color-night-900: #10243a;
+  --color-night-800: #183450;
+  --color-night-700: #22476b;
+
+  /* Primary calm accent (sea-glass teal): smooth, good, positive. */
+  --color-calm-50: #edf8f5;
+  --color-calm-100: #d5efe8;
+  --color-calm-200: #b0e0d4;
+  --color-calm-300: #85cdbb;
+  --color-calm-400: #5bb7a2;
+  --color-calm-500: #3c9e89;
+  --color-calm-600: #2e8270;
+  --color-calm-700: #26685b;
+  --color-calm-800: #1f5149;
+
+  /* Soft sky blue: information, light bumps, predictability. */
+  --color-breeze-50: #eef5fc;
+  --color-breeze-100: #dbe9f7;
+  --color-breeze-200: #bcd6ef;
+  --color-breeze-300: #93bde3;
+  --color-breeze-400: #6aa2d4;
+  --color-breeze-500: #4a87c0;
+  --color-breeze-600: #386ca0;
+  --color-breeze-700: #2d5680;
+
+  /* Lavender: wellness accents, people (pilots), calm highlights. */
+  --color-dusk-50: #f4f2fb;
+  --color-dusk-100: #e8e4f6;
+  --color-dusk-200: #d3cbee;
+  --color-dusk-400: #9d8fd6;
+  --color-dusk-500: #8170c4;
+  --color-dusk-600: #6a59ab;
+  --color-dusk-700: #54468a;
+
+  /* Soft sand: moderate bumps, gentle caution. Never alarming. */
+  --color-sand-50: #fcf6ec;
+  --color-sand-100: #f8ebd2;
+  --color-sand-200: #f2d9ad;
+  --color-sand-300: #eac283;
+  --color-sand-400: #dfa95c;
+  --color-sand-500: #c98f3f;
+  --color-sand-600: #a87430;
+  --color-sand-700: #845b27;
+
+  --shadow-soft: 0 1px 2px rgb(14 26 43 / 0.04), 0 10px 30px -14px rgb(14 26 43 / 0.16);
+  --shadow-lift: 0 2px 6px rgb(14 26 43 / 0.06), 0 22px 44px -20px rgb(14 26 43 / 0.3);
+
+  --animate-fade-up: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-breathe: breathe 6s ease-in-out infinite;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes breathe {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    50% {
+      transform: scale(1.08);
+      opacity: 0.9;
+    }
+  }
+}
+
+@theme inline {
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--color-calm-100);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-breeze-400);
+    outline-offset: 2px;
+  }
+
+  button,
+  [role="button"],
+  label {
+    touch-action: manipulation;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
