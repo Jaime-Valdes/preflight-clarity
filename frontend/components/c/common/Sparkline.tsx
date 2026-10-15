@@ -10,14 +10,17 @@ import { cn } from "@/lib/cn";
 
 interface SparklineProps {
   points: readonly TurbulencePoint[];
+  /** Drawing width in px; with `fluid`, the width of the coordinate space (the SVG then fills its container). */
   width?: number;
   height?: number;
+  /** Stretch to the container's width (the line keeps its thickness). */
+  fluid?: boolean;
   /** Text alternative; omit when the same facts are written next to it. */
   label?: string;
   className?: string;
 }
 
-export function Sparkline({ points, width = 120, height = 28, label, className }: SparklineProps) {
+export function Sparkline({ points, width = 120, height = 28, fluid = false, label, className }: SparklineProps) {
   if (points.length < 2) return null;
   const last = points[points.length - 1]!.minute || 1;
   const pad = 2;
@@ -26,19 +29,22 @@ export function Sparkline({ points, width = 120, height = 28, label, className }
   const y = (level: number) => height - pad - ((height - pad * 2) * Math.min(2, Math.max(0, level))) / 2;
   const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(p.minute).toFixed(1)},${y(p.level).toFixed(1)}`).join("");
   const area = `${line}L${x(last).toFixed(1)},${height - pad}L${x(0).toFixed(1)},${height - pad}Z`;
+  // A stretched drawing must not stretch its strokes.
+  const stroke = fluid ? ({ vectorEffect: "non-scaling-stroke" } as const) : {};
   return (
     <svg
-      width={width}
+      width={fluid ? "100%" : width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio={fluid ? "none" : undefined}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
-      className={cn("shrink-0", className)}
+      className={cn("shrink-0", fluid && "block", className)}
     >
-      <line x1={pad} x2={width - pad} y1={y(1)} y2={y(1)} stroke={COLORS.line} strokeDasharray="2 3" />
+      <line x1={pad} x2={width - pad} y1={y(1)} y2={y(1)} stroke={COLORS.line} strokeDasharray="2 3" {...stroke} />
       <path d={area} fill={COLORS.calm100} opacity={0.7} />
-      <path d={line} fill="none" stroke={COLORS.calm500} strokeWidth={1.6} strokeLinejoin="round" />
+      <path d={line} fill="none" stroke={COLORS.calm500} strokeWidth={1.6} strokeLinejoin="round" {...stroke} />
     </svg>
   );
 }

@@ -16,6 +16,10 @@
  * wide-body feels it a little less (referenceDay). Other options add an
  * explicit time-of-day model; see todModelFor.
  *
+ * Version C's day schedules (search.ts) are built from the same parts through
+ * routeDay and buildScheduledFlight, at the end of this file; they never
+ * change what generateFlight returns.
+ *
  * Every string here is shown verbatim to anxious flyers: calm, plain,
  * specific, never alarming and never promising.
  */
@@ -512,6 +516,13 @@ function slotOfHour(hour: number): Slot {
   return hour < 10 ? "morning" : hour < 14 ? "midday" : hour < 18 ? "afternoon" : "evening";
 }
 
+/** Timing for a departure at a known local time (no draws). */
+function timingAt(ctx: RouteContext, date: string, departTime: string, airborneMin: number, blockMin: number): Timing {
+  const [h, mi] = departTime.split(":").map(Number);
+  const arr = arrivalFor(date, departTime, ctx.origin.tz, blockMin, ctx.destination.tz);
+  return { airborneMin, blockMin, departTime, departHour: h + mi / 60, slot: slotOfHour(h + mi / 60), ...arr };
+}
+
 /**
  * `dayAirborneMin`: options fly in the same day's winds as the reference flight, so they
  * take its airborne time (their own draw is still made, keeping the rest of the stream in place).
@@ -520,12 +531,7 @@ function buildTiming(rng: Rng, ctx: RouteContext, date: string, window?: DepartW
   const drawn = airborneFor(rng, ctx);
   const airborneMin = dayAirborneMin ?? drawn;
   const blockMin = airborneMin + rng.int(15, 35);
-  if (window) {
-    const departTime = scheduleInWindow(rng, date, window, ctx, blockMin);
-    const [h, mi] = departTime.split(":").map(Number);
-    const arr = arrivalFor(date, departTime, ctx.origin.tz, blockMin, ctx.destination.tz);
-    return { airborneMin, blockMin, departTime, departHour: h + mi / 60, slot: slotOfHour(h + mi / 60), ...arr };
-  }
+  if (window) return timingAt(ctx, date, scheduleInWindow(rng, date, window, ctx, blockMin), airborneMin, blockMin);
   const wanted: Slot = overnightRoute(ctx)
     ? "overnight"
     : rng.weighted<Slot>([
@@ -535,16 +541,7 @@ function buildTiming(rng: Rng, ctx: RouteContext, date: string, window?: DepartW
         ["evening", 15],
       ]);
   const { departTime, slot } = scheduleDeparture(rng, date, wanted, ctx, blockMin);
-  const [h, mi] = departTime.split(":").map(Number);
-  const arr = arrivalFor(date, departTime, ctx.origin.tz, blockMin, ctx.destination.tz);
-  return {
-    airborneMin,
-    blockMin,
-    departTime,
-    departHour: h + mi / 60,
-    slot: slot === "overnight" ? "evening" : slot,
-    ...arr,
-  };
+  return { ...timingAt(ctx, date, departTime, airborneMin, blockMin), slot: slot === "overnight" ? "evening" : slot };
 }
 
 // ── Terminals and gates ─────────────────────────────────────────────────────
@@ -1744,6 +1741,15 @@ function buildSounds(
   return all;
 }
 
+/** The sound cues for a built flight: its phases, its bumps and its arrival weather. */
+function soundsFor(rng: Rng, model: AircraftModel, turbulence: TurbulenceBuild, airborneMin: number, weather: FlightWeather): SoundCue[] {
+  const wetArrival =
+    weather.destination.condition === "light_rain" ||
+    weather.destination.condition === "showers" ||
+    weather.destination.condition === "light_snow";
+  return buildSounds(rng, model, turbulence.forecast.phases, airborneMin, turbulence.drafts.length > 0, wetArrival);
+}
+
 /** The airline's fleet, limited to narrow-bodies at LGA / DCA (every carrier serving them has some). */
 function fleetFor(airline: AirlineProfile, ctx: RouteContext): readonly string[] {
   if (!ctx.narrowOnly) return airline.fleet;
@@ -1816,15 +1822,21 @@ interface RouteMonth {
 /** Route history by route and month: every flight it covers (any year, day or prefs) shows the same facts. */
 const ROUTE_MONTHS = new Map<string, RouteMonth>();
 
+/** The route as flown, for facts kept by route: known airports by code (a long LaGuardia trip is the JFK route), free text as typed. */
+function flownRoute(norm: FlightInput, ctx: RouteContext): { origin: string; destination: string } {
+  return {
+    origin: ctx.origin.known ? ctx.origin.code : norm.origin,
+    destination: ctx.destination.known ? ctx.destination.code : norm.destination,
+  };
+}
+
 /**
  * The numbers are read off one anchor flight on the route (the reference flight on the
  * 15th of that month in 2025), so they sit where the generator's flights do. The smoothest
  * window is the one todModelFor favours; long eastbound routes are flown overnight.
  */
 function routeMonthFor(norm: FlightInput, ctx: RouteContext): RouteMonth {
-  // Known airports by code (a long LaGuardia trip is the JFK route), free text as typed.
-  const origin = ctx.origin.known ? ctx.origin.code : norm.origin;
-  const destination = ctx.destination.known ? ctx.destination.code : norm.destination;
+  const { origin, destination } = flownRoute(norm, ctx);
   const key = `${origin}|${destination}|${ctx.month}`;
   const hit = ROUTE_MONTHS.get(key);
   if (hit) return hit;
@@ -1903,41 +1915,74 @@ function buildCore(norm: FlightInput, prefs: FlightPrefs): Core {
     : buildTurbulence(root.fork("turbulence"), ctx, timing, weather, model.cruiseAltitudeFt, todModelFor(ctx, departWindowOf(timing.departTime), routeMonth.bestSlot, wide));
   const airlineStats = buildAirlineStats(root.fork("airline-stats"), airline, model);
   const seatMap = buildSeatMap(root.fork("seats"), model);
-  const wetArrival =
-    weather.destination.condition === "light_rain" ||
-    weather.destination.condition === "showers" ||
-    weather.destination.condition === "light_snow";
-  const sounds = buildSounds(root.fork("sounds"), model, turbulence.forecast.phases, timing.airborneMin, turbulence.drafts.length > 0, wetArrival);
+  const sounds = soundsFor(root.fork("sounds"), model, turbulence, timing.airborneMin, weather);
 
   return {
-    flight: {
-      id: hashId(seed),
-      input: norm,
-      origin: ctx.origin,
-      destination: ctx.destination,
-      airline: toAirline(airline),
+    flight: assembleFlight(hashId(seed), norm, {
+      ctx,
+      timing,
+      airline,
       flightNumber,
-      distanceMi: ctx.distanceMi,
-      airborneMin: timing.airborneMin,
-      blockMin: timing.blockMin,
-      departTime: timing.departTime,
-      arriveTime: timing.arriveTime,
-      arriveDayOffset: timing.arriveDayOffset,
-      terminal: gate.terminal,
-      gate: gate.gate,
+      gate,
       aircraft,
       crew,
-      turbulence: { ...turbulence.forecast, history: { ...routeMonth.history } },
-      smoothness: turbulence.smoothness,
+      turbulence,
+      history: routeMonth.history,
       weather,
       airlineStats,
       seatMap,
       sounds,
-    },
+    }),
     ctx,
     airline,
     bestSlot: routeMonth.bestSlot,
     sharedAir,
+  };
+}
+
+/** Everything a flight is made of, built facet by facet. */
+interface FlightParts {
+  ctx: RouteContext;
+  timing: Timing;
+  airline: AirlineProfile;
+  flightNumber: string;
+  gate: { terminal: string; gate: string };
+  aircraft: Aircraft;
+  crew: { captain: Pilot; firstOfficer: Pilot };
+  turbulence: TurbulenceBuild;
+  /** The route history (routeMonthFor): a fact about the route and month. */
+  history: RouteHistory;
+  weather: FlightWeather;
+  airlineStats: AirlineStats;
+  seatMap: SeatMap;
+  sounds: SoundCue[];
+}
+
+/** The dashboard's Flight (without alternatives and prefs), in the one field order every flight uses. */
+function assembleFlight(id: string, input: FlightInput, p: FlightParts): Omit<Flight, "alternatives" | "prefs"> {
+  return {
+    id,
+    input,
+    origin: p.ctx.origin,
+    destination: p.ctx.destination,
+    airline: toAirline(p.airline),
+    flightNumber: p.flightNumber,
+    distanceMi: p.ctx.distanceMi,
+    airborneMin: p.timing.airborneMin,
+    blockMin: p.timing.blockMin,
+    departTime: p.timing.departTime,
+    arriveTime: p.timing.arriveTime,
+    arriveDayOffset: p.timing.arriveDayOffset,
+    terminal: p.gate.terminal,
+    gate: p.gate.gate,
+    aircraft: p.aircraft,
+    crew: p.crew,
+    turbulence: { ...p.turbulence.forecast, history: { ...p.history } },
+    smoothness: p.turbulence.smoothness,
+    weather: p.weather,
+    airlineStats: p.airlineStats,
+    seatMap: p.seatMap,
+    sounds: p.sounds,
   };
 }
 
@@ -2127,4 +2172,182 @@ export function generateFlight(input: FlightInput, prefs?: FlightPrefs): Flight 
   const core = buildCore(norm, p);
   const alternatives = buildAlternatives(createRng(flightSeed(norm, p)).fork("alternatives"), norm, p, core);
   return { ...core.flight, alternatives, prefs: p };
+}
+
+// ── Scheduled flights (version C) ───────────────────────────────────────────
+//
+// Version C (docs/VERSION_C.md) lists every nonstop flight on a route and day.
+// The timetable is search.ts's; these two entry points give it the route's
+// facts and build each scheduled flight from the same parts as generateFlight,
+// so flights shown side by side never contradict each other: one airborne time
+// for the day, the route history by route and month, the weather by airport,
+// date and hour, and one bump draw per air block, which a wide-body feels a
+// little less (never more). Nothing here changes what generateFlight returns.
+
+/** A carrier that plausibly flies the route (candidateAirlines), with what it can fly there. */
+export interface RouteCarrier {
+  airline: AirlineProfile;
+  /** candidateAirlines' selection weight. */
+  weight: number;
+  /** A hub at either end of the route. */
+  hub: boolean;
+  /** Fleet keys usable on the route (narrow-bodies only at LGA / DCA), for chooseAircraftModel. */
+  fleet: readonly string[];
+  /** Has a wide-body that can fly the route. */
+  wide: boolean;
+}
+
+/** One route on one day: the facts every flight on it shares. */
+export interface RouteDay {
+  /** Normalized input. */
+  input: FlightInput;
+  /** The route as flown, for seeds: "JFK|LAX" (a long LaGuardia trip is the JFK route; free text as typed). */
+  route: string;
+  /** Endpoints as flown. */
+  origin: Airport;
+  destination: Airport;
+  distanceMi: number;
+  domestic: boolean;
+  oceanic: boolean;
+  /** Oceanic or longer than 2,600 mi. */
+  longHaul: boolean;
+  /** LGA / DCA: narrow-body gates only. */
+  narrowOnly: boolean;
+  eastbound: boolean;
+  /** Long eastbound routes are flown overnight: departures in the evening bank. */
+  overnight: boolean;
+  /** Airborne minutes in the route's typical winds (each day's own time is within ±2%). */
+  typicalAirborneMin: number;
+  /** The day's airborne time: the same for every flight that day, and for generateFlight's reference flight on the route as flown. */
+  airborneMin: number;
+  carriers: readonly RouteCarrier[];
+  /**
+   * Arrival of a departure that day at local `departTime`, `blockMin` gate to gate, and whether it
+   * lands at a sensible hour: never inside a curfew, nor in the dead of night except at round-the-clock hubs.
+   */
+  arrival(departTime: string, blockMin: number): { arriveTime: string; arriveDayOffset: number; acceptable: boolean };
+}
+
+const ROUTE_DAYS = new Map<string, RouteDay>();
+const ROUTE_DAY_CONTEXT = new WeakMap<RouteDay, RouteContext>();
+
+/** The route's facts on the input's date (cached). Throws only on an invalid date, like normalizeInput. */
+export function routeDay(input: FlightInput): RouteDay {
+  const norm = normalizeInput(input);
+  const key = `${norm.origin}|${norm.destination}|${norm.date}`;
+  const hit = ROUTE_DAYS.get(key);
+  if (hit) return hit;
+
+  const ctx = buildRoute(norm);
+  const flown = flownRoute(norm, ctx);
+  const route = `${flown.origin}|${flown.destination}`;
+  const day: RouteDay = {
+    input: norm,
+    route,
+    origin: ctx.origin,
+    destination: ctx.destination,
+    distanceMi: ctx.distanceMi,
+    domestic: ctx.domestic,
+    oceanic: ctx.oceanic,
+    longHaul: ctx.longHaul,
+    narrowOnly: ctx.narrowOnly,
+    eastbound: ctx.eastbound,
+    overnight: overnightRoute(ctx),
+    typicalAirborneMin: Math.round(typicalAirborne(ctx)),
+    // The day's winds: the first draw of the route's reference timing stream (see buildTiming).
+    airborneMin: airborneFor(createRng(`${route}|${norm.date}`).fork("timing"), ctx),
+    carriers: candidateAirlines(ctx.origin, ctx.destination, ctx.distanceMi, ctx.oceanic).map(([airline, weight]) => ({
+      airline,
+      weight,
+      hub: airline.hubs.includes(ctx.origin.code) || airline.hubs.includes(ctx.destination.code),
+      fleet: fleetFor(airline, ctx),
+      wide: wideModelsFor(airline, ctx).length > 0,
+    })),
+    arrival: (departTime, blockMin) => {
+      const a = arrivalFor(norm.date, departTime, ctx.origin.tz, blockMin, ctx.destination.tz);
+      return { arriveTime: a.arriveTime, arriveDayOffset: a.arriveDayOffset, acceptable: arrivalAcceptable(ctx.destination, a.arriveHour) };
+    },
+  };
+  ROUTE_DAY_CONTEXT.set(day, ctx);
+  if (ROUTE_DAYS.size >= 256) ROUTE_DAYS.delete(ROUTE_DAYS.keys().next().value as string);
+  ROUTE_DAYS.set(key, day);
+  return day;
+}
+
+/** What the schedule decides for one flight; everything else is built as for A/B. */
+export interface ScheduledFlightSpec {
+  /** Flight.id. */
+  id: string;
+  /** Seed for what is this flight's own: airframe, gate, crew, seats, sounds. */
+  seed: string;
+  /** IATA code of one of the day's carriers. */
+  airline: string;
+  /** "DL 1423" */
+  flightNumber: string;
+  /** Local "HH:MM" on the 5-minute grid. */
+  departTime: string;
+  /** Model key from the carrier's fleet (RouteCarrier.fleet). */
+  aircraft: string;
+  /** Gate to gate: the day's airborne time plus 15–35 min of taxi. */
+  blockMin: number;
+  /**
+   * The air block. Flights with the same `airKey` share one bump draw, made for a departure at
+   * `airTime` (its time of day and weather): the same body type gets the identical series, and a
+   * wide-body the same bumps, felt a little less. Always pass the same `airTime` with an `airKey`.
+   */
+  airKey: string;
+  airTime: string;
+}
+
+/** Taxi minutes of an air block's reference departure (it only sets the hour of its arrival weather). */
+const AIR_TAXI_MIN = 25;
+
+/**
+ * A full flight on a route's day schedule (alternatives [], prefs {}): its own crew, airframe,
+ * gate, seats and sounds; the day's airborne time; the weather at its own hours; the bumps of its
+ * air block, worded for its own weather and time; the A/B route history.
+ */
+export function buildScheduledFlight(day: RouteDay, spec: ScheduledFlightSpec): Flight {
+  const norm = day.input;
+  const ctx = ROUTE_DAY_CONTEXT.get(day) ?? buildRoute(norm);
+  const airline = getAirline(spec.airline);
+  const model = getAircraftModel(spec.aircraft);
+  if (!airline || !model) throw new Error(`Unknown airline or aircraft: ${spec.airline} / ${spec.aircraft}`);
+  const routeMonth = routeMonthFor(norm, ctx);
+  const root = createRng(spec.seed);
+
+  const timing = timingAt(ctx, norm.date, spec.departTime, day.airborneMin, spec.blockMin);
+  const aircraft = buildAircraft(root.fork("aircraft"), model, airline.tailPatterns, ctx.year);
+  const gate = buildGate(root.fork("gate"), ctx.origin, airline);
+  const crew = buildCrew(root.fork("crew"), airline, ctx);
+  const weather = weatherFor(ctx, timing, norm.date);
+
+  // The block's air: one draw for a departure at airTime in the day's winds, with the time-of-day
+  // model of its window. The draw never depends on the plane; a wide-body only feels it less.
+  const airTiming = timingAt(ctx, norm.date, spec.airTime, day.airborneMin, day.airborneMin + AIR_TAXI_MIN);
+  const air = { timing: airTiming, wx: weatherFor(ctx, airTiming, norm.date) };
+  const tod: TodModel = { ...todModelFor(ctx, departWindowOf(spec.airTime), routeMonth.bestSlot, false), wide: model.bodyType === "wide" };
+  const turbulence = buildTurbulence(createRng(spec.airKey), ctx, timing, weather, model.cruiseAltitudeFt, tod, air);
+
+  // The on-time rate on this route is one per airline, whichever of its flights and days.
+  const airlineStats = buildAirlineStats(createRng(`route-stats|${day.route}|${airline.code}`), airline, model);
+  const seatMap = buildSeatMap(root.fork("seats"), model);
+  const sounds = soundsFor(root.fork("sounds"), model, turbulence, timing.airborneMin, weather);
+
+  const flight = assembleFlight(spec.id, norm, {
+    ctx,
+    timing,
+    airline,
+    flightNumber: spec.flightNumber,
+    gate,
+    aircraft,
+    crew,
+    turbulence,
+    history: routeMonth.history,
+    weather,
+    airlineStats,
+    seatMap,
+    sounds,
+  });
+  return { ...flight, alternatives: [], prefs: {} };
 }

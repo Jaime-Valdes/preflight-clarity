@@ -1,0 +1,112 @@
+"use client";
+
+import { ChevronLeft } from "lucide-react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { daysBetween } from "@preflight/shared/dates";
+import { getForecastStatus } from "@preflight/shared/forecast";
+import type { FlightOption } from "@preflight/shared/search";
+import type { SectionContext } from "@preflight/shared/types";
+import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
+import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
+import { SummaryCard } from "@/components/dashboard/SummaryCard";
+import { searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
+import { monthDay, routeText } from "./copy";
+import { FareCard } from "./FareCard";
+import { FlightSections } from "./FlightSections";
+import { OtherFlights } from "./OtherFlights";
+
+interface FlightDetailProps {
+  day: RouteDay;
+  option: FlightOption;
+  /** Every flight that day, for "Other flights this day". */
+  options: readonly FlightOption[];
+  /** "YYYY-MM-DD", already known to be on or before the flight's date. */
+  today: string;
+}
+
+const OTHERS_ID = "other-flights";
+
+/** Version C has no exploration strip: the sections only need neutral copy and somewhere to keep their state. */
+function noop(): void {}
+
+/**
+ * Version C: one flight in full — the dashboard header, smoothness summary and
+ * safety sections (reused as-is), the illustrative fare with "Add to compare",
+ * and the day's other flights. Laptop: sections left, summary and fare in a
+ * sticky column on the right. Mount it with a key per flight so the sections'
+ * state starts fresh for each one.
+ */
+export function FlightDetail({ day, option, options, today }: FlightDetailProps) {
+  const { flight } = option;
+  const item: CompareItem = { origin: day.origin, destination: day.destination, date: day.date, key: option.key };
+  const daysUntil = Math.max(0, daysBetween(today, flight.input.date));
+  const history = flight.turbulence.history;
+  const ctx = useMemo<SectionContext>(
+    () => ({ daysUntil, forecast: getForecastStatus(daysUntil, history), variant: "A" }),
+    [daysUntil, history],
+  );
+
+  // What the section bodies keep for this flight (the chosen seat…); see useFlightState.
+  const [bodyState, setBodyState] = useState<Readonly<Record<string, unknown>>>({});
+  const explore = useMemo<ExploreApi>(
+    () => ({
+      openAlternative: noop,
+      canOpen: () => false,
+      openWhatIf: noop,
+      switchTo: noop,
+      compare: noop,
+      // Neutral copy everywhere: "this flight", never "your flight".
+      showingOwnFlight: false,
+      flightState: (key: string) => bodyState[key],
+      setFlightState: (key: string, value: unknown) => setBodyState((prev) => ({ ...prev, [key]: value })),
+    }),
+    [bodyState],
+  );
+
+  return (
+    <div className="mx-auto w-full max-w-[640px] lg:max-w-none">
+      <Link
+        href={searchHref(day)}
+        className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-sm font-semibold text-ink-700 transition-colors hover:text-ink-900"
+      >
+        <ChevronLeft aria-hidden className="size-4 shrink-0" />
+        <span>
+          All flights {routeText(day.origin, day.destination)}, {monthDay(day.date)}
+        </span>
+      </Link>
+
+      <ExploreContext.Provider value={explore}>
+        <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-x-8">
+          {/* Focus lands here when another flight is opened from this page (see FlightPage). */}
+          <div data-flight-top tabIndex={-1} className="min-w-0 rounded-3xl outline-none lg:col-start-1 lg:row-start-1">
+            <DashboardHeader flight={flight} daysUntil={daysUntil} label="Flight details" className="animate-fade-up" />
+          </div>
+
+          <div className="min-w-0 lg:col-start-2 lg:row-span-3 lg:row-start-1">
+            <div className="flex flex-col gap-4 lg:sticky lg:top-6">
+              <SummaryCard flight={flight} ctx={ctx} className="animate-fade-up [animation-delay:60ms]" />
+              <FareCard option={option} item={item} othersHref={`#${OTHERS_ID}`} className="animate-fade-up [animation-delay:90ms]" />
+            </div>
+          </div>
+
+          <div className="min-w-0 animate-fade-up [animation-delay:120ms] lg:col-start-1">
+            <p className="mb-3 mt-2 px-1 text-[13px] leading-snug text-ink-500 lg:mt-0">
+              Pre-flight information for this flight. Open as much or as little as you like.
+            </p>
+            <FlightSections flight={flight} ctx={ctx} />
+          </div>
+
+          <OtherFlights
+            id={OTHERS_ID}
+            day={day}
+            options={options}
+            currentKey={option.key}
+            className="mt-6 min-w-0 lg:col-start-1 lg:mt-4"
+          />
+        </div>
+      </ExploreContext.Provider>
+
+    </div>
+  );
+}
