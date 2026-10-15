@@ -123,51 +123,40 @@ export interface Aircraft {
   /** Economy seat layout, e.g. "3-3", "3-3-3", "2-4-2", "3-4-3". */
   seatLayout: string;
   typicalSeats: number;
-  /** Registration of this specific airframe, e.g. "N523DZ". */
+  /** Registration of the assigned airframe, e.g. "N523DZ". Only known about a day before departure (AIRFRAME_DAYS). */
   tailNumber: string;
-  /** Age of this specific airframe in years, one decimal (e.g. 6.2). */
+  /** Age of the assigned airframe in years, one decimal (e.g. 6.2). Known once the tail is assigned. */
   ageYears: number;
-  /** Year this specific airframe was delivered. */
+  /** Year the assigned airframe was delivered. Known once the tail is assigned. */
   deliveredYear: number;
+  /** Average age of this airline's fleet of this model, years, one decimal (fleet data — known any time). */
+  fleetAvgAgeYears: number;
+  /** Youngest and oldest airframe in this airline's fleet of this model, years. */
+  fleetAgeRange: [number, number];
   /** Year the model entered airline service. */
   modelInServiceSince: number;
   /** Approximate number of this model flying worldwide. */
   modelFleetSize: number;
-  /** "Last full inspection: 12 days ago" */
-  lastInspectionDaysAgo: number;
-  /** Routine check name, e.g. "A-check". */
-  lastCheckType: string;
-  nextCheckDueDays: number;
-  /** Calm status line, e.g. "All scheduled checks up to date". */
-  maintenanceStatus: string;
   /** Calm, factual statements about the model's record. Never crash statistics. */
   safetyRecord: string[];
-  /** Typical cabin noise at cruise, dB. */
+  /** Typical cabin noise at cruise for the model, dB (approximate — show it as a band, not a precise reading). */
   cabinNoiseDb: number;
   cruiseAltitudeFt: number;
   cruiseSpeedMph: number;
 }
 
-export interface Pilot {
-  role: "Captain" | "First Officer";
-  /** Fake, diverse names. */
-  name: string;
-  initials: string;
-  /** 4.6–5.0, one decimal. */
-  rating: number;
-  /** Number of passenger ratings, e.g. 1284. */
-  ratingCount: number;
-  totalHours: number;
-  hoursOnType: number;
-  yearsFlying: number;
-  /** Times this pilot has flown this exact route. */
-  timesOnRoute: number;
-  /** "Based in New York" */
-  base: string;
-  /** "Former flight instructor" */
-  background: string;
-  /** Uber-style compliments, e.g. ["Smooth landings", "Clear announcements"]. */
-  badges: string[];
+/**
+ * Who flies the plane — from the rules every airline pilot meets, never from
+ * personal data: airlines don't publish crew rosters and pilot records are
+ * protected (docs/FEASIBILITY.md).
+ */
+export interface CrewInfo {
+  /** Pilots on board: 2, or 3–4 with relief pilots on long flights (by scheduled block time). */
+  pilots: 2 | 3 | 4;
+  /** Rule set behind the qualifications shown: US (FAA), European (EASA / UK CAA) or ICAO-standard national rules. */
+  regime: "faa" | "easa" | "icao";
+  /** Who oversees the airline's pilots, for copy: "FAA", "EASA", "UK CAA", "Transport Canada", … or "the national aviation authority". */
+  regulator: string;
 }
 
 export type Intensity = "none" | "light" | "moderate";
@@ -395,7 +384,7 @@ export interface Flight {
   terminal: string;
   gate: string;
   aircraft: Aircraft;
-  crew: { captain: Pilot; firstOfficer: Pilot };
+  crew: CrewInfo;
   turbulence: TurbulenceForecast;
   smoothness: Smoothness;
   weather: { origin: WeatherReport; destination: WeatherReport };
@@ -429,10 +418,16 @@ export interface ForecastStatus {
 // ── Dashboard sections ──────────────────────────────────────────────────────
 
 export interface SectionContext {
-  /** Whole calendar days from today to the departure date (0 = today). */
+  /**
+   * Days before departure that the briefing describes — what is knowable then decides what sections
+   * show (availabilityFor in forecast.ts). The study's day-before preview passes PREVIEW_DAYS_UNTIL (1);
+   * version C passes the real number of days (0 = today). Countdowns use the real days, not this.
+   */
   daysUntil: number;
   forecast: ForecastStatus;
   variant: Variant;
+  /** True in the study (A/B): the briefing is a preview of how it will look the day before the flight. */
+  preview?: boolean;
 }
 
 /** Props every dashboard section body receives. */

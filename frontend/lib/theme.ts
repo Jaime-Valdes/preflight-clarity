@@ -39,6 +39,7 @@ export const COLORS = {
   breeze700: "#2d5680",
   dusk100: "#e8e4f6",
   dusk400: "#9d8fd6",
+  dusk500: "#8170c4",
   dusk600: "#6a59ab",
   sand100: "#f8ebd2",
   sand300: "#eac283",

@@ -36,7 +36,7 @@ import type {
   FlightPrefs,
   Intensity,
   PhaseForecast,
-  Pilot,
+  CrewInfo,
   RouteHistory,
   SeatMap,
   SeatRow,
@@ -59,7 +59,6 @@ import {
   type AirlineProfile,
 } from "./airlines";
 import { buildAircraft, chooseAircraftModel, columnGroupsFor, getAircraftModel, type AircraftModel } from "./aircraft";
-import { pickBackground, pickBadges, pickCrewNames } from "./names";
 import { addDays, daysBetween, formatOffset, isISODate, minutesToTime, monthName, parseISODate, timeToMinutes } from "./dates";
 
 // ── Input ───────────────────────────────────────────────────────────────────
@@ -602,49 +601,36 @@ function roundTo(n: number, step: number): number {
   return Math.round(n / step) * step;
 }
 
-function buildCrew(rng: Rng, airline: AirlineProfile, ctx: RouteContext): { captain: Pilot; firstOfficer: Pilot } {
-  const [captainName, officerName] = pickCrewNames(rng, airline.country);
+const EASA_COUNTRIES = new Set([
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT",
+  "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "IS", "LI", "NO", "CH",
+]);
 
-  const baseCity = (): string => {
-    if (airline.hubs.includes(ctx.origin.code)) return ctx.origin.city;
-    if (airline.hubs.includes(ctx.destination.code)) return ctx.destination.city;
-    const hub = airline.hubs.length > 0 ? getAirport(rng.pick(airline.hubs)) : undefined;
-    return hub?.city ?? ctx.origin.city;
-  };
+const REGULATORS: Record<string, string> = {
+  US: "FAA",
+  GB: "UK CAA",
+  CA: "Transport Canada",
+  AU: "CASA",
+  NZ: "CAA New Zealand",
+  SG: "CAAS",
+  JP: "JCAB",
+  AE: "GCAA",
+  IN: "DGCA",
+};
 
-  const captainTotal = roundTo(rng.int(8000, 24000), 50);
-  const captain: Pilot = {
-    role: "Captain",
-    name: captainName.name,
-    initials: captainName.initials,
-    rating: rng.int(47, 50) / 10,
-    ratingCount: rng.int(300, 3000),
-    totalHours: captainTotal,
-    hoursOnType: roundTo(rng.int(1500, Math.min(9000, captainTotal - 500)), 50),
-    yearsFlying: clamp(Math.round(captainTotal / 700) + rng.int(-3, 3), 12, 35),
-    timesOnRoute: rng.int(8, 140),
-    base: `Based in ${baseCity()}`,
-    background: pickBackground(rng, "Captain", airline.country),
-    badges: pickBadges(rng, rng.int(2, 3)),
-  };
-
-  const officerTotal = roundTo(rng.int(2500, 9000), 50);
-  const firstOfficer: Pilot = {
-    role: "First Officer",
-    name: officerName.name,
-    initials: officerName.initials,
-    rating: rng.int(46, 49) / 10,
-    ratingCount: rng.int(150, 1800),
-    totalHours: officerTotal,
-    hoursOnType: roundTo(rng.int(600, Math.min(4000, officerTotal - 300)), 50),
-    yearsFlying: clamp(Math.round(officerTotal / 600) + rng.int(-2, 2), 5, 15),
-    timesOnRoute: rng.int(3, 60),
-    base: `Based in ${baseCity()}`,
-    background: pickBackground(rng, "First Officer", airline.country),
-    badges: pickBadges(rng, rng.int(2, 3)),
-  };
-
-  return { captain, firstOfficer };
+/**
+ * Who flies the plane, from the rules alone (no names, hours or ratings — that
+ * data is private and the crew isn't fixed weeks ahead): two pilots, or relief
+ * pilots on long flights so the crew can rest (US Part 117 / EASA FTL), and the
+ * rule set the airline's pilots fly under.
+ */
+function crewFor(airline: AirlineProfile, blockMin: number): CrewInfo {
+  const pilots: CrewInfo["pilots"] = blockMin > 12.5 * 60 ? 4 : blockMin > 8.5 * 60 ? 3 : 2;
+  const country = airline.country;
+  if (country === "US") return { pilots, regime: "faa", regulator: "FAA" };
+  if (country === "GB") return { pilots, regime: "easa", regulator: "UK CAA" };
+  if (EASA_COUNTRIES.has(country)) return { pilots, regime: "easa", regulator: "EASA" };
+  return { pilots, regime: "icao", regulator: REGULATORS[country] ?? "the national aviation authority" };
 }
 
 // ── Weather ─────────────────────────────────────────────────────────────────
@@ -1900,10 +1886,10 @@ function buildCore(norm: FlightInput, prefs: FlightPrefs): Core {
   const timing = buildTiming(root.fork("timing"), ctx, norm.date, prefs.departWindow, reference?.timing.airborneMin);
 
   const { airline, flightNumber, model, aircraftRng } = chooseCarrier(root, ctx, prefs);
-  const aircraft: Aircraft = buildAircraft(aircraftRng, model, airline.tailPatterns, ctx.year);
+  const aircraft: Aircraft = buildAircraft(aircraftRng, model, airline.code, airline.tailPatterns, ctx.year);
 
   const gate = buildGate(root.fork("gate"), ctx.origin, airline);
-  const crew = buildCrew(root.fork("crew"), airline, ctx);
+  const crew = crewFor(airline, timing.blockMin);
   const weather = weatherFor(ctx, timing, norm.date);
 
   // Within an hour of the same day's reference flight the air is the same: the bumps come from
@@ -1948,7 +1934,7 @@ interface FlightParts {
   flightNumber: string;
   gate: { terminal: string; gate: string };
   aircraft: Aircraft;
-  crew: { captain: Pilot; firstOfficer: Pilot };
+  crew: CrewInfo;
   turbulence: TurbulenceBuild;
   /** The route history (routeMonthFor): a fact about the route and month. */
   history: RouteHistory;
@@ -2317,9 +2303,9 @@ export function buildScheduledFlight(day: RouteDay, spec: ScheduledFlightSpec): 
   const root = createRng(spec.seed);
 
   const timing = timingAt(ctx, norm.date, spec.departTime, day.airborneMin, spec.blockMin);
-  const aircraft = buildAircraft(root.fork("aircraft"), model, airline.tailPatterns, ctx.year);
+  const aircraft = buildAircraft(root.fork("aircraft"), model, airline.code, airline.tailPatterns, ctx.year);
   const gate = buildGate(root.fork("gate"), ctx.origin, airline);
-  const crew = buildCrew(root.fork("crew"), airline, ctx);
+  const crew = crewFor(airline, timing.blockMin);
   const weather = weatherFor(ctx, timing, norm.date);
 
   // The block's air: one draw for a departure at airTime in the day's winds, with the time-of-day

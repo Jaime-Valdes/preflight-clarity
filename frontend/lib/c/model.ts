@@ -1,5 +1,6 @@
 import { getAirport } from "@preflight/shared/airports";
-import { isISODate } from "@preflight/shared/dates";
+import { addDays, isISODate } from "@preflight/shared/dates";
+import { SCHEDULE_DAYS } from "@preflight/shared/forecast";
 
 /*
  * Version C (docs/VERSION_C.md): shared types and URL helpers for /c pages.
@@ -110,4 +111,22 @@ export function flightHref(item: CompareItem): string {
 export function compareHref(items: readonly CompareItem[]): string {
   // Commas and dots are safe in a query value; keep the URL readable.
   return items.length ? `/c/compare?f=${items.map(itemId).join(",")}` : "/c/compare";
+}
+
+/** Furthest date anyone can pick: schedules and fares are published about this far ahead. */
+export const MAX_DAYS_AHEAD = SCHEDULE_DAYS;
+
+export type DateStatus = "ok" | "past" | "too-far";
+
+/** Whether a departure date can be shown, given today ("YYYY-MM-DD"). */
+export function dateStatus(date: string, today: string): DateStatus {
+  if (date < today) return "past";
+  if (date > addDays(today, MAX_DAYS_AHEAD)) return "too-far";
+  return "ok";
+}
+
+/** The nearest date that can be shown. */
+export function clampDate(date: string, today: string): string {
+  const last = addDays(today, MAX_DAYS_AHEAD);
+  return date < today ? today : date > last ? last : date;
 }

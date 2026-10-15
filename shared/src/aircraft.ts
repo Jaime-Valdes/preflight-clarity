@@ -5,7 +5,7 @@
  */
 import type { Aircraft, BodyType } from "./types";
 import type { Rng } from "./random";
-import { round1 } from "./random";
+import { createRng, round1 } from "./random";
 
 export interface AircraftModel {
   /** Key used in airline fleets, e.g. "A321neo". */
@@ -396,12 +396,27 @@ export function makeTailNumber(rng: Rng, patterns: readonly string[]): string {
 }
 
 /** Per-airframe facts for one specific plane flying this flight. */
-export function buildAircraft(rng: Rng, model: AircraftModel, tailPatterns: readonly string[], flightYear: number): Aircraft {
+/**
+ * An airline's fleet of one model: youngest and oldest airframe and the
+ * average age (fleet databases publish these, so they are known any time).
+ * Deterministic per airline, model and year.
+ */
+export function fleetAgesFor(airlineCode: string, model: AircraftModel, flightYear: number): { avg: number; min: number; max: number } {
+  const rng = createRng(`fleet|${airlineCode}|${model.key}|${flightYear}`);
   const modelAge = flightYear - model.modelInServiceSince;
   // Nothing newer than the last one built; retired lines spread ~10 years behind their youngest example.
   const youngest = model.productionEnded === undefined ? 0.8 : Math.max(0.8, flightYear - model.productionEnded);
   const oldest = Math.max(youngest + 0.5, Math.min(model.productionEnded === undefined ? 18 : youngest + 10, modelAge - 0.2));
-  const ageYears = round1(rng.float(youngest, oldest));
+  // Each airline's deliveries cover part of the model's life.
+  const min = round1(rng.float(youngest, youngest + Math.min(2, (oldest - youngest) / 3)));
+  const max = round1(Math.max(min + 0.5, oldest - rng.float(0, (oldest - min) * 0.4)));
+  const avg = round1(min + (max - min) * rng.float(0.35, 0.6));
+  return { avg, min, max };
+}
+
+export function buildAircraft(rng: Rng, model: AircraftModel, airlineCode: string, tailPatterns: readonly string[], flightYear: number): Aircraft {
+  const fleet = fleetAgesFor(airlineCode, model, flightYear);
+  const ageYears = round1(rng.float(fleet.min, fleet.max));
   const deliveredYear = Math.max(model.modelInServiceSince, flightYear - Math.round(ageYears));
   return {
     manufacturer: model.manufacturer,
@@ -413,12 +428,10 @@ export function buildAircraft(rng: Rng, model: AircraftModel, tailPatterns: read
     tailNumber: makeTailNumber(rng, tailPatterns),
     ageYears,
     deliveredYear,
+    fleetAvgAgeYears: fleet.avg,
+    fleetAgeRange: [fleet.min, fleet.max],
     modelInServiceSince: model.modelInServiceSince,
     modelFleetSize: model.modelFleetSize,
-    lastInspectionDaysAgo: rng.int(3, 28),
-    lastCheckType: "A-check",
-    nextCheckDueDays: rng.int(20, 60),
-    maintenanceStatus: "All scheduled checks up to date",
     safetyRecord: model.safetyRecord.slice(),
     cabinNoiseDb: model.cabinNoiseDb,
     cruiseAltitudeFt: model.cruiseAltitudeFt,

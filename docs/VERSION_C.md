@@ -18,6 +18,25 @@ Decisions taken by the lead (change only with the team):
 - **Default sort: Smoothest first** (tabs for Cheapest, Fastest, Departure time). Honest labels only;
   no "best deal", no urgency ("only 2 seats left"), no fake scarcity, no alarm words.
 
+## Time-aware data (docs/FEASIBILITY.md)
+
+Version C only shows what is knowable at the flight's real distance from today (constants and
+`availabilityFor(daysUntil)` in `shared/src/forecast.ts`). Where an item isn't available yet, a calm
+marker replaces it — never a made-up value:
+
+| Item | Shown when | Before that |
+| --- | --- | --- |
+| Flight-specific turbulence (score ring, sparkline, bump stretches, timeline, phase strip, compare overlay, Smoothest sort, minimum-smoothness filter, date-strip score) | ≤ 2 days (`TURBULENCE_FORECAST_DAYS`) | Marker "Turbulence forecast from Tue, Nov 24 · 2 days before departure". Route-level history ("About 89% of December flights on this route are smooth") may appear, labelled typical. The Smoothest sort and the smoothness filter are unavailable (with the same note); the default sort is then Departure time. |
+| Weather condition + temperature | ≤ 7 days (`WEATHER_FORECAST_DAYS`) | Marker "Weather forecast from Thu, Nov 19 · 7 days before departure". |
+| Wind, gusts, visibility | ≤ 2 days (`WEATHER_DETAIL_DAYS`) | Hidden. |
+| Gate | day of travel (`GATE_DAYS`) | Terminal + "Gate posted on the day". |
+| Tail number, this airframe's age/delivery year | ≤ 1 day (`AIRFRAME_DAYS`) | "Scheduled aircraft" + the airline's fleet-average age for the type (`aircraft.fleetAvgAgeYears`, `fleetAgeRange`). |
+| Pilots | never personal | "Who flies your plane": `flight.crew` (`pilots` 2–4, `regime`, `regulator`) + the rules every airline pilot meets. No names, hours or ratings anywhere. |
+| Dates | ≤ 330 days (`SCHEDULE_DAYS`) | Date pickers and the date strip stop there (`dateStatus` / `clampDate` in `frontend/lib/c/model.ts`). |
+
+Routes no airline would plausibly fly nonstop show "No nonstop flights on this route" instead of
+invented flights.
+
 ## Pages
 
 | Route | What |
@@ -49,7 +68,7 @@ than 365 days ahead get a calm message with a way to pick another date. Airports
 - **Result card** (one per flight): airline mark + name + flight number; depart → arrive times (+1 day),
   duration, "Nonstop"; aircraft model + "Wide-body" pill when wide; **smoothness score** (ring/badge +
   label) and a **mini turbulence timeline** (sparkline of `turbulence.points`); one or two quiet facts
-  (e.g. on-time %, captain's hours on type); fare. Actions: **Compare** (toggle, max 3) and **Details**
+  (e.g. on-time % on this route, aircraft size); fare. Actions: **Compare** (toggle, max 3) and **Details**
   (link). The whole card is not one giant link (nested interactive elements are not allowed).
 - **Compare tray**: sticky at the bottom when ≥ 1 flight is picked (on every C page): the picked flights
   as small chips with remove buttons, "Compare (n)" (enabled at ≥ 2), "Clear". At 3 picked, other Compare
@@ -81,9 +100,9 @@ than 365 days ahead get a calm message with a way to pick another date. Airports
   their count, strongest expected bumps, smooth share, forecast confidence from `getForecastStatus`),
   **Turbulence timeline** (one chart, all flights overlaid on minutes after takeoff — calm/breeze/dusk
   colours + distinct dash patterns + legend), **Schedule** (depart, arrive, duration, days away),
-  **Aircraft** (model, body type, age, seat layout), **Airline** (on-time %, safety notes as the
-  AirlineSection shows them), **Crew** (captain/first officer hours), **Weather** (departure/arrival
-  condition + temperature), **Best seat** (the seat map's recommended zone/seat).
+  **Aircraft** (scheduled type, body type, the airline's fleet-average age — this airframe's age only within a day — seat layout), **Airline** (on-time %, safety notes as the
+  AirlineSection shows them), **Who flies it** (pilots on board and the rules they meet — never names or hours), **Weather** (departure/arrival
+  condition + temperature, within 7 days; otherwise the marker), **Best seat** (the seat map's recommended zone/seat).
 - A quiet marker for the smoothest / cheapest / fastest per row group is fine ("Smoothest" pill) — facts,
   not advice. Ties marked for all tied flights.
 - Empty state (0–1 flights): explain and link back to search.
@@ -108,29 +127,29 @@ export function findOption(query: FlightInput, key: string): FlightOption | null
 export function dayOverview(query: FlightInput, date: string): DayOverview;
 ```
 
-The first version is a stand-in built on `generateFlight` so the UI can start; the generator replaces
-the internals with a **coherent day schedule** (exports unchanged):
+As implemented (`shared/src/search.ts` + `routeDay` / `buildScheduledFlight` in `fakeFlight.ts`):
 
-1. **Schedule** per route + date (seed `sched|ORIGIN|DEST|DATE`): busy markets (hub/popular pairs) 8–14
-   flights, ordinary ones 4–8, long-haul/oceanic 2–5; carriers from `candidateAirlines` (hub carriers can
-   run several frequencies); flight numbers unique within the day and never retired numbers; departure
-   times spread over the operating day (5-minute grid, same-carrier departures ≥ 45 min apart, long-haul
-   timed with the existing overnight/arrival rules); aircraft from each carrier's fleet for the distance.
-2. **Shared facts, so side-by-side flights never contradict each other**: one airborne time for the day
-   (block time may differ a few minutes by aircraft); route history = the A/B one (route + month);
-   weather per airport + date + clock hour (as A/B); **turbulence by air block** — flights in the same
-   2-hour block share one bump draw (identical series for the same body type; a wide-body is attenuated,
-   never bumpier), and blocks differ through the existing time-of-day model so the history's "best
-   departure window" sentence stays true. The schedule never puts two departures < 30 min apart across a
-   block boundary.
-3. **Fares**: by distance, carrier (low-cost carriers lower, premium long-haul carriers higher), weekday,
-   departure time (early/late a little lower, peaks a little higher), ±10% seeded jitter; ≥ $39; never
-   correlated with the smoothness score by construction; independent of "today".
-4. **Determinism and A/B safety**: `generateFlight` output for A/B must stay byte-identical (snapshot-
-   hash several hundred inputs before and after). C flight ids are unique (`hashId("c|…")`).
-5. **Speed**: one day (≤ 14 flights, no alternatives) ≤ 15 ms cold on a laptop; 7-day overview ≤ 100 ms
-   cold; results cached (bounded LRU).
-6. `shared/scripts/check-search.ts` (run by `npm run test -w shared`) checks all of the above.
+1. **Timetable** per route and IATA season (seed `sched|ROUTE|SEASON`; summer from the last Sunday of
+   March, winter from the last Sunday of October): busy markets (a candidate carrier has a hub at both
+   ends) 8–14 flights, ordinary 4–8, long-haul (oceanic, international > 2,600 mi, domestic > 3,000 mi)
+   2–5; carriers from `candidateAirlines` (hub carriers fly several frequencies; carriers without a
+   wide-body are left out where the route needs one); flight numbers unique per day, never retired,
+   even eastbound / odd westbound; departures 05:30–23:30 local (long-haul from 06:00) on a 5-minute
+   grid, ≥ 15 min apart, same carrier ≥ 45 min, ≥ 30 min across an air-block edge. Like a real
+   timetable it repeats: the same flight number leaves at the same time every day of the season.
+2. **The day** (seed `sched|ROUTE|DATE`): the frequencies flying that weekday (a few skip Saturdays),
+   ~8% equipment swaps, every arrival re-checked against that date's time zones and curfews.
+3. **Shared facts**: one airborne time per day (= A/B's), the A/B route history (route + month), weather
+   per airport + date + clock hour (A/B's model), and one bump draw per 2-hour air block on odd hours
+   (`air|ROUTE|DATE|HH:MM`) — the same body type gets the identical timeline, a wide-body never a
+   bumpier one; blocks differ through the time-of-day model, so the history's best window holds.
+4. **Fares** (`fare|ROUTE|DATE|KEY`): distance, oceanic, region, carrier tier (`fareTier` in
+   airlines.ts), weekday, departure hour, ±10% jitter; whole dollars ≥ $39; never look at turbulence
+   (within-day correlation with the score ≈ 0).
+5. **Determinism and A/B safety**: `check-search.ts` holds a permanent hash guard over 329
+   `generateFlight` outputs — a deliberate A/B change must update it. C flight ids are
+   `hashId("c|ORIGIN|DEST|DATE|KEY")`. Cached results are frozen: copy before sorting.
+6. **Speed**: a cold day ~3–6 ms, a cold 7-day overview ~9–13 ms, cache hits ~2 µs.
 
 ## Frontend layout (ownership)
 

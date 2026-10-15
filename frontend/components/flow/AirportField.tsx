@@ -29,6 +29,12 @@ interface AirportFieldProps {
   quickPicks?: boolean;
   /** Something rendered at the right of the label row (e.g. a swap button). */
   labelAction?: ReactNode;
+  /**
+   * Accept text that matches no airport (stored as typed). Default true. With false, only a
+   * picked airport is stored: unmatched text commits as "", and the list says nothing matches
+   * (flight data only exists for real airports — docs/FEASIBILITY.md).
+   */
+  allowFreeText?: boolean;
   className?: string;
 }
 
@@ -48,7 +54,7 @@ export function airportLabel(value: string): string {
 /**
  * Accessible combobox over the shared airport list. Picking a suggestion
  * stores the IATA code; typing something that matches nothing stores the
- * trimmed text (the generator synthesizes an airport for it).
+ * trimmed text, unless `allowFreeText` is false (then it stores "").
  */
 export function AirportField({
   id,
@@ -60,6 +66,7 @@ export function AirportField({
   invalid = false,
   quickPicks = true,
   labelAction,
+  allowFreeText = true,
   className,
 }: AirportFieldProps) {
   const listId = useId();
@@ -77,8 +84,9 @@ export function AirportField({
   const editing = draft !== null;
   const text = editing ? draft : airportLabel(value);
   const query = editing && typed ? draft : "";
-  const options: Option[] = buildOptions(query);
+  const options: Option[] = buildOptions(query, allowFreeText);
   const showList = open && editing && options.length > 0;
+  const noMatch = !allowFreeText && open && editing && query.trim() !== "" && options.length === 0;
 
   function setDraftBoth(next: string | null) {
     draftRef.current = next;
@@ -99,7 +107,8 @@ export function AirportField({
     const top = /^[A-Za-z]{3}$/.test(trimmed) ? searchAirports(trimmed, 1)[0] : undefined;
     const typedAsCode = trimmed === trimmed.toUpperCase();
     const known = code && (typedAsCode || top?.code === code.code) ? code : top;
-    onChange(known ? known.code : trimmed.slice(0, 60));
+    if (known) onChange(known.code);
+    else onChange(allowFreeText ? trimmed.slice(0, 60) : "");
   }
 
   function select(option: Option) {
@@ -270,6 +279,11 @@ export function AirportField({
             })}
           </ul>
         ) : null}
+        {noMatch ? (
+          <p role="status" className="absolute inset-x-0 top-[calc(100%+6px)] z-30 rounded-2xl bg-surface px-4 py-3 text-[13px] text-ink-500 shadow-lift ring-1 ring-line">
+            No airports match — try a city name or airport code.
+          </p>
+        ) : null}
       </div>
       {chips.length ? (
         <div role="group" className="mt-2 flex flex-wrap gap-2" aria-label="Popular airports">
@@ -296,9 +310,9 @@ export function AirportField({
   );
 }
 
-function buildOptions(query: string): Option[] {
+function buildOptions(query: string, allowFreeText: boolean): Option[] {
   const trimmed = query.trim();
   const matches = searchAirports(trimmed, MAX_RESULTS).map((airport): Option => ({ kind: "airport", airport }));
-  if (trimmed && matches.length === 0) return [{ kind: "text", text: trimmed.slice(0, 60) }];
+  if (allowFreeText && trimmed && matches.length === 0) return [{ kind: "text", text: trimmed.slice(0, 60) }];
   return matches;
 }

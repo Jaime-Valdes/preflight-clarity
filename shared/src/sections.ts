@@ -16,7 +16,7 @@ export interface SectionMeta {
 /** Display order on the full dashboard (variant A) — same order as the brief. */
 export const SECTIONS: readonly SectionMeta[] = [
   { id: "turbulence", title: "Turbulence forecast", dimension: "predictability" },
-  { id: "pilot", title: "Your pilots", dimension: "trust" },
+  { id: "pilot", title: "Who flies your plane", dimension: "trust" },
   { id: "aircraft", title: "Your aircraft", dimension: "trust" },
   { id: "airline", title: "Airline safety & comfort", dimension: "trust" },
   { id: "weather", title: "Weather", dimension: "predictability" },
@@ -38,7 +38,7 @@ export const VARIANT_SECTIONS: Record<Variant, readonly SectionId[]> = {
 export const PART_LABELS: Record<DashboardPart, string> = {
   summary: "Smoothness score & summary",
   turbulence: "Turbulence forecast",
-  pilot: "Your pilots",
+  pilot: "Who flies your plane",
   aircraft: "Your aircraft",
   airline: "Airline safety & comfort",
   weather: "Weather",
