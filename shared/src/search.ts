@@ -6,10 +6,20 @@
  * Contract: docs/VERSION_C.md ("Data contract"). The exported names and shapes
  * are fixed; everything below them is internal.
  *
+ * Only routes an airline would plausibly fly nonstop get flights
+ * (docs/FEASIBILITY.md: no invented nonstops). The carriers come from
+ * nonstopCarriers in airlines.ts (via routeDay): a carrier from one end's home
+ * market with a hub or focus city at one end, whose fleet reaches, to a far end
+ * big enough for the distance (plus a short list of real routes that rule
+ * misses). Everything else — a typed (made-up) airport, two airports in one
+ * metro area, a small city far from any hub, a distance nobody flies nonstop
+ * (JFK–SYD) — has no options on any date, and dayOverview counts 0 flights.
+ * hasNonstopService says which kind a route is, without building a day.
+ *
  * A day is built in three steps:
  *  1. A timetable per route and IATA season (seed `sched|ROUTE|SEASON`): how many
  *     flights the market gets (busy 8–14, ordinary 4–8, long-haul 2–5), which
- *     carriers fly them (candidateAirlines; hub carriers fly several), their flight
+ *     carriers fly them (nonstopCarriers; hub carriers fly several), their flight
  *     numbers, aircraft, taxi times and departure times. Like a real timetable it
  *     repeats, so DL1423 leaves at the same time every day of the season and the
  *     same flight can be compared across days. A few frequencies skip Saturdays.
@@ -24,7 +34,7 @@
  * Fares never look at the turbulence: distance, carrier tier, weekday, departure
  * hour and a ±10% seeded jitter, whole dollars, at least $39.
  */
-import { buildScheduledFlight, normalizeInput, routeDay, type RouteCarrier, type RouteDay } from "./fakeFlight";
+import { buildScheduledFlight, normalizeInput, routeDay, routeNonstopCarriers, type RouteCarrier, type RouteDay } from "./fakeFlight";
 import { isRetiredFlightNumber, makeFlightNumber, type AirlineProfile } from "./airlines";
 import { chooseAircraftModel, getAircraftModel } from "./aircraft";
 import { minutesToTime, parseISODate, weekdayIndex } from "./dates";
@@ -58,6 +68,29 @@ export interface DayOverview {
 /** "DL 1423" → "DL1423". */
 export function optionKey(flight: Pick<Flight, "flightNumber">): string {
   return flight.flightNumber.replace(/\s+/g, "").toUpperCase();
+}
+
+const SERVICE = new Map<string, boolean>();
+const SERVICE_MAX = 4096;
+/** Any valid date: who flies a route doesn't depend on it. */
+const SERVICE_DATE = "2026-01-15";
+
+/**
+ * Whether any airline would plausibly fly this route nonstop (docs/FEASIBILITY.md) — a fact about the
+ * route, the same on every date. When false, searchFlights has no options on any day and dayOverview
+ * counts 0; when true, every day has flights. Takes the endpoints searchFlights takes (a long LaGuardia
+ * trip counts as the JFK route it is flown as; typed text that matches no catalogue airport is never
+ * served). Cached and cheap: no day is built.
+ */
+export function hasNonstopService(origin: string, destination: string): boolean {
+  const norm = normalizeInput({ origin, destination, date: SERVICE_DATE });
+  const key = `${norm.origin}|${norm.destination}`;
+  const hit = SERVICE.get(key);
+  if (hit !== undefined) return hit;
+  if (SERVICE.size >= SERVICE_MAX) SERVICE.delete(SERVICE.keys().next().value as string);
+  const served = routeNonstopCarriers(norm.origin, norm.destination).length > 0;
+  SERVICE.set(key, served);
+  return served;
 }
 
 // ── Markets ─────────────────────────────────────────────────────────────────
@@ -224,6 +257,8 @@ function buildTimetable(day: RouteDay, season: Season): Timetable {
   const rng = createRng(`sched|${day.route}|${season.key}`);
   const carriers = eligibleCarriers(day);
   const market = marketOf(day, carriers);
+  // Nobody would fly this route nonstop: no timetable at all.
+  if (carriers.length === 0) return { market, frequencies: [] };
   const [lo, hi] = MARKET_COUNTS[market];
   const hubs = carriers.filter((c) => c.hub).length;
   const drawn =

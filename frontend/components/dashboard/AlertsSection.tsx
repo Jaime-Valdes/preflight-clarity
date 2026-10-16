@@ -2,8 +2,13 @@
 
 import { Check } from "lucide-react";
 import { useState } from "react";
-import { addDays, formatShortDate } from "@preflight/shared/dates";
-import { FORECAST_HORIZON_DAYS } from "@preflight/shared/forecast";
+import { formatShortDate } from "@preflight/shared/dates";
+import {
+  availabilityFor,
+  availableFrom,
+  TURBULENCE_FORECAST_DAYS,
+  WEATHER_FORECAST_DAYS,
+} from "@preflight/shared/forecast";
 import type { Flight, SectionContext, SectionProps } from "@preflight/shared/types";
 import { useTracker } from "@/lib/tracking";
 import { Reveal } from "./env/Reveal";
@@ -128,7 +133,7 @@ export function AlertsSection({ flight, ctx }: SectionProps) {
         <p>{horizonNote(flight, ctx, onOption)}</p>
         <p>
           A meaningful change means your smoothness score moves by 5 points or more, a bumpy stretch appears or clears,
-          or your departure time or gate changes.
+          or your departure time or gate (posted on the day of travel) changes.
         </p>
         <p>Noted here for you &mdash; nothing is sent during this study.</p>
       </div>
@@ -145,23 +150,33 @@ export function alertsTeaser(flight: Flight, ctx: SectionContext): string {
 
 // ── Copy ────────────────────────────────────────────────────────────────────
 
+/** Horizons from shared/src/forecast.ts, so the note always matches what the sections show. */
 function horizonNote(flight: Flight, ctx: SectionContext, onOption: boolean): string {
-  if (ctx.daysUntil > FORECAST_HORIZON_DAYS) {
-    const around = safeShortDate(addDays(flight.input.date, -FORECAST_HORIZON_DAYS));
-    return `Detailed forecasts start about ${FORECAST_HORIZON_DAYS} days before departure${
-      around ? ` — around ${around} for this flight` : ""
-    }. Until then, you'd only hear about changes to the seasonal outlook.`;
+  const available = availabilityFor(ctx.daysUntil);
+  const turbulenceFrom = safeFromDate(flight.input.date, TURBULENCE_FORECAST_DAYS);
+  const turbulenceAround = turbulenceFrom ? `, around ${turbulenceFrom}` : "";
+  if (!available.weather) {
+    const weatherFrom = safeFromDate(flight.input.date, WEATHER_FORECAST_DAYS);
+    return `Weather forecasts start about a week before departure${
+      weatherFrom ? ` (around ${weatherFrom} for this flight)` : ""
+    } and turbulence forecasts ${TURBULENCE_FORECAST_DAYS} days before${turbulenceAround}. Until then, you'd only hear about schedule changes.`;
+  }
+  if (!available.turbulence) {
+    return `Turbulence forecasts start ${TURBULENCE_FORECAST_DAYS} days before departure${turbulenceAround}. Until then, you'd hear about weather and schedule changes.`;
   }
   // Uses the date on screen, so on an explored option it is that flight's forecast.
   const whose = onOption ? "This flight’s" : "Your";
-  if (ctx.daysUntil > 2) return `${whose} forecast updates every 6 hours until departure.`;
+  if (ctx.daysUntil > 0) return `${whose} forecast updates every 6 hours until departure.`;
   return `${whose} forecast updates every hour until departure.`;
 }
 
-/** The date helpers throw on malformed input; a generated flight's date is valid, but never crash a section over it. */
-function safeShortDate(iso: string): string | null {
+/**
+ * "Tue, Nov 24": the date `daysBefore` days ahead of departure. The date helpers throw on malformed input;
+ * a generated flight's date is valid, but never crash a section over it.
+ */
+function safeFromDate(departureDate: string, daysBefore: number): string | null {
   try {
-    return formatShortDate(iso);
+    return formatShortDate(availableFrom(departureDate, daysBefore));
   } catch {
     return null;
   }

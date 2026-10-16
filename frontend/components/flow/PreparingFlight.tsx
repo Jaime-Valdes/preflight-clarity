@@ -6,10 +6,11 @@ import { Screen } from "@/components/ui/Screen";
 import { cn } from "@/lib/cn";
 import { ProgressBar } from "./StepHeader";
 
+/** Honest at any distance: the study shows how the briefing would look the day before (docs/FEASIBILITY.md). */
 export const PREPARING_LINES = [
-  "Checking turbulence forecasts…",
-  "Looking at route history…",
-  "Putting your briefing together…",
+  "Finding an example flight…",
+  "Looking up how this route usually flies…",
+  "Building your day-before briefing…",
 ] as const;
 
 const DURATION_MS = 1800;

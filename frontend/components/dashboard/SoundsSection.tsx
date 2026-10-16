@@ -3,6 +3,7 @@
 import { ChevronDown, Ear, Vibrate } from "lucide-react";
 import { useId, useState } from "react";
 import { formatDuration, formatOffset } from "@preflight/shared/dates";
+import { availabilityFor, type Availability } from "@preflight/shared/forecast";
 import type {
   Flight,
   FlightPhase,
@@ -32,15 +33,16 @@ interface CueGroup {
  * A timeline of the normal sounds and sensations of this flight, boarding to
  * landing, grouped by moment. Tapping a cue reveals why it's normal.
  */
-export function SoundsSection({ flight }: SectionProps) {
+export function SoundsSection({ flight, ctx }: SectionProps) {
   const tracker = useTracker();
   const baseId = useId();
   const [filter, setFilter] = useState<Filter>("all");
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set<string>());
 
-  const groups = groupCues(flight);
+  const cues = cuesFor(flight, availabilityFor(ctx.daysUntil));
+  const groups = groupCues(flight, cues);
   const visible = filter === "all" ? groups : groups.filter((g) => g.moment === filter);
-  const total = flight.sounds.length;
+  const total = cues.length;
 
   const toggleCue = (id: string) => {
     const next = new Set(openIds);
@@ -120,17 +122,69 @@ export function SoundsSection({ flight }: SectionProps) {
 
 /** "14 normal sounds and sensations, boarding to landing" */
 export function soundsTeaser(flight: Flight, ctx: SectionContext): string {
-  void ctx;
-  const n = flight.sounds.length;
+  const n = cuesFor(flight, availabilityFor(ctx.daysUntil)).length;
   if (n === 0) return "Normal sounds and sensations, boarding to landing";
   return `${n} normal sounds and sensations, boarding to landing`;
 }
 
+// ── What can be said at this distance ──────────────────────────────────────
+
+const BUMPS_CUE_ID = "cruise-bumps";
+const TOUCHDOWN_CUE_ID = "landing-touchdown";
+
+/** Shown while no turbulence forecast exists: true for any flight, whether or not this one gets bumps. */
+const GENERIC_BUMPS_CUE: SoundCue = {
+  id: BUMPS_CUE_ID,
+  moment: "cruise",
+  when: "If bumps come",
+  minute: null,
+  sense: "feel",
+  title: "Light bumps, if there are any",
+  detail: "If the air gets uneven, you'll feel a few nudges and gentle sways, like a car on a country road.",
+  why: "Light turbulence is the plane riding small ripples in the air. The wings are built to flex with them, and the autopilot keeps the plane steady.",
+};
+
+const GENERIC_TOUCHDOWN_WHY =
+  "A firm landing is often deliberate: it plants the wheels so the brakes grip, especially on shorter or wet runways. It's the sign of a well-controlled landing.";
+
+/**
+ * The flight's cues, limited to what is knowable `availability` away: the
+ * wet-runway line needs the arrival weather, and whether this flight gets bumps
+ * needs the turbulence forecast (until then, a generic, conditional cue).
+ * Timings are rounded to 5 minutes.
+ */
+function cuesFor(flight: Flight, availability: Availability): SoundCue[] {
+  let cues = flight.sounds.map((cue) => {
+    const when = roundTimings(cue.when);
+    if (cue.id === TOUCHDOWN_CUE_ID && !availability.weather) return { ...cue, when, why: GENERIC_TOUCHDOWN_WHY };
+    return when === cue.when ? cue : { ...cue, when };
+  });
+  if (!availability.turbulence) {
+    cues = cues.filter((cue) => cue.id !== BUMPS_CUE_ID);
+    const chime = cues.findIndex((cue) => cue.id === "cruise-chime");
+    const firstLater = cues.findIndex((cue) => cue.moment === "descent" || cue.moment === "landing");
+    const at = chime >= 0 ? chime + 1 : firstLater >= 0 ? firstLater : cues.length;
+    cues.splice(at, 0, GENERIC_BUMPS_CUE);
+  }
+  return cues;
+}
+
+/** Nearest 5 minutes for anything 8 minutes or longer ("About 27 min" → "About 25 min", "1h 7m" → "1h 5m"). */
+function roundTo5(minutes: number): number {
+  return minutes < 8 ? minutes : Math.round(minutes / 5) * 5;
+}
+
+function roundTimings(text: string): string {
+  return text
+    .replace(/(\d+)h (\d+)m\b/g, (_, h: string, m: string) => formatOffset(roundTo5(Number(h) * 60 + Number(m))))
+    .replace(/(\d+) min\b/g, (_, m: string) => formatOffset(roundTo5(Number(m))));
+}
+
 // ── Grouping ────────────────────────────────────────────────────────────────
 
-function groupCues(flight: Flight): CueGroup[] {
+function groupCues(flight: Flight, cues: readonly SoundCue[]): CueGroup[] {
   const byMoment = new Map<SoundMoment, SoundCue[]>();
-  for (const cue of flight.sounds) {
+  for (const cue of cues) {
     const list = byMoment.get(cue.moment);
     if (list) list.push(cue);
     else byMoment.set(cue.moment, [cue]);
@@ -161,16 +215,16 @@ function momentHint(moment: SoundMoment, flight: Flight): string | null {
       return "Under a minute";
     case "climb": {
       const p = phaseOf(flight, "climb");
-      return p && p.endMin > 0 ? `First ${formatOffset(p.endMin)}` : null;
+      return p && p.endMin > 0 ? `First ${formatOffset(roundTo5(p.endMin))}` : null;
     }
     case "cruise": {
       const p = phaseOf(flight, "cruise");
-      return p && p.endMin > p.startMin ? `${formatDuration(p.endMin - p.startMin)} at altitude` : null;
+      return p && p.endMin > p.startMin ? `About ${formatDuration(roundTo5(p.endMin - p.startMin))} at altitude` : null;
     }
     case "descent": {
       const p = phaseOf(flight, "descent");
       const last = flight.airborneMin - (p?.startMin ?? flight.airborneMin);
-      return last > 0 ? `Last ${formatOffset(last)}` : null;
+      return last > 0 ? `Last ${formatOffset(roundTo5(last))}` : null;
     }
     case "landing":
       return "Touchdown and rollout";

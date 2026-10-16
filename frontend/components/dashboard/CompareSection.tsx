@@ -3,6 +3,7 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { formatDuration, formatLongDate, formatShortDate, formatTime12 } from "@preflight/shared/dates";
+import { availabilityFor, TURBULENCE_FORECAST_DAYS } from "@preflight/shared/forecast";
 import type { AlternativeFlight, Flight, SectionContext, SectionProps } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -33,6 +34,8 @@ export function CompareSection({ flight, ctx }: SectionProps) {
   const [expanded, setExpanded] = useFlightState<string[]>("compare.expanded", []);
   const [held, setHeld] = useFlightState<string[]>("compare.held", []);
   const alternatives = visibleAlternatives(flight, ctx.daysUntil);
+  // Smoothness scores, deltas and forecast reasons are flight-specific turbulence (≤ TURBULENCE_FORECAST_DAYS).
+  const scored = availabilityFor(ctx.daysUntil).turbulence;
 
   function toggleExpanded(alt: AlternativeFlight) {
     const isOpen = expanded.includes(alt.id);
@@ -49,11 +52,20 @@ export function CompareSection({ flight, ctx }: SectionProps) {
   return (
     <div className="space-y-4">
       <p className="text-sm leading-relaxed text-ink-700">
-        Other flights between {flight.origin.city} and {flight.destination.city}, scored on the same scale as{" "}
-        {ownFlight ? "yours" : "this one"} and ranked smoothest first.
+        {scored ? (
+          <>
+            Other flights between {flight.origin.city} and {flight.destination.city}, scored on the same scale as{" "}
+            {ownFlight ? "yours" : "this one"} and ranked smoothest first.
+          </>
+        ) : (
+          <>
+            Other flights between {flight.origin.city} and {flight.destination.city}. Smoothness scores for each flight
+            start {TURBULENCE_FORECAST_DAYS} days before departure.
+          </>
+        )}
       </p>
 
-      <ReferenceRow flight={flight} label={ownFlight ? "Your flight" : "This flight"} />
+      <ReferenceRow flight={flight} label={ownFlight ? "Your flight" : "This flight"} scored={scored} />
 
       {alternatives.length > 0 ? (
         <div className="space-y-3">
@@ -69,6 +81,7 @@ export function CompareSection({ flight, ctx }: SectionProps) {
               onOpen={explore ? () => explore.openAlternative(alt) : undefined}
               canOpen={explore ? explore.canOpen(alt) : true}
               ownFlight={ownFlight}
+              scored={scored}
             />
           ))}
         </div>
@@ -79,7 +92,7 @@ export function CompareSection({ flight, ctx }: SectionProps) {
       )}
 
       <p className="text-xs leading-relaxed text-ink-500">
-        {forecastNote(ctx, ownFlight)} Holding an option only keeps it here for you — nothing is booked or charged.
+        {forecastNote(ctx)} Holding an option only keeps it here for you — nothing is booked or charged.
         {explore ? " Opening one adds it to the flights at the top so you can look through it." : null}
       </p>
     </div>
@@ -91,20 +104,18 @@ export function compareTeaser(flight: Flight, ctx: SectionContext, ownFlight = t
   return compareTeaserLine(flight, ctx.daysUntil, ownFlight);
 }
 
-function forecastNote(ctx: SectionContext, ownFlight: boolean): string {
-  switch (ctx.forecast.mode) {
-    case "history":
-      return `Scores are early estimates from past flights on this route; they sharpen as ${ownFlight ? "your" : "this"} date gets closer.`;
-    case "outlook":
-      return "Scores are a seasonal outlook and update daily from about 10 days before departure.";
-    default:
-      return "Scores use the latest forecast and are refreshed through the day.";
+function forecastNote(ctx: SectionContext): string {
+  if (!availabilityFor(ctx.daysUntil).turbulence || ctx.forecast.mode !== "forecast") {
+    return `Smoothness scores need a turbulence forecast for each flight, which starts ${TURBULENCE_FORECAST_DAYS} days before departure.`;
   }
+  return ctx.daysUntil > 0
+    ? "Scores use the latest turbulence forecasts and update every 6 hours."
+    : "Scores use the latest turbulence forecasts and update every hour.";
 }
 
 // ── Your flight ─────────────────────────────────────────────────────────────
 
-function ReferenceRow({ flight, label }: { flight: Flight; label: string }) {
+function ReferenceRow({ flight, label, scored }: { flight: Flight; label: string; scored: boolean }) {
   return (
     <div className="rounded-2xl bg-breeze-50/60 px-4 py-3.5 ring-1 ring-inset ring-breeze-100">
       <div className="flex items-start justify-between gap-3">
@@ -122,7 +133,9 @@ function ReferenceRow({ flight, label }: { flight: Flight; label: string }) {
           />
           <AircraftLine name={flight.aircraft.fullName} bodyType={flight.aircraft.bodyType} />
         </div>
-        <ScoreBadge score={flight.smoothness.score} caption={<span className="text-ink-400">Smoothness</span>} />
+        {scored ? (
+          <ScoreBadge score={flight.smoothness.score} caption={<span className="text-ink-400">Smoothness</span>} />
+        ) : null}
       </div>
     </div>
   );
@@ -143,9 +156,11 @@ interface AlternativeCardProps {
   canOpen: boolean;
   /** false while an explored option (not the participant's own flight) is on screen. */
   ownFlight: boolean;
+  /** Whether flight-specific turbulence (scores, deltas, forecast reasons) exists yet. */
+  scored: boolean;
 }
 
-function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, canOpen, ownFlight }: AlternativeCardProps) {
+function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, canOpen, ownFlight, scored }: AlternativeCardProps) {
   const delta = Math.round(alt.scoreDelta);
   const fare = fareLabel(alt.fareDiffUsd);
   const marker = dayMarker(alt.arriveDayOffset);
@@ -179,22 +194,31 @@ function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, 
             />
             <AircraftLine name={alt.aircraft} bodyType={alt.bodyType} />
           </div>
-          <ScoreBadge
-            score={alt.smoothnessScore}
-            caption={
-              <span className={cn("whitespace-nowrap", delta > 0 ? "text-calm-700" : "text-ink-500")}>
-                {deltaLabel(delta)}
-              </span>
-            }
-          />
+          {scored ? (
+            <ScoreBadge
+              score={alt.smoothnessScore}
+              caption={
+                <span className={cn("whitespace-nowrap", delta > 0 ? "text-calm-700" : "text-ink-500")}>
+                  {deltaLabel(delta)}
+                </span>
+              }
+            />
+          ) : null}
         </div>
 
-        <p className="mt-3 text-sm leading-relaxed text-ink-700">{alt.reason}</p>
+        {/* The reasons are forecast-worded; before the forecast exists only the plane's size is a fact. */}
+        <p className="mt-3 text-sm leading-relaxed text-ink-700">
+          {scored
+            ? alt.reason
+            : alt.bodyType === "wide"
+              ? "A larger plane, which feels bumps less."
+              : "Too early to tell which flight will be calmer."}
+        </p>
 
         <div className="mt-3 flex items-center justify-between gap-3">
           <span className="text-sm">
             <span className="font-semibold text-ink-900 tabular-nums">{fare}</span>
-            {fare !== "Same fare" ? <span className="text-ink-500"> vs. {ownFlight ? "your fare" : "this flight’s fare"}</span> : null}
+            {fare !== "Same fare" ? <span className="text-ink-500"> vs. this flight&rsquo;s fare</span> : null}
           </span>
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-ink-500">
             {open ? "Hide details" : "Details"}
@@ -219,11 +243,18 @@ function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, 
           <Detail label="Aircraft">
             {alt.aircraft} · {BODY_LABEL[alt.bodyType]}
           </Detail>
-          <Detail label="Smoothness">
-            <span className="tabular-nums">{alt.smoothnessScore} of 100</span> · {scoreLabel(alt.smoothnessScore)}
-          </Detail>
+          {scored ? (
+            <Detail label="Smoothness">
+              <span className="tabular-nums">{alt.smoothnessScore} of 100</span> · {scoreLabel(alt.smoothnessScore)}
+            </Detail>
+          ) : null}
           <Detail label={ownFlight ? "vs. your flight" : "vs. this flight"}>
-            <span className="tabular-nums">{deltaLabel(delta)}</span> · <span className="tabular-nums">{fare}</span>
+            {scored ? (
+              <>
+                <span className="tabular-nums">{deltaLabel(delta)}</span> ·{" "}
+              </>
+            ) : null}
+            <span className="tabular-nums">{fare}</span>
             {fare !== "Same fare" ? " fare" : null}
           </Detail>
         </dl>

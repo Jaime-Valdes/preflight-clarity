@@ -15,7 +15,7 @@ Decisions taken by the lead (change only with the team):
   there is no "Book"/"Select" step, and the copy says so quietly where it matters.
 - **Responsive**: phone first (390 px design width, works at 340 px) *and* a proper laptop layout
   (filters sidebar, wider results, compare table). Same calm design system as A/B.
-- **Default sort: Smoothest first** (tabs for Cheapest, Fastest, Departure time). Honest labels only;
+- **Default sort: Smoothest first** within 2 days of departure (tabs for Cheapest, Fastest, Departure time); further out, smoothness isn't known yet, so Smoothest is disabled with a note and the default is Departure time. Honest labels only;
   no "best deal", no urgency ("only 2 seats left"), no fake scarcity, no alarm words.
 
 ## Time-aware data (docs/FEASIBILITY.md)
@@ -41,7 +41,7 @@ invented flights.
 
 | Route | What |
 | --- | --- |
-| `/c` | Home: one search form (From, To, Date) + popular routes + three short "what you can compare" tiles + quiet "illustrative data, nothing can be booked" note. |
+| `/c` | Home: one search form (From, To, Date — defaults to tomorrow, so the first search shows the flight forecasts) + popular routes + three short "what you can compare" tiles + quiet "illustrative data, nothing can be booked" note. |
 | `/c/search?from=JFK&to=LAX&date=2026-11-26[&sort=…][filters]` | Results for one route and day. Search summary (editable), date strip (±3 days: lowest fare + best score per day), sort tabs, filters, result cards, compare tray. |
 | `/c/flight?from=JFK&to=LAX&date=2026-11-26&f=DL1423` | One flight in full: the dashboard header + smoothness summary + the safety sections, fare, "Add to compare", and "Other flights this day" (from the same results). |
 | `/c/compare?f=JFK.LAX.2026-11-26.DL1423,JFK.LAX.2026-11-27.AA914` | 2–3 flights side by side (any routes/dates). Without `f`, it shows the visitor's compare list. |
@@ -49,17 +49,17 @@ invented flights.
 All four pages are static shells; the client reads the query string with **`useSearchParams()` inside
 a `<Suspense>` boundary** (Next 16 + Cache Components — see "Rules" below), generates the data with
 the shared generator, and renders. Today's date comes from `useTodayISO()`; dates before today or more
-than 365 days ahead get a calm message with a way to pick another date. Airports: catalogue codes only
+than 330 days ahead (`MAX_DAYS_AHEAD`) get a calm message with a way to pick another date. Airports: catalogue codes only
 (`getAirport(code)`); the search form only accepts a picked suggestion.
 
 ### Results page (`/c/search`)
 
 - **Search summary** at the top: `New York (JFK) → Los Angeles (LAX) · Thu, Nov 26 · 1 traveller` with
   "Change" (opens the search form inline / as a sheet on phones). Swap button for origin/destination.
-- **Date strip**: 7 days centred on the searched date (clamped to today … today+365): weekday + date,
+- **Date strip**: 7 days centred on the searched date (clamped to today … today+330): weekday + date,
   lowest fare, best smoothness score that day. Tapping a day navigates (`router.push`). Computed after
   the day's results so the first paint isn't blocked.
-- **Sort tabs**: Smoothest (default) · Cheapest · Fastest · Departure time. In the URL as `sort=`.
+- **Sort tabs**: Smoothest (default within 2 days; disabled further out, where Departure time is the default) · Cheapest · Fastest · Departure time. In the URL as `sort=`.
 - **Filters** (in the URL; sidebar ≥ 1024 px, "Filters" sheet on phones, with an active-filter count and
   "Clear all"): departure time (Morning 5–11:59 · Afternoon 12–5:59 · Evening 6–11:59 · Night 12–4:59,
   only buckets that have flights), airlines (with each airline's lowest fare), aircraft size (any /
@@ -68,7 +68,7 @@ than 365 days ahead get a calm message with a way to pick another date. Airports
 - **Result card** (one per flight): airline mark + name + flight number; depart → arrive times (+1 day),
   duration, "Nonstop"; aircraft model + "Wide-body" pill when wide; **smoothness score** (ring/badge +
   label) and a **mini turbulence timeline** (sparkline of `turbulence.points`); one or two quiet facts
-  (e.g. on-time % on this route, aircraft size); fare. Actions: **Compare** (toggle, max 3) and **Details**
+  (on-time % on this route · last 12 months; about N seats · fleet-average age); fare. Actions: **Compare** (toggle, max 3) and **Details**
   (link). The whole card is not one giant link (nested interactive elements are not allowed).
 - **Compare tray**: sticky at the bottom when ≥ 1 flight is picked (on every C page): the picked flights
   as small chips with remove buttons, "Compare (n)" (enabled at ≥ 2), "Clear". At 3 picked, other Compare

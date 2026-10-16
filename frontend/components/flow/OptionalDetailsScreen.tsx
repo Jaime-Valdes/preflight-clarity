@@ -30,7 +30,11 @@ interface OptionalDetailsScreenProps {
   onContinue: () => void;
 }
 
-/** Route, how far away the flight is, flights per year — every field optional. */
+/**
+ * Route, how far away the flight is, flights per year — every field optional.
+ * The route here is a survey answer, not flight data, so free text is kept;
+ * the flight setup only prefills from it when it is a catalogue airport.
+ */
 export function OptionalDetailsScreen({ pre, onChange, onContinue }: OptionalDetailsScreenProps) {
   const touched = !!(pre.routeOrigin || pre.routeDestination || pre.timeframe || pre.flightsPerYear);
   return (
@@ -59,6 +63,7 @@ export function OptionalDetailsScreen({ pre, onChange, onContinue }: OptionalDet
               value={pre.routeOrigin}
               onChange={(v) => onChange({ routeOrigin: v })}
               quickPicks={false}
+              allowFreeText
             />
             <AirportField
               id="pre-destination"
@@ -66,6 +71,7 @@ export function OptionalDetailsScreen({ pre, onChange, onContinue }: OptionalDet
               value={pre.routeDestination}
               onChange={(v) => onChange({ routeDestination: v })}
               quickPicks={false}
+              allowFreeText
             />
           </div>
         </Card>

@@ -12,20 +12,6 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return n === 1 ? one : many;
 }
 
-/** 9 → "9 days ago", 1 → "1 day ago", 0 → "today". */
-export function daysAgo(days: number): string {
-  const d = Math.max(0, Math.round(days));
-  if (d === 0) return "today";
-  return `${d} ${plural(d, "day")} ago`;
-}
-
-/** 35 → "in 35 days", 1 → "in 1 day", 0 → "today". */
-export function inDays(days: number): string {
-  const d = Math.max(0, Math.round(days));
-  if (d === 0) return "today";
-  return `in ${d} ${plural(d, "day")}`;
-}
-
 /** Airframe age for a one-line teaser: 7.6 → "7 years old", 1.4 → "1 year old", 0.8 → "under a year old". */
 export function ageLabel(ageYears: number): string {
   const whole = Math.floor(Math.max(0, ageYears));
@@ -42,4 +28,39 @@ export function ageValue(ageYears: number): string {
   }
   const text = Number.isInteger(age) ? String(age) : age.toFixed(1);
   return `${text} years`;
+}
+
+/** Years with at most one decimal: 6 → "6", 3.44 → "3.4". */
+export function yearsNumber(years: number): string {
+  const y = Math.max(0, Math.round(years * 10) / 10);
+  return Number.isInteger(y) ? String(y) : y.toFixed(1);
+}
+
+/** Fleet age range: [0.8, 6.1] → "0.8–6.1". */
+export function ageRangeLabel([min, max]: readonly [number, number]): string {
+  return `${yearsNumber(min)}–${yearsNumber(Math.max(min, max))}`;
+}
+
+export interface NoiseBand {
+  /** "Quieter than most airliners" */
+  label: string;
+  /** "roughly 76–80 dB at cruise" */
+  range: string;
+}
+
+/**
+ * Cabin noise as a relative band with an approximate range (docs/FEASIBILITY.md):
+ * published figures for a model vary with the cabin and seat, so never one exact dB.
+ */
+export function cabinNoiseBand(db: number): NoiseBand {
+  const centre = Math.round(db);
+  const range = `roughly ${centre - 2}–${centre + 2} dB at cruise`;
+  if (db < 79) return { label: "Quieter than most airliners", range };
+  if (db < 82) return { label: "A little quieter than average", range };
+  return { label: "About average for an airliner", range };
+}
+
+/** "Lufthansa" → "Lufthansa’s", "Delta Air Lines" → "Delta Air Lines’". */
+export function possessive(name: string): string {
+  return /s$/i.test(name) ? `${name}\u2019` : `${name}\u2019s`;
 }

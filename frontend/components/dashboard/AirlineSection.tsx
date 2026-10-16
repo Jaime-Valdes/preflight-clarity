@@ -6,6 +6,7 @@ import type { Flight, SectionContext, SectionProps } from "@preflight/shared/typ
 import { Pill } from "@/components/ui/Pill";
 import { Stat } from "@/components/ui/Stat";
 import { BlockLabel } from "./trust/BlockLabel";
+import { cabinNoiseBand, possessive } from "./trust/format";
 import { MeterBar } from "./trust/MeterBar";
 import { Ring } from "./trust/Ring";
 
@@ -25,10 +26,22 @@ function amenityIcon(text: string): ReactNode {
   return <Check aria-hidden className={cls} />;
 }
 
-/** "Airline safety & comfort" — safety score hero, on-time meters, comfort facts and amenities. */
+/** "regulator oversight (FAA)"; a generic regulator name reads as is. */
+function oversightLabel(regulator: string): string {
+  const name = regulator.trim();
+  if (!name || /^the /i.test(name)) return `oversight by ${name || "the national aviation authority"}`;
+  return `regulator oversight (${name})`;
+}
+
+/**
+ * "Airline safety & comfort" — safety score hero with its basis, on-time meters
+ * (last 12 months), comfort facts and amenities. Every figure is airline- or
+ * model-level data that exists any time before the flight.
+ */
 export function AirlineSection({ flight }: SectionProps) {
   const stats = flight.airlineStats;
   const routeLabel = `${flight.origin.code} → ${flight.destination.code}`;
+  const noise = cabinNoiseBand(stats.cabinNoiseDb);
 
   return (
     <div className="flex flex-col gap-4">
@@ -46,7 +59,8 @@ export function AirlineSection({ flight }: SectionProps) {
           </div>
         </div>
         <p className="mt-3 text-xs leading-snug text-ink-500">
-          Based on audit results, fleet age and crew training standards.
+          Our index for the airline, based on its IOSA safety-audit status, {oversightLabel(flight.crew.regulator)},
+          accident record and fleet age.
         </p>
       </div>
 
@@ -54,10 +68,10 @@ export function AirlineSection({ flight }: SectionProps) {
       <div>
         <BlockLabel>On-time arrivals</BlockLabel>
         <div className="mt-2 flex flex-col gap-3 rounded-2xl bg-canvas/70 p-4 ring-1 ring-inset ring-line/70">
-          <MeterBar label="Across the airline" value={stats.onTimePct} />
-          <MeterBar label={`On this route · ${routeLabel}`} value={stats.onTimeRoutePct} />
+          <MeterBar label="Across the airline · last 12 months" value={stats.onTimePct} />
+          <MeterBar label={`On this route · ${routeLabel} · last 12 months`} value={stats.onTimeRoutePct} />
           <p className="text-xs leading-snug text-ink-500">
-            Share of flights arriving within 15 minutes of schedule over the past year.
+            Share of flights arriving within 15 minutes of schedule over the last 12 months.
           </p>
         </div>
       </div>
@@ -70,22 +84,23 @@ export function AirlineSection({ flight }: SectionProps) {
             label="Comfort score"
             value={stats.comfortScore * 10}
             display={`${stats.comfortScore.toFixed(1)} / 10`}
+            hint={`Our index from legroom, seat width, cabin noise and amenities on ${possessive(flight.airline.name)} ${flight.aircraft.model}.`}
             tone="calm"
           />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <Stat label="Legroom" value={`${stats.seatPitchIn} in`} hint="Seat pitch in economy" />
           <Stat label="Seat width" value={`${stats.seatWidthIn} in`} hint="Economy seats" />
-          <Stat label="Cabin noise" value={stats.cabinNoise} hint={`${stats.cabinNoiseDb} dB at cruise`} />
+          <Stat label="Cabin noise" value={noise.label} hint={`Typical for the ${flight.aircraft.model}`} />
           <Stat
-            label="Crew rating"
+            label="Cabin crew"
             value={
               <span className="inline-flex items-center gap-1">
                 <Star aria-hidden className="size-4 fill-sand-400 text-sand-400" />
                 {stats.crewRating.toFixed(1)}
               </span>
             }
-            hint="From passenger reviews"
+            hint="Airline average from passenger reviews"
           />
         </div>
       </div>
@@ -107,9 +122,9 @@ export function AirlineSection({ flight }: SectionProps) {
   );
 }
 
-/** "Safety 97/100 · 86% on time" */
+/** "Safety 97/100 · 86% on time, last 12 months" */
 export function airlineTeaser(flight: Flight, ctx: SectionContext): string {
   void ctx;
   const stats = flight.airlineStats;
-  return `Safety ${stats.safetyScore}/100 · ${stats.onTimePct}% on time`;
+  return `Safety ${stats.safetyScore}/100 · ${stats.onTimePct}% on time, last 12 months`;
 }

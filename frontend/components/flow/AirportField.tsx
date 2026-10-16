@@ -17,11 +17,11 @@ import { cn } from "@/lib/cn";
 interface AirportFieldProps {
   id: string;
   label: ReactNode;
-  /** Stored value: an IATA code when an airport was picked, otherwise trimmed free text, "" when empty. */
+  /** Stored value: an IATA code when an airport was picked, otherwise trimmed free text (only with `allowFreeText`), "" when empty. */
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  /** Quiet line under the field (validation or help). */
+  /** Quiet line under the field: help in ink, or (with `invalid`) a validation message in sand. */
   hint?: ReactNode;
   /** The hint is a validation message: sets aria-invalid and announces the hint. */
   invalid?: boolean;
@@ -281,7 +281,7 @@ export function AirportField({
         ) : null}
         {noMatch ? (
           <p role="status" className="absolute inset-x-0 top-[calc(100%+6px)] z-30 rounded-2xl bg-surface px-4 py-3 text-[13px] text-ink-500 shadow-lift ring-1 ring-line">
-            No airports match — try a city name or airport code.
+            No airports match. Try a city name or airport code, or pick the nearest major airport.
           </p>
         ) : null}
       </div>
@@ -302,7 +302,7 @@ export function AirportField({
         </div>
       ) : null}
       {hint ? (
-        <p id={hintId} role={invalid ? "alert" : undefined} className="mt-1.5 text-[13px] leading-snug text-sand-700">
+        <p id={hintId} role={invalid ? "alert" : undefined} className={cn("mt-1.5 text-[13px] leading-snug", invalid ? "text-sand-700" : "text-ink-500")}>
           {hint}
         </p>
       ) : null}

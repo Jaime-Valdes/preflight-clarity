@@ -2,13 +2,14 @@
 
 import { ArrowUp, CalendarClock, Droplets, Eye, PlaneLanding, PlaneTakeoff, Wind, type LucideIcon } from "lucide-react";
 import { createElement, useState, type ReactNode } from "react";
-import { formatTime12, monthName } from "@preflight/shared/dates";
-import { FORECAST_HORIZON_DAYS } from "@preflight/shared/forecast";
+import { formatTime12 } from "@preflight/shared/dates";
+import { availabilityFor, WEATHER_DETAIL_DAYS, WEATHER_FORECAST_DAYS } from "@preflight/shared/forecast";
 import type { Flight, SectionContext, SectionProps, WeatherReport } from "@preflight/shared/types";
 import { cn } from "@/lib/cn";
 import { TONE_CLASSES } from "@/lib/theme";
 import { useTracker } from "@/lib/tracking";
 import {
+  availabilityMarker,
   CARD_TINT,
   conditionIcon,
   conditionTone,
@@ -22,13 +23,16 @@ type Unit = "F" | "C";
 
 /**
  * Weather at the origin around departure and at the destination around
- * arrival: condition, temperature, wind, visibility, chance of rain and a calm
- * note on what it means for the flight.
+ * arrival, as much as is knowable at this distance (availabilityFor):
+ * from WEATHER_FORECAST_DAYS out, condition and temperature; from
+ * WEATHER_DETAIL_DAYS out, also wind, gusts, visibility, chance of rain and a
+ * calm note on what it means for the flight. Further out, a calm marker.
  */
 export function WeatherSection({ flight, ctx }: SectionProps) {
   const tracker = useTracker();
   const [unit, setUnit] = useState<Unit>("F");
   const ownFlight = useExplore()?.showingOwnFlight ?? true;
+  const available = availabilityFor(ctx.daysUntil);
 
   const changeUnit = (next: Unit) => {
     if (next === unit) return;
@@ -36,10 +40,27 @@ export function WeatherSection({ flight, ctx }: SectionProps) {
     tracker?.event("weather_units", "weather", next);
   };
 
-  const basis =
-    ctx.daysUntil > FORECAST_HORIZON_DAYS
-      ? `Typical conditions for ${safeMonthName(flight.input.date)} · live forecast about ${FORECAST_HORIZON_DAYS} days before departure`
-      : `Forecast for ${ownFlight ? "your" : "this flight’s"} departure and arrival times`;
+  if (!available.weather) {
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="flex items-start gap-1.5 text-sm leading-snug text-ink-700">
+          <CalendarClock aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-400" />
+          <span>{availabilityMarker("Weather forecast", flight.input.date, WEATHER_FORECAST_DAYS)}</span>
+        </p>
+        <PendingCard report={flight.weather.origin} dayOffset={0} />
+        <PendingCard report={flight.weather.destination} dayOffset={flight.arriveDayOffset} />
+        <p className="px-1 text-xs leading-snug text-ink-500">
+          Forecasts for a specific hour start about a week ahead. Wind and visibility follow about{" "}
+          {WEATHER_DETAIL_DAYS} days before departure.
+        </p>
+      </div>
+    );
+  }
+
+  const whose = ownFlight ? "your" : "this flight’s";
+  const basis = available.weatherDetail
+    ? `Forecast for ${whose} departure and arrival times`
+    : `Early forecast for ${whose} departure and arrival times`;
 
   return (
     <div className="flex flex-col gap-3">
@@ -50,15 +71,27 @@ export function WeatherSection({ flight, ctx }: SectionProps) {
         </p>
         <UnitToggle unit={unit} onChange={changeUnit} />
       </div>
-      <WeatherCard report={flight.weather.origin} unit={unit} dayOffset={0} />
-      <WeatherCard report={flight.weather.destination} unit={unit} dayOffset={flight.arriveDayOffset} />
+      <WeatherCard report={flight.weather.origin} unit={unit} dayOffset={0} detail={available.weatherDetail} />
+      <WeatherCard
+        report={flight.weather.destination}
+        unit={unit}
+        dayOffset={flight.arriveDayOffset}
+        detail={available.weatherDetail}
+      />
+      {available.weatherDetail ? null : (
+        <p className="px-1 text-xs leading-snug text-ink-500">
+          {availabilityMarker("Wind and visibility", flight.input.date, WEATHER_DETAIL_DAYS)}
+        </p>
+      )}
     </div>
   );
 }
 
-/** "Partly cloudy in New York · Clear in Los Angeles" */
+/** "Partly cloudy in New York · Clear in Los Angeles", or the marker while there is no forecast yet. */
 export function weatherTeaser(flight: Flight, ctx: SectionContext): string {
-  void ctx;
+  if (!availabilityFor(ctx.daysUntil).weather) {
+    return availabilityMarker("Weather forecast", flight.input.date, WEATHER_FORECAST_DAYS);
+  }
   const o = flight.weather.origin;
   const d = flight.weather.destination;
   if (o.city === d.city) return `${o.label} at departure · ${d.label} at arrival`;
@@ -67,36 +100,68 @@ export function weatherTeaser(flight: Flight, ctx: SectionContext): string {
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
 
-function WeatherCard({ report, unit, dayOffset }: { report: WeatherReport; unit: Unit; dayOffset: number }) {
-  const tone = conditionTone(report);
-  const t = TONE_CLASSES[tone];
+function CardHeader({ report, dayOffset }: { report: WeatherReport; dayOffset: number }) {
   const departure = report.moment === "departure";
   const MomentIcon = departure ? PlaneTakeoff : PlaneLanding;
+  const offsetLabel = dayOffsetLabel(dayOffset);
+  return (
+    <header className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
+          <MomentIcon aria-hidden className="size-3.5" />
+          {departure ? "Departure" : "Arrival"}
+        </div>
+        <div className="mt-0.5 text-sm leading-snug font-semibold break-words text-ink-900">
+          {report.city} <span className="font-medium text-ink-400">{report.airportCode}</span>
+        </div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div className="text-sm font-semibold text-ink-900 tabular-nums">{formatTime12(report.localTime)}</div>
+        <div className="text-[11px] text-ink-400">{offsetLabel ? `local · ${offsetLabel}` : "local time"}</div>
+      </div>
+    </header>
+  );
+}
+
+/** Airport and scheduled local time only — the weather itself isn't forecast yet. */
+function PendingCard({ report, dayOffset }: { report: WeatherReport; dayOffset: number }) {
+  return (
+    <article
+      aria-label={`${report.moment === "departure" ? "Departure" : "Arrival"}, ${report.city}: forecast not available yet`}
+      className={cn("rounded-2xl p-4 ring-1 ring-inset ring-line/70", CARD_TINT.neutral)}
+    >
+      <CardHeader report={report} dayOffset={dayOffset} />
+      <p className="mt-3 text-sm leading-snug text-ink-500">Forecast not available yet</p>
+    </article>
+  );
+}
+
+function WeatherCard({
+  report,
+  unit,
+  dayOffset,
+  detail,
+}: {
+  report: WeatherReport;
+  unit: Unit;
+  dayOffset: number;
+  /** Wind, gusts, visibility, rain chance and the impact note (≤ WEATHER_DETAIL_DAYS). */
+  detail: boolean;
+}) {
+  // Before the detailed forecast the impact (which depends on wind) isn't known: a neutral tint.
+  const tone = detail ? conditionTone(report) : "neutral";
+  const t = TONE_CLASSES[detail ? tone : "breeze"];
+  const departure = report.moment === "departure";
   const primary = unit === "F" ? report.tempF : report.tempC;
   const secondary = unit === "F" ? `${report.tempC}°C` : `${report.tempF}°F`;
   const rotation = windArrowRotation(report.windDir);
-  const offsetLabel = dayOffsetLabel(dayOffset);
 
   return (
     <article
       aria-label={`${departure ? "Departure" : "Arrival"} weather, ${report.city}`}
       className={cn("rounded-2xl p-4 ring-1 ring-inset ring-line/70", CARD_TINT[tone])}
     >
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
-            <MomentIcon aria-hidden className="size-3.5" />
-            {departure ? "Departure" : "Arrival"}
-          </div>
-          <div className="mt-0.5 text-sm leading-snug font-semibold break-words text-ink-900">
-            {report.city} <span className="font-medium text-ink-400">{report.airportCode}</span>
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="text-sm font-semibold text-ink-900 tabular-nums">{formatTime12(report.localTime)}</div>
-          <div className="text-[11px] text-ink-400">{offsetLabel ? `local · ${offsetLabel}` : "local time"}</div>
-        </div>
-      </header>
+      <CardHeader report={report} dayOffset={dayOffset} />
 
       <div className="mt-3 flex items-center gap-3">
         <span
@@ -118,21 +183,25 @@ function WeatherCard({ report, unit, dayOffset }: { report: WeatherReport; unit:
         </div>
       </div>
 
-      <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Details">
-        <Chip icon={Wind} label="Wind" value={`${report.windKts} kt`}>
-          <span className="inline-flex items-center gap-0.5 font-semibold text-ink-700">
-            {rotation !== null ? (
-              <ArrowUp aria-hidden className="size-3" style={{ transform: `rotate(${rotation}deg)` }} />
-            ) : null}
-            {report.windDir}
-          </span>
-        </Chip>
-        {report.gustKts ? <Chip label="Gusts" value={`${report.gustKts} kt`} /> : null}
-        <Chip icon={Eye} label="Visibility" value={`${report.visibilityMi} mi`} />
-        <Chip icon={Droplets} label={precipLabel(report.condition)} value={`${report.precipPct}%`} />
-      </ul>
+      {detail ? (
+        <>
+          <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Details">
+            <Chip icon={Wind} label="Wind" value={`${report.windKts} kt`}>
+              <span className="inline-flex items-center gap-0.5 font-semibold text-ink-700">
+                {rotation !== null ? (
+                  <ArrowUp aria-hidden className="size-3" style={{ transform: `rotate(${rotation}deg)` }} />
+                ) : null}
+                {report.windDir}
+              </span>
+            </Chip>
+            {report.gustKts ? <Chip label="Gusts" value={`${report.gustKts} kt`} /> : null}
+            <Chip icon={Eye} label="Visibility" value={`${report.visibilityMi} mi`} />
+            <Chip icon={Droplets} label={precipLabel(report.condition)} value={`${report.precipPct}%`} />
+          </ul>
 
-      <p className="mt-3 text-sm leading-snug text-ink-700">{report.impactNote}</p>
+          <p className="mt-3 text-sm leading-snug text-ink-700">{report.impactNote}</p>
+        </>
+      ) : null}
     </article>
   );
 }
@@ -189,13 +258,4 @@ function UnitToggle({ unit, onChange }: { unit: Unit; onChange: (next: Unit) => 
       })}
     </div>
   );
-}
-
-/** monthName throws on a malformed date; a generated flight always has a valid one, but never crash a section over it. */
-function safeMonthName(iso: string): string {
-  try {
-    return monthName(iso);
-  } catch {
-    return "this time of year";
-  }
 }

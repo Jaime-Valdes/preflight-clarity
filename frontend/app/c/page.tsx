@@ -31,8 +31,8 @@ export default function CHomePage() {
             Compare flights side by side
           </h1>
           <p className="mt-3 max-w-[60ch] text-[15px] leading-relaxed text-white/75">
-            Pick a route and a day to see every nonstop flight with its expected smoothness, turbulence timeline, crew,
-            aircraft and weather next to its time and fare.
+            Pick a route and a day to see every nonstop flight with its time and fare, the aircraft, the airline and who
+            flies it — and, as the date gets closer, its turbulence and weather forecasts.
           </p>
           <div className="mt-6">
             <HomeSearch />

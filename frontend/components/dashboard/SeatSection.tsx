@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { COLORS, SEAT_ZONE } from "@/lib/theme";
 import { useTracker } from "@/lib/tracking";
-import { useFlightState } from "./explore/context";
+import { useExplore, useFlightState } from "./explore/context";
 import {
   describeSeat,
   focusRowFor,
@@ -33,6 +33,8 @@ const MAP_MAX_HEIGHT_PX = 420;
 export function SeatSection({ flight }: SectionProps) {
   const { seatMap } = flight;
   const tracker = useTracker();
+  // Version C (and an explored option in the study) is not the visitor's booked flight.
+  const ownFlight = useExplore()?.showingOwnFlight ?? true;
   // Kept per explored flight, so switching away and back doesn't reset them.
   const [selected, setSelected] = useFlightState<string | null>("seat.selected", null);
   const [chosen, setChosen] = useFlightState<string | null>("seat.chosen", null);
@@ -44,6 +46,10 @@ export function SeatSection({ flight }: SectionProps) {
   const focusId = selected ?? pick;
   const focus = focusId ? describeSeat(seatMap, focusId) : null;
   const otherPicks = seatMap.recommended.filter((id) => id !== focusId);
+  // The generator falls back to seats off the wing when every over-wing seat is unavailable.
+  const pickInfo = pick ? describeSeat(seatMap, pick) : null;
+  const pickOverWing = pickInfo !== null && pickInfo.zone === "smoothest";
+  const othersSmoothest = otherPicks.every((id) => describeSeat(seatMap, id)?.zone === "smoothest");
   const isChosen = focusId !== null && chosen === focusId;
   const rows = seatMap.rows;
   const firstRow = rows[0]?.row;
@@ -100,10 +106,13 @@ export function SeatSection({ flight }: SectionProps) {
               : `rows ${seatMap.wingStartRow}–${seatMap.wingEndRow}`}
           </span>
           .{" "}
-          {seatMap.recommended.length > 0
-            ? "Your best free picks are starred on the map."
-            : "Free seats in that zone are shaded on the map."}
+          {pick === null
+            ? "Open seats in that zone are shaded on the map."
+            : pickOverWing
+              ? "The best seats open right now are starred on the map."
+              : "Those are unavailable right now, so the best open seats nearby are starred on the map."}
         </p>
+        <p className="mt-1 text-xs leading-snug text-ink-500">As of today — seats change until check-in.</p>
         <button
           type="button"
           aria-expanded={whyOpen}
@@ -143,12 +152,14 @@ export function SeatSection({ flight }: SectionProps) {
                 {isChosen ? "Selected" : "Select this seat"}
               </Button>
               {isChosen ? (
-                <p className="mt-2 text-center text-xs text-ink-500">Noted here for you — your booking isn&rsquo;t changed.</p>
+                <p className="mt-2 text-center text-xs text-ink-500">
+                  {ownFlight ? <>Noted here for you — your booking isn&rsquo;t changed.</> : "Noted here only — nothing is booked."}
+                </p>
               ) : null}
             </div>
             {otherPicks.length > 0 ? (
               <div className="mt-3">
-                <div className="text-xs text-ink-500">Also smooth and free</div>
+                <div className="text-xs text-ink-500">{othersSmoothest ? "Also smooth and open right now" : "Also open right now"}</div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   {otherPicks.map((id) => (
                     <button
@@ -166,7 +177,7 @@ export function SeatSection({ flight }: SectionProps) {
             ) : null}
           </>
         ) : (
-          <p className="mt-1 text-sm leading-snug text-ink-700">Tap a free seat on the map to see how it compares.</p>
+          <p className="mt-1 text-sm leading-snug text-ink-700">Tap an open seat on the map to see how it compares.</p>
         )}
       </div>
 
@@ -310,7 +321,7 @@ function SeatMapGrid({ seatMap, selectedId, collapsed, scrollRef, onSeatTap }: S
               const isSelected = selectedId === id;
               const kind = kinds.get(letter) ?? "middle";
               const label = isOccupied
-                ? `Seat ${id}, taken`
+                ? `Seat ${id}, unavailable`
                 : `Seat ${id}, ${KIND_LABEL[kind].toLowerCase()}${isRecommended ? ", recommended" : ""}`;
               cells.push(
                 <button
@@ -430,11 +441,11 @@ function Legend() {
         <Swatch style={seatStyle("smoothest", false, true, false)}>
           <Star aria-hidden className="size-2.5 text-calm-700" fill="currentColor" strokeWidth={1.5} />
         </Swatch>
-        <span>Recommended · free</span>
+        <span>Recommended · open right now</span>
       </li>
       <li className="flex items-center gap-2">
         <Swatch style={seatStyle("smooth", true, false, false)} />
-        <span>Taken</span>
+        <span>Unavailable</span>
       </li>
       <li className="flex items-center gap-2">
         <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">

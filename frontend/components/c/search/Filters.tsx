@@ -11,6 +11,8 @@ interface FiltersProps {
   facets: Facets;
   view: ResultsView;
   onChange: (view: ResultsView) => void;
+  /** While the day has no smoothness scores yet: when they appear ("From Tue, Nov 24 · 2 days before departure"). */
+  scoresNote?: string;
   className?: string;
 }
 
@@ -20,11 +22,12 @@ function plural(n: number, word: string): string {
 
 /**
  * Results filters: departure time (only buckets with flights), airlines (each
- * with its lowest fare), aircraft size and minimum smoothness. Every change
- * applies at once. A chosen option the day doesn't have stays listed, so it
- * can be cleared.
+ * with its lowest fare), aircraft size (only when the day mixes wide- and
+ * narrow-bodies) and minimum smoothness (once the day's turbulence forecast is
+ * out; before that a quiet note says when). Every change applies at once. A
+ * chosen option the day doesn't have stays listed, so it can be cleared.
  */
-export function Filters({ idPrefix, facets, view, onChange, className }: FiltersProps) {
+export function Filters({ idPrefix, facets, view, onChange, scoresNote, className }: FiltersProps) {
   const timeCounts = new Map(facets.times.map((t) => [t.bucket, t.count]));
   const times = TIME_BUCKETS.filter((b) => timeCounts.has(b) || view.times.includes(b));
   const airlines = [
@@ -33,6 +36,8 @@ export function Filters({ idPrefix, facets, view, onChange, className }: Filters
       .filter((code) => !facets.airlines.some((a) => a.code === code))
       .map((code) => ({ code, name: code, count: 0, lowestFareUsd: 0 })),
   ];
+  // "Wide-body only" changes nothing when the day has none, or nothing else.
+  const sizeMatters = view.wide || (facets.wideCount > 0 && facets.wideCount < facets.total);
 
   return (
     <div className={cn("flex flex-col divide-y divide-line/80", className)}>
@@ -73,33 +78,43 @@ export function Filters({ idPrefix, facets, view, onChange, className }: Filters
         ))}
       </Group>
 
-      <Group legend="Aircraft size">
-        <Segmented
-          name={`${idPrefix}-size`}
-          value={view.wide ? "wide" : "any"}
-          onChange={(v) => onChange({ ...view, wide: v === "wide" })}
-          options={[
-            { value: "any", label: "Any size", count: facets.total },
-            { value: "wide", label: "Wide-body only", count: facets.wideCount, disabled: facets.wideCount === 0 && !view.wide },
-          ]}
-        />
-        {facets.wideCount === 0 ? (
-          <p className="mt-2 text-xs text-ink-500">No wide-body jets fly this route on this day.</p>
-        ) : null}
-      </Group>
+      {sizeMatters ? (
+        <Group legend="Aircraft size">
+          <Segmented
+            name={`${idPrefix}-size`}
+            value={view.wide ? "wide" : "any"}
+            onChange={(v) => onChange({ ...view, wide: v === "wide" })}
+            options={[
+              { value: "any", label: "Any size", count: facets.total },
+              { value: "wide", label: "Wide-body only", count: facets.wideCount, disabled: facets.wideCount === 0 && !view.wide },
+            ]}
+          />
+          {facets.wideCount === 0 ? (
+            <p className="mt-2 text-xs text-ink-500">No wide-body jets fly this route on this day.</p>
+          ) : null}
+        </Group>
+      ) : null}
 
       <Group legend="Minimum smoothness">
-        <Segmented
-          name={`${idPrefix}-min`}
-          value={String(view.min)}
-          onChange={(v) => onChange({ ...view, min: Number(v) as MinScore })}
-          options={[
-            { value: "0", label: "Any", count: facets.total },
-            { value: "75", label: "75+", count: facets.atLeast[75] },
-            { value: "85", label: "85+", count: facets.atLeast[85] },
-          ]}
-        />
-        <p className="mt-2 text-xs leading-snug text-ink-500">Smoothness score out of 100 — higher is smoother.</p>
+        {view.scores ? (
+          <>
+            <Segmented
+              name={`${idPrefix}-min`}
+              value={String(view.min)}
+              onChange={(v) => onChange({ ...view, min: Number(v) as MinScore })}
+              options={[
+                { value: "0", label: "Any", count: facets.total },
+                { value: "75", label: "75+", count: facets.atLeast[75] },
+                { value: "85", label: "85+", count: facets.atLeast[85] },
+              ]}
+            />
+            <p className="mt-2 text-xs leading-snug text-ink-500">Smoothness score out of 100 — higher is smoother.</p>
+          </>
+        ) : (
+          <p className="rounded-xl bg-canvas px-3 py-2.5 text-xs leading-snug text-ink-500 ring-1 ring-inset ring-line">
+            {scoresNote ?? "Available once the turbulence forecast for these flights is out."}
+          </p>
+        )}
       </Group>
     </div>
   );

@@ -22,6 +22,11 @@ export const SCHEDULE_DAYS = 330;
 /** The study (A/B) shows the briefing as it will look the day before departure. */
 export const PREVIEW_DAYS_UNTIL = 1;
 
+/** The horizon the study's preview describes: the day before, or the day itself for a flight today. */
+export function previewDaysUntil(realDaysUntil: number): number {
+  return Math.min(PREVIEW_DAYS_UNTIL, Math.max(0, realDaysUntil));
+}
+
 /** @deprecated Use TURBULENCE_FORECAST_DAYS (kept so older imports compile). */
 export const FORECAST_HORIZON_DAYS = TURBULENCE_FORECAST_DAYS;
 

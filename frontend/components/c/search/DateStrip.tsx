@@ -3,20 +3,21 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef } from "react";
 import { addDays, formatLongDate } from "@preflight/shared/dates";
+import { TURBULENCE_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { dayOverview, type DayOverview } from "@preflight/shared/search";
+import { availabilityOn } from "@/components/c/common/availability";
 import { formatFare } from "@/lib/c/format";
-import type { RouteDay } from "@/lib/c/model";
+import { clampDate, MAX_DAYS_AHEAD, type RouteDay } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
 import { monthDay, weekday } from "./describe";
-import { maxSearchDate } from "./query";
 
 const DAYS = 7;
 
-/** Seven days centred on `date`, kept inside today … today + 365. */
+/** Seven days centred on `date`, kept inside the searchable window (today … today + MAX_DAYS_AHEAD). */
 export function stripDates(date: string, today: string): string[] {
-  const max = maxSearchDate(today);
-  let start = addDays(date, -Math.floor(DAYS / 2));
-  if (start < today) start = today;
+  const max = addDays(today, MAX_DAYS_AHEAD);
+  // The first day: centred on the date, then pulled inside the window at either end.
+  let start = clampDate(addDays(date, -Math.floor(DAYS / 2)), today);
   if (addDays(start, DAYS - 1) > max) start = addDays(max, -(DAYS - 1));
   return Array.from({ length: DAYS }, (_, i) => addDays(start, i));
 }
@@ -36,9 +37,11 @@ interface DateStripProps {
 }
 
 /**
- * Nearby dates: weekday and date, that day's lowest fare and best smoothness
- * score. Each day is a link. Computed one tile at a time after the day's own
- * results, so the first paint isn't held up.
+ * Nearby dates: weekday and date, that day's lowest fare, and — only for days
+ * whose turbulence forecast is out (within 2 days of today) — the best
+ * smoothness score; other days show how many nonstop flights there are. Each
+ * day is a link. Computed one tile at a time after the day's own results, so
+ * the first paint isn't held up.
  */
 export function DateStrip({ day, stripDay, today, hrefFor }: DateStripProps) {
   const scrollerRef = useRef<HTMLUListElement>(null);
@@ -46,6 +49,7 @@ export function DateStrip({ day, stripDay, today, hrefFor }: DateStripProps) {
   const dates = sameRoute ? stripDates(stripDay.date, today) : null;
   const stale = !sameRoute || stripDay.date !== day.date;
   const firstDate = dates ? dates[0] : null;
+  const anyScores = dates ? availabilityOn(dates[0]!, today).turbulence : availabilityOn(day.date, today).turbulence;
 
   // Keep the chosen day in view when the strip scrolls sideways (phones).
   useEffect(() => {
@@ -73,6 +77,7 @@ export function DateStrip({ day, stripDay, today, hrefFor }: DateStripProps) {
                 destination={day.destination}
                 date={date}
                 current={date === day.date}
+                scores={availabilityOn(date, today).turbulence}
                 href={hrefFor(date)}
               />
             ))
@@ -82,7 +87,11 @@ export function DateStrip({ day, stripDay, today, hrefFor }: DateStripProps) {
               </li>
             ))}
       </ul>
-      <p className="mt-1.5 text-xs text-ink-500">Lowest fare and best smoothness score each day</p>
+      <p className="mt-1.5 text-xs text-ink-500">
+        {anyScores
+          ? `Lowest fare each day · best smoothness score from ${TURBULENCE_FORECAST_DAYS} days before departure`
+          : "Lowest fare and number of nonstop flights each day"}
+      </p>
     </nav>
   );
 }
@@ -100,10 +109,12 @@ interface DayTileProps {
   destination: string;
   date: string;
   current: boolean;
+  /** The day's turbulence forecast is out, so its best score can be shown. */
+  scores: boolean;
   href: string;
 }
 
-function DayTile({ origin, destination, date, current, href }: DayTileProps) {
+function DayTile({ origin, destination, date, current, scores, href }: DayTileProps) {
   const overview = useMemo(() => safeOverview(origin, destination, date), [origin, destination, date]);
   const has = overview !== null && overview.count > 0;
   return (
@@ -132,15 +143,24 @@ function DayTile({ origin, destination, date, current, href }: DayTileProps) {
               <span className="sr-only">: from </span>
               {formatFare(overview.lowestFareUsd)}
             </span>
-            <span
-              className={cn(
-                "mt-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none tabular-nums",
-                current ? "bg-white/15 text-calm-100" : "bg-calm-50 text-calm-700",
-              )}
-            >
-              <span className="sr-only">, best smoothness score </span>
-              {overview.bestScore}
-            </span>
+            {scores ? (
+              <span
+                className={cn(
+                  "mt-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none tabular-nums",
+                  current ? "bg-white/15 text-calm-100" : "bg-calm-50 text-calm-700",
+                )}
+              >
+                <span className="sr-only">, best smoothness score </span>
+                {overview.bestScore}
+              </span>
+            ) : (
+              <span
+                className={cn("mt-1.5 text-[11px] leading-none tabular-nums", current ? "text-white/70" : "text-ink-500")}
+              >
+                <span className="sr-only">, </span>
+                {overview.count} {overview.count === 1 ? "flight" : "flights"}
+              </span>
+            )}
           </>
         ) : (
           <span className={cn("mt-1.5 text-[11px] leading-tight", current ? "text-white/70" : "text-ink-500")}>

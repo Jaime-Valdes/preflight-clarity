@@ -5,10 +5,11 @@ import { useEffect, useId, useMemo, useRef, useState, type FocusEvent, type Keyb
 import { flushSync } from "react-dom";
 import { addDays, daysBetween, formatLongDate, isISODate } from "@preflight/shared/dates";
 import { departWindowOf, DEPART_WINDOWS, flightSeed, generateFlight } from "@preflight/shared/fakeFlight";
+import { SCHEDULE_DAYS } from "@preflight/shared/forecast";
 import { hashId } from "@preflight/shared/random";
 import type { AddedVia, DepartWindow, Flight, FlightInput, FlightPrefs } from "@preflight/shared/types";
 import { AirportField } from "@/components/flow/AirportField";
-import { MAX_DAYS_AHEAD, validateSetup, type SetupErrors } from "@/components/flow/FlightSetupScreen";
+import { validateSetup, type SetupErrors, type SetupValidation } from "@/components/flow/FlightSetupScreen";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { MAX_EXPLORED_FLIGHTS } from "@/lib/tracking";
@@ -43,7 +44,17 @@ const DATE_INPUT = cn(
   "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0",
 );
 
-const NO_WIDE = "No larger plane flies this route on that day.";
+const NO_WIDE = "No larger plane is scheduled on this route that day.";
+
+/** Schedules and fares are published about SCHEDULE_DAYS (330) days ahead; every date picker stops there. */
+const DATE_RANGE_HINT = `Pick a date from today to ${SCHEDULE_DAYS} days ahead — about as far as airlines publish schedules.`;
+
+/** The flow's checks, plus the schedule horizon (a typed date past the picker's max). */
+function checkRoute(route: FlightInput, today: string, maxDate: string): SetupValidation {
+  const check = validateSetup(route, today);
+  if (!isISODate(route.date) || route.date <= maxDate) return check;
+  return { ok: false, errors: { ...(check.ok ? {} : check.errors), date: DATE_RANGE_HINT } };
+}
 
 /** The window whose range ("5–11 PM"…) this departure falls inside; null outside all three (e.g. 11:15 PM). */
 function windowContaining(time: string): DepartWindow | null {
@@ -78,7 +89,7 @@ function flightIdOf(req: WhatIfRequest): string | null {
  * deterministic flight for the strip. Nothing here ranks or recommends.
  */
 export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetProps) {
-  const maxDate = addDays(today, MAX_DAYS_AHEAD);
+  const maxDate = addDays(today, SCHEDULE_DAYS);
   const currentWindow = departWindowOf(current.departTime);
   /** The time-of-day choice that is this flight (disabled), if its departure falls inside one. */
   const thisWindow = windowContaining(current.departTime);
@@ -93,7 +104,7 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
   const [note, setNote] = useState<string | null>(null);
 
   const dayValid = isISODate(day) && day >= today && day <= maxDate;
-  const routeCheck = validateSetup(route, today);
+  const routeCheck = checkRoute(route, today, maxDate);
   const routeErrors: SetupErrors = attempted && !routeCheck.ok ? routeCheck.errors : {};
 
   // Whether a wide-body actually flies this route that day (some airports and carriers have none).
@@ -225,7 +236,7 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
             min={today}
             max={maxDate}
             onChange={setDay}
-            hint={dayValid ? dateNote(day, today) : "Pick a date from today to 12 months ahead."}
+            hint={dayValid ? dateNote(day, today) : DATE_RANGE_HINT}
             invalid={!dayValid}
           />
         </Option>
@@ -305,6 +316,7 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
               hint={routeErrors.origin}
               invalid={!!routeErrors.origin}
               quickPicks={false}
+              allowFreeText={false}
             />
             <AirportField
               id="whatif-destination"
@@ -314,6 +326,7 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
               hint={routeErrors.destination}
               invalid={!!routeErrors.destination}
               quickPicks={false}
+              allowFreeText={false}
               className="mt-3"
               labelAction={
                 <button

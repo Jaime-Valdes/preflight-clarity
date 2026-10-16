@@ -7,8 +7,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { findOption, searchFlights, type FlightOption } from "@preflight/shared/search";
 import { useTodayISO } from "@/lib/hooks";
-import { flightKey, itemId, parseRouteDay, searchHref, type RouteDay } from "@/lib/c/model";
-import { LINK_BUTTON, clampDate, dateStatus, shortDate } from "./copy";
+import { MAX_DAYS_AHEAD, clampDate, dateStatus, flightKey, itemId, parseRouteDay, searchHref, type RouteDay } from "@/lib/c/model";
+import { LINK_BUTTON, shortDate } from "./copy";
 import { FlightDetail } from "./FlightDetail";
 import { FlightSkeleton } from "./FlightSkeleton";
 import { Notice } from "./Notice";
@@ -16,8 +16,9 @@ import { Notice } from "./Notice";
 type View =
   | { kind: "loading" }
   | { kind: "invalid" }
-  | { kind: "date"; day: RouteDay; status: "past" | "far"; nearest: string }
-  | { kind: "missing"; day: RouteDay; flightText: string; failed: boolean }
+  | { kind: "date"; day: RouteDay; status: "past" | "too-far"; nearest: string }
+  /** No flight in the link, or one that doesn't fly that day (`noFlights`: no nonstops on the route at all), or the day failed to build. */
+  | { kind: "missing"; day: RouteDay; flightText: string; reason: "no-key" | "not-that-day" | "failed"; noFlights: boolean }
   | { kind: "found"; id: string; day: RouteDay; option: FlightOption; options: readonly FlightOption[]; today: string };
 
 /**
@@ -34,15 +35,15 @@ function resolve(params: { get(name: string): string | null }, today: string | n
   const key = flightKey(raw);
   // Never echo more than a flight number's worth of whatever the link carried.
   const flightText = (key ?? raw).slice(0, 12);
-  if (!key) return { kind: "missing", day, flightText, failed: false };
+  if (!key) return { kind: "missing", day, flightText, reason: "no-key", noFlights: false };
   const query = { origin: day.origin, destination: day.destination, date: day.date };
   try {
     const option = findOption(query, key);
-    if (!option) return { kind: "missing", day, flightText, failed: false };
     const options = searchFlights(query).options;
+    if (!option) return { kind: "missing", day, flightText, reason: "not-that-day", noFlights: options.length === 0 };
     return { kind: "found", id: itemId({ ...day, key: option.key }), day, option, options, today };
   } catch {
-    return { kind: "missing", day, flightText, failed: true };
+    return { kind: "missing", day, flightText, reason: "failed", noFlights: false };
   }
 }
 
@@ -95,13 +96,13 @@ export function FlightPage() {
     case "date":
       return <DateNotice day={view.day} status={view.status} nearest={view.nearest} />;
     case "missing":
-      return <NotOnSchedule day={view.day} flightText={view.flightText} failed={view.failed} />;
+      return <NotOnSchedule day={view.day} flightText={view.flightText} reason={view.reason} noFlights={view.noFlights} />;
     case "found":
       return <FlightDetail key={view.id} day={view.day} option={view.option} options={view.options} today={view.today} />;
   }
 }
 
-function DateNotice({ day, status, nearest }: { day: RouteDay; status: "past" | "far"; nearest: string }) {
+function DateNotice({ day, status, nearest }: { day: RouteDay; status: "past" | "too-far"; nearest: string }) {
   const route = `${airportLabel(day.origin)} to ${airportLabel(day.destination)}`;
   return (
     <Notice
@@ -121,21 +122,44 @@ function DateNotice({ day, status, nearest }: { day: RouteDay; status: "past" | 
       <p>
         {status === "past"
           ? `Flights on ${shortDate(day.date)} have already left. Pick another date to see the flights from ${route}.`
-          : `Flights can be explored up to a year ahead, until ${shortDate(nearest)}. Pick an earlier date to see the flights from ${route}.`}
+          : `Airlines publish schedules about ${MAX_DAYS_AHEAD} days ahead, so flights can be explored until ${shortDate(nearest)}. Pick an earlier date to see the flights from ${route}.`}
       </p>
     </Notice>
   );
 }
 
-function NotOnSchedule({ day, flightText, failed }: { day: RouteDay; flightText: string; failed: boolean }) {
+interface NotOnScheduleProps {
+  day: RouteDay;
+  flightText: string;
+  reason: "no-key" | "not-that-day" | "failed";
+  noFlights: boolean;
+}
+
+function NotOnSchedule({ day, flightText, reason, noFlights }: NotOnScheduleProps) {
   const route = `${airportLabel(day.origin)} to ${airportLabel(day.destination)}`;
+  const date = shortDate(day.date);
+  const title =
+    reason === "failed"
+      ? "This flight couldn’t be shown"
+      : reason === "no-key"
+        ? "Which flight?"
+        : "This flight doesn’t fly on that date";
+  const body =
+    reason === "failed"
+      ? `We couldn’t put together the flights from ${route} on ${date} just now. The results page may still show them.`
+      : reason === "no-key"
+        ? `The link doesn’t say which flight from ${route} on ${date} to show.`
+        : noFlights
+          ? `There are no nonstop flights from ${route} on ${date}, so flight ${flightText} isn’t one of them.`
+          : `Flight ${flightText} isn’t on the schedule from ${route} on ${date}. Some flights skip a day, and timetables change between seasons.`;
   return (
     <Notice
-      title={failed ? "This flight couldn’t be shown" : "This flight isn’t on the schedule"}
+      title={title}
+      icon={reason === "not-that-day" ? <CalendarDays /> : undefined}
       actions={
         <>
           <Link href={searchHref(day)} className={LINK_BUTTON.primary}>
-            See all flights that day
+            See flights on {date}
           </Link>
           <Link href="/c" className={LINK_BUTTON.secondary}>
             New search
@@ -143,13 +167,7 @@ function NotOnSchedule({ day, flightText, failed }: { day: RouteDay; flightText:
         </>
       }
     >
-      <p>
-        {failed
-          ? `We couldn’t put together the flights from ${route} on ${shortDate(day.date)} just now. The results page may still show them.`
-          : flightText
-            ? `We couldn’t find flight ${flightText} from ${route} on ${shortDate(day.date)}. The link may be from an earlier schedule.`
-            : `The link doesn’t say which flight from ${route} on ${shortDate(day.date)} to show.`}
-      </p>
+      <p>{body}</p>
     </Notice>
   );
 }

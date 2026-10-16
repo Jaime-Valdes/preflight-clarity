@@ -10,6 +10,7 @@ import { formatFare } from "@/lib/c/format";
 import { flightHref } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
 import { LINK_BASE, LINK_BUTTON, LINK_TONE, routeText, shortDate } from "../flight/copy";
+import { PendingNote } from "../flight/PendingNote";
 import { UNAVAILABLE_NOTE, isFlightColumn, type Column, type FlightColumn, type UnavailableColumn } from "./facts";
 
 interface CompareEmptyProps {
@@ -44,7 +45,7 @@ export function CompareEmpty({ columns, badLink, addHref, onRemove }: CompareEmp
       <p className="mt-2 text-[15px] leading-relaxed text-ink-700">
         {flight
           ? "Pick another flight to see the two side by side — from the same day, another date or another route."
-          : "Tap Compare on two or three flights in the search results and they’ll appear here side by side: smoothness, turbulence timeline, schedule, aircraft, crew and weather."}
+          : "Tap Compare on two or three flights in the search results and they’ll appear here side by side: schedule, aircraft, who flies it, weather and — close to departure — smoothness and the turbulence timeline."}
       </p>
       {badLink ? (
         <p className="mt-2 text-sm leading-relaxed text-ink-500">The compare link doesn&rsquo;t include any flights we recognise.</p>
@@ -98,7 +99,11 @@ function PickedFlight({ column, onRemove }: { column: FlightColumn; onRemove: (i
             {formatTime12(f.departTime)}
           </p>
           <div className="mt-2">
-            <ScoreBadge score={f.smoothness.score} label={f.smoothness.label} size="sm" />
+            {column.avail.turbulence ? (
+              <ScoreBadge score={f.smoothness.score} label={f.smoothness.label} size="sm" />
+            ) : (
+              <PendingNote item="turbulence" date={column.item.date} subject="Smoothness score" />
+            )}
           </div>
         </div>
         <p className="shrink-0 text-base font-bold text-ink-900 tabular-nums">{formatFare(column.option.fareUsd)}</p>

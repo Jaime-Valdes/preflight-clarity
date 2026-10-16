@@ -7,16 +7,22 @@ import { cn } from "@/lib/cn";
 interface SortTabsProps {
   value: SortKey;
   onChange: (sort: SortKey) => void;
+  /** Sorts that can't be used yet (Smoothest before the turbulence forecast is out): shown, but disabled. */
+  unavailable?: readonly SortKey[];
+  /** Why they can't — a quiet line under the pills (e.g. "Smoothest from Tue, Nov 24 · 2 days before departure"). */
+  note?: string;
   className?: string;
 }
 
 /**
  * Sort order as a row of pills — native radio buttons underneath, so arrow
  * keys move between them and screen readers hear "1 of 4". Scrolls sideways
- * inside itself when the screen is narrow (never the page).
+ * inside itself when the screen is narrow (never the page). A sort that
+ * can't be used yet stays in its place, disabled, with the note saying when.
  */
-export function SortTabs({ value, onChange, className }: SortTabsProps) {
+export function SortTabs({ value, onChange, unavailable = [], note, className }: SortTabsProps) {
   const name = useId();
+  const noteId = useId();
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   // Keep the chosen pill in view (e.g. "Departure time" on a narrow phone).
@@ -31,7 +37,7 @@ export function SortTabs({ value, onChange, className }: SortTabsProps) {
   }, [value]);
 
   return (
-    <fieldset className={cn("min-w-0", className)}>
+    <fieldset className={cn("min-w-0", className)} aria-describedby={note ? noteId : undefined}>
       <legend className="sr-only">Sort flights</legend>
       <div
         ref={scrollerRef}
@@ -42,31 +48,41 @@ export function SortTabs({ value, onChange, className }: SortTabsProps) {
       >
         {SORT_KEYS.map((key) => {
           const on = key === value;
+          const off = unavailable.includes(key);
           return (
-            <label key={key} data-sort={key} className="relative shrink-0">
+            <label key={key} data-sort={key} className={cn("relative shrink-0", off && "cursor-not-allowed")}>
               <input
                 type="radio"
                 name={name}
                 value={key}
                 checked={on}
+                disabled={off}
                 onChange={() => onChange(key)}
                 className="peer sr-only"
               />
               <span
                 className={cn(
-                  "flex h-11 cursor-pointer select-none items-center whitespace-nowrap rounded-full px-4 text-sm font-semibold ring-1 ring-inset transition-colors",
+                  "flex h-11 select-none items-center whitespace-nowrap rounded-full px-4 text-sm font-semibold ring-1 ring-inset transition-colors",
                   "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-breeze-500",
-                  on
-                    ? "bg-night-900 text-white ring-night-900"
-                    : "bg-surface text-ink-700 ring-line-strong hover:bg-canvas hover:text-ink-900",
+                  off
+                    ? "bg-canvas text-ink-400 ring-line"
+                    : on
+                      ? "cursor-pointer bg-night-900 text-white ring-night-900"
+                      : "cursor-pointer bg-surface text-ink-700 ring-line-strong hover:bg-canvas hover:text-ink-900",
                 )}
               >
                 {SORT_LABELS[key]}
+                {off ? <span className="sr-only"> (not available yet)</span> : null}
               </span>
             </label>
           );
         })}
       </div>
+      {note ? (
+        <p id={noteId} className="mt-1 text-xs leading-snug text-ink-500">
+          {note}
+        </p>
+      ) : null}
     </fieldset>
   );
 }

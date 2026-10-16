@@ -4,6 +4,7 @@ import { RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { addDays, isISODate } from "@preflight/shared/dates";
 import { generateFlight, normalizeInput } from "@preflight/shared/fakeFlight";
+import { SCHEDULE_DAYS } from "@preflight/shared/forecast";
 import { sectionMeta } from "@preflight/shared/sections";
 import type { DashboardMetrics, Flight, Variant } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
@@ -27,8 +28,9 @@ function formatMs(ms: number): string {
 
 /**
  * /preview?origin=JFK&destination=LAX&date=2026-11-26&v=A — the team's demo
- * of the dashboard alone. Reads the query string on the client, generates the
- * flight, saves nothing.
+ * of the dashboard alone, exactly as the study shows it: the day-before
+ * briefing of an example flight on the route (Dashboard does that). Reads the
+ * query string on the client, generates the flight, saves nothing.
  */
 export function PreviewClient() {
   const today = useTodayISO();
@@ -43,8 +45,10 @@ export function PreviewClient() {
   const origin = originParam?.trim() || DEFAULT_ORIGIN;
   const destination = destinationParam?.trim() || DEFAULT_DESTINATION;
   const requestedDate = dateParam?.trim() ?? "";
-  // A malformed or past date is ignored (the study flow validates dates; this is the team's demo link).
-  const dateUsable = isISODate(requestedDate) && (!today || requestedDate >= today);
+  // A malformed, past or not-yet-scheduled date (> SCHEDULE_DAYS ahead) is ignored (the study flow validates
+  // dates; this is the team's demo link).
+  const dateUsable =
+    isISODate(requestedDate) && (!today || (requestedDate >= today && requestedDate <= addDays(today, SCHEDULE_DAYS)));
   const date = dateUsable ? requestedDate : today ? addDays(today, DEFAULT_DAYS_AHEAD) : null;
   const dateIgnored = requestedDate !== "" && !dateUsable && date !== null;
 

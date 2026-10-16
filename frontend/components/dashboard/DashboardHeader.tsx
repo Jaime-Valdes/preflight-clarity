@@ -1,15 +1,38 @@
 import { CalendarDays, Clock3, Plane } from "lucide-react";
 import type { ReactNode } from "react";
 import { countdownLabel, formatDuration, formatLongDate, formatTime12 } from "@preflight/shared/dates";
+import { availabilityFor } from "@preflight/shared/forecast";
 import type { Flight } from "@preflight/shared/types";
 import { cn } from "@/lib/cn";
 
-interface DashboardHeaderProps {
+/** The study's eyebrow: the participant gave a route and date, never a flight (docs/FEASIBILITY.md). */
+export const EXAMPLE_FLIGHT_LABEL = "An example flight on your route";
+
+export interface DashboardHeaderProps {
   flight: Flight;
-  /** Whole calendar days from today to departure (0 = today). */
+  /** Real whole calendar days from today to departure (0 = today). Drives the countdown, which always stays true. */
   daysUntil: number;
-  /** Variant A free exploration: "Your flight" / "Option 2"… shown above the airline. */
+  /**
+   * Days before departure that the briefing describes — decides what the header may show
+   * (`availabilityFor` in shared/src/forecast.ts): the gate number only on the day of travel
+   * (`GATE_DAYS`, otherwise the terminal and "Gate posted on the day"), and "Aircraft" rather than
+   * "Scheduled aircraft" only once the airframe is assigned (`AIRFRAME_DAYS`).
+   * Defaults to `daysUntil` (version C: pass nothing, or the same real days). The study's
+   * day-before preview passes `PREVIEW_DAYS_UNTIL` (1).
+   */
+  briefingDaysUntil?: number;
+  /**
+   * Eyebrow above the airline. Variant A free exploration: "Your flight" / "Option 2"…;
+   * version C: e.g. "Flight details". Any label other than "Your flight" makes the countdown
+   * speak of "this flight".
+   */
   label?: string;
+  /**
+   * The study: the flight is an example on the participant's route, so the eyebrow reads
+   * "An example flight on your route" where it would otherwise be empty or "Your flight"
+   * (an explored "Option n" keeps its label). Default false.
+   */
+  example?: boolean;
   className?: string;
 }
 
@@ -48,14 +71,24 @@ function Chip({ children, className }: { children: ReactNode; className?: string
 /**
  * Boarding-pass style header: airline and flight number, the route in big
  * codes, date, countdown, times, aircraft and gate on a deep night gradient.
+ * Shows only what is knowable `briefingDaysUntil` days before departure.
  */
-export function DashboardHeader({ flight, daysUntil, label, className }: DashboardHeaderProps) {
+export function DashboardHeader({
+  flight,
+  daysUntil,
+  briefingDaysUntil = daysUntil,
+  label,
+  example = false,
+  className,
+}: DashboardHeaderProps) {
   const { origin, destination, aircraft } = flight;
   const offset = dayOffsetLabel(flight.arriveDayOffset);
+  const known = availabilityFor(briefingDaysUntil);
+  const eyebrow = example && (!label || label === "Your flight") ? EXAMPLE_FLIGHT_LABEL : label;
 
   return (
     <section
-      aria-label={label ?? "Your flight"}
+      aria-label={eyebrow ?? "Your flight"}
       className={cn("relative overflow-hidden rounded-3xl bg-night-900 text-white shadow-lift", className)}
     >
       {/* Night gradient with a hint of calm. */}
@@ -70,9 +103,9 @@ export function DashboardHeader({ flight, daysUntil, label, className }: Dashboa
         {/* Airline + flight number */}
         <div className="flex items-start justify-between gap-3">
           <h1 className="min-w-0">
-            {label ? (
+            {eyebrow ? (
               <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-calm-200">
-                {label}
+                {eyebrow}
               </span>
             ) : null}
             <span className="block text-sm font-semibold leading-snug [overflow-wrap:anywhere]">{flight.airline.name}</span>
@@ -157,17 +190,25 @@ export function DashboardHeader({ flight, daysUntil, label, className }: Dashboa
 
         <div className="mt-4 grid grid-cols-[1fr_auto] items-start gap-3">
           <div className="min-w-0">
-            <Eyebrow>Aircraft</Eyebrow>
+            <Eyebrow>{known.airframe ? "Aircraft" : "Scheduled aircraft"}</Eyebrow>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
               <p className="text-sm font-semibold leading-snug">{aircraft.fullName}</p>
               <Chip>{aircraft.bodyType === "wide" ? "Wide-body" : "Narrow-body"}</Chip>
             </div>
           </div>
-          <div className="text-right">
-            <Eyebrow>Gate</Eyebrow>
-            <p className="mt-1 text-sm font-semibold leading-snug tabular-nums">{flight.gate}</p>
-            <p className="text-xs text-white/60">Terminal {flight.terminal}</p>
-          </div>
+          {known.gate ? (
+            <div className="text-right">
+              <Eyebrow>Gate</Eyebrow>
+              <p className="mt-1 text-sm font-semibold leading-snug tabular-nums">{flight.gate}</p>
+              <p className="text-xs text-white/60">Terminal {flight.terminal} · can change</p>
+            </div>
+          ) : (
+            <div className="text-right">
+              <Eyebrow>Terminal</Eyebrow>
+              <p className="mt-1 text-sm font-semibold leading-snug tabular-nums">{flight.terminal}</p>
+              <p className="whitespace-nowrap text-xs text-white/60">Gate posted on the day</p>
+            </div>
+          )}
         </div>
       </div>
     </section>

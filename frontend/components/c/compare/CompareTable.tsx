@@ -4,30 +4,35 @@ import { Armchair, CalendarClock, CloudSun, Gauge, Plane, ShieldCheck, UserRound
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import { addDays, formatDuration, formatOffset, formatTime12 } from "@preflight/shared/dates";
-import type { Pilot, WeatherReport } from "@preflight/shared/types";
+import type { WeatherReport } from "@preflight/shared/types";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { ScoreBadge } from "@/components/c/common/ScoreBadge";
-import { bumpyStretches } from "@/components/dashboard/explore/model";
-import { ageValue, formatCount } from "@/components/dashboard/trust/format";
 import { formatFare } from "@/lib/c/format";
 import { flightHref } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
+import { marker, type PendingItem } from "../flight/availability";
 import { LINK_BASE, LINK_TONE, daysAwayLabel, dayOffsetMark, dayOffsetWords, routeText, shortDate } from "../flight/copy";
 import {
-  FORECAST_BASIS,
   SERIES,
   STRONGEST_BUMPS,
   UNAVAILABLE_NOTE,
-  bestSeat,
+  crewLine,
+  crewRules,
   flightTags,
+  forecastBasis,
   isFlightColumn,
   leaders,
-  smoothestRows,
+  openSeat,
+  rangeText,
+  routeTypical,
+  smoothestZone,
   spoken,
   timelineSummary,
+  yearsText,
   type Column,
   type FlightColumn,
 } from "./facts";
+import { PendingTimelines } from "./PendingTimelines";
 import { LineKey, TimelineChart, type TimelineSeries } from "./TimelineChart";
 
 interface CompareTableProps {
@@ -55,14 +60,20 @@ const ROW_LINE = "border-t border-line/70";
 export function CompareTable({ columns, slots, names, onRemove }: CompareTableProps) {
   const flights = useMemo(() => columns.filter(isFlightColumn), [columns]);
   const n = columns.length;
+  // Flight-specific turbulence exists only close to departure (docs/FEASIBILITY.md): scores, stretches and
+  // timelines are compared among the flights that have a forecast; the others show when theirs starts.
+  const forecasted = useMemo(() => flights.filter((c) => c.avail.turbulence), [flights]);
+  const pendingTurbulence = useMemo(() => flights.filter((c) => !c.avail.turbulence), [flights]);
+  const anyForecast = forecasted.length > 0;
+  const anyWeather = flights.some((c) => c.avail.weather);
   const cheapest = leaders(flights, (c) => c.option.fareUsd, "min");
-  const smoothest = leaders(flights, (c) => c.flight.smoothness.score, "max");
+  const smoothest = leaders(forecasted, (c) => c.flight.smoothness.score, "max");
   const fastest = leaders(flights, (c) => c.flight.blockMin, "min");
   const tags = useMemo(() => flightTags(flights, names), [flights, names]);
 
   const series = useMemo<TimelineSeries[]>(
     () =>
-      flights.map((c) => ({
+      forecasted.map((c) => ({
         id: c.id,
         name: names.get(c.id) ?? c.flight.flightNumber,
         detail: `${formatTime12(c.flight.departTime)} · ${c.flight.airline.name}`,
@@ -71,7 +82,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         airborneMin: c.flight.airborneMin,
         summary: timelineSummary(c.flight, c.forecast.mode),
       })),
-    [flights, names, slots],
+    [forecasted, names, slots],
   );
 
   /** For screen readers: "DL 843, Nov 26, JFK to LAX". */
@@ -92,6 +103,45 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
       ))}
     </tr>
   );
+
+  /**
+   * Rows of flight-specific data that only exists close to departure. A flight that doesn't have it yet gets
+   * one cell spanning the rows, with the marker saying when it will.
+   */
+  const gatedRows = (
+    rows: ReadonlyArray<readonly [string, (c: FlightColumn) => ReactNode]>,
+    has: (c: FlightColumn) => boolean,
+    item: PendingItem,
+    subject?: string,
+  ) =>
+    rows.map(([label, render], i) => (
+      <tr key={label}>
+        <th scope="row" className={cn(LABEL, ROW_LINE, "py-3 text-xs font-semibold leading-snug text-ink-500")}>
+          {label}
+        </th>
+        {columns.map((c) => {
+          if (!isFlightColumn(c)) {
+            return (
+              <td key={c.id} className={cn(CELL, ROW_LINE, "py-3")}>
+                <NotAvailable />
+              </td>
+            );
+          }
+          if (has(c)) {
+            return (
+              <td key={c.id} className={cn(CELL, ROW_LINE, "py-3")}>
+                {render(c)}
+              </td>
+            );
+          }
+          return i === 0 ? (
+            <td key={c.id} rowSpan={rows.length} className={cn(CELL, ROW_LINE, "py-3")}>
+              <PendingCell item={item} date={c.item.date} subject={subject} />
+            </td>
+          ) : null;
+        })}
+      </tr>
+    ));
 
   /** Group title in the label column, and a small key per flight so a column stays recognisable far down the table. */
   const groupHead = (title: string, icon: ReactNode) => (
@@ -197,7 +247,9 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
             </th>
             {columns.map((c) => (
               <td key={c.id} className={cn(CELL, "pb-3")}>
-                {isFlightColumn(c) ? (
+                {isFlightColumn(c) && !c.avail.turbulence ? (
+                  <PendingCell item="turbulence" date={c.item.date} subject="Score" />
+                ) : isFlightColumn(c) ? (
                   <>
                     <ScoreBadge
                       score={c.flight.smoothness.score}
@@ -242,22 +294,41 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
 
         <tbody>
           {groupHead("Smoothness", <Gauge />)}
-          {row("Bumpy stretches", (c) => {
-            const { count, minutes } = bumpyStretches(c.flight);
-            return count === 0 ? (
-              <Value main="None expected" />
-            ) : (
-              <Value main={formatOffset(minutes)} sub={`${count} ${count === 1 ? "stretch" : "stretches"}`} />
-            );
+          {row("On this route", (c) => {
+            const typical = routeTypical(c.flight);
+            return <Value main={typical.main} sub={typical.sub} />;
           })}
-          {row("Strongest bumps", (c) => (
-            <Value main={STRONGEST_BUMPS[c.flight.turbulence.maxIntensity]} />
-          ))}
-          {row("Smooth air", (c) => (
-            <Value main={`${c.flight.turbulence.smoothMinutesPct}%`} sub="of the time in the air" />
-          ))}
+          {anyForecast
+            ? gatedRows(
+                [
+                  [
+                    "Bumpy stretches",
+                    (c) => {
+                      const { windows } = c.flight.turbulence;
+                      const minutes = windows.reduce((sum, w) => sum + w.durationMin, 0);
+                      return windows.length === 0 ? (
+                        <Value main="None expected" />
+                      ) : (
+                        <Value
+                          main={formatOffset(minutes)}
+                          sub={`${windows.length} ${windows.length === 1 ? "stretch" : "stretches"}`}
+                        />
+                      );
+                    },
+                  ],
+                  ["Strongest bumps", (c) => <Value main={STRONGEST_BUMPS[c.flight.turbulence.maxIntensity]} />],
+                  [
+                    "Smooth air",
+                    (c) => <Value main={`${c.flight.turbulence.smoothMinutesPct}%`} sub="of the time in the air" />,
+                  ],
+                ],
+                (c) => c.avail.turbulence,
+                "turbulence",
+              )
+            : null}
+          {/* When the forecast starts is in the Score row above; here only its tier. */}
           {row("Forecast confidence", (c) => (
-            <Value main={c.forecast.confidenceLabel} sub={FORECAST_BASIS[c.forecast.mode]} />
+            <Value main={c.forecast.confidenceLabel} sub={forecastBasis(c.forecast)} />
           ))}
         </tbody>
 
@@ -267,7 +338,19 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
             <td colSpan={n + 1} className="p-0">
               {/* Spans the whole table but stays the width of the visible area, so it never scrolls away sideways. */}
               <div className="sticky left-0 w-[100cqw] px-3 pb-4 pt-3 sm:px-4">
-                <TimelineChart series={series} />
+                {series.length > 0 ? <TimelineChart series={series} /> : null}
+                {pendingTurbulence.length > 0 ? (
+                  <PendingTimelines
+                    flights={pendingTurbulence.map((c) => ({
+                      id: c.id,
+                      name: names.get(c.id) ?? c.flight.flightNumber,
+                      style: SERIES[slotOf(c)]!,
+                      date: c.item.date,
+                    }))}
+                    charted={series.length > 0}
+                    className={series.length > 0 ? "mt-4" : undefined}
+                  />
+                ) : null}
               </div>
             </td>
           </tr>
@@ -294,8 +377,11 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
 
         <tbody>
           {groupHead("Aircraft", <Plane />)}
-          {row("Model", (c) => (
-            <Value main={c.flight.aircraft.fullName} />
+          {row("Type", (c) => (
+            <Value
+              main={c.flight.aircraft.fullName}
+              sub={c.avail.airframe ? "Assigned aircraft · can change" : "Scheduled aircraft"}
+            />
           ))}
           {row("Body", (c) => (
             <Value
@@ -303,9 +389,26 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
               sub={c.flight.aircraft.bodyType === "wide" ? "Twin-aisle cabin" : "Single-aisle cabin"}
             />
           ))}
-          {row("Age", (c) => (
-            <Value main={ageValue(c.flight.aircraft.ageYears)} sub={`Delivered in ${c.flight.aircraft.deliveredYear}`} />
-          ))}
+          {row("Age", (c) => {
+            const a = c.flight.aircraft;
+            // This airframe's own age only once it is assigned (about a day ahead); the fleet's any time.
+            return c.avail.airframe ? (
+              <Value
+                main={yearsText(a.ageYears)}
+                sub={
+                  <>
+                    This aircraft, <span className="whitespace-nowrap">{a.tailNumber}</span> · fleet average{" "}
+                    {yearsText(a.fleetAvgAgeYears)}
+                  </>
+                }
+              />
+            ) : (
+              <Value
+                main={`About ${yearsText(a.fleetAvgAgeYears)}`}
+                sub={`Fleet average for this type · ${rangeText(a.fleetAgeRange)}`}
+              />
+            );
+          })}
           {row("Seat layout", (c) => (
             <Value main={c.flight.aircraft.seatLayout} sub={`About ${c.flight.aircraft.typicalSeats} seats`} />
           ))}
@@ -314,7 +417,10 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         <tbody>
           {groupHead("Airline", <ShieldCheck />)}
           {row("On time", (c) => (
-            <Value main={`${c.flight.airlineStats.onTimePct}%`} sub={`${c.flight.airlineStats.onTimeRoutePct}% on this route`} />
+            <Value
+              main={`${c.flight.airlineStats.onTimePct}%`}
+              sub={`${c.flight.airlineStats.onTimeRoutePct}% on this route · last 12 months`}
+            />
           ))}
           {row("Safety score", (c) => (
             <Value main={`${c.flight.airlineStats.safetyScore} / 100`} sub={c.flight.airlineStats.safetyLabel} />
@@ -322,34 +428,49 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         </tbody>
 
         <tbody>
-          {groupHead("Crew", <UserRound />)}
-          {row("Captain", (c) => (
-            <PilotHours pilot={c.flight.crew.captain} model={c.flight.aircraft.model} />
-          ))}
-          {row("First officer", (c) => (
-            <PilotHours pilot={c.flight.crew.firstOfficer} model={c.flight.aircraft.model} />
-          ))}
+          {groupHead("Who flies it", <UserRound />)}
+          {row("Pilots", (c) => {
+            const line = crewLine(c.flight.crew, c.flight.aircraft.model);
+            return <Value main={line.main} sub={line.sub} />;
+          })}
+          {row("Licence", (c) => {
+            const { licence } = crewRules(c.flight.crew);
+            return <Value main={licence.main} sub={licence.sub} />;
+          })}
+          {row("Checks", (c) => {
+            const { checks } = crewRules(c.flight.crew);
+            return <Value main={checks.main} sub={checks.sub} />;
+          })}
         </tbody>
 
         <tbody>
           {groupHead("Weather", <CloudSun />)}
-          {row("Departure", (c) => (
-            <WeatherValue report={c.flight.weather.origin} />
-          ))}
-          {row("Arrival", (c) => (
-            <WeatherValue report={c.flight.weather.destination} />
-          ))}
+          {anyWeather
+            ? gatedRows(
+                [
+                  ["Departure", (c) => <WeatherValue report={c.flight.weather.origin} detail={c.avail.weatherDetail} />],
+                  ["Arrival", (c) => <WeatherValue report={c.flight.weather.destination} detail={c.avail.weatherDetail} />],
+                ],
+                (c) => c.avail.weather,
+                "weather",
+              )
+            : row("Forecast", (c) => <PendingCell item="weather" date={c.item.date} />)}
         </tbody>
 
         <tbody>
           {groupHead("Best seat", <Armchair />)}
-          {row("Top pick", (c) => {
-            const seat = bestSeat(c.flight);
-            return seat ? <Value main={`Seat ${seat.seat}`} sub={seat.detail} /> : <Value main="Any free seat over the wing" />;
+          {row("Smoothest rows", (c) => {
+            const zone = smoothestZone(c.flight);
+            return <Value main={zone.main} sub={zone.sub} />;
           })}
-          {row("Smoothest rows", (c) => (
-            <Value main={smoothestRows(c.flight)} />
-          ))}
+          {row("Open seat there", (c) => {
+            const seat = openSeat(c.flight);
+            return seat ? (
+              <Value main={`Seat ${seat.seat}`} sub={seat.detail} />
+            ) : (
+              <Value main="None open right now" sub="Seats change until check-in" />
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -366,7 +487,9 @@ function ColumnHead({ column, slot }: { column: Column; slot: number }) {
           <AirlineMark code={column.item.key.slice(0, 2)} size="sm" className="opacity-50" />
         </span>
         <span className="mt-2 block text-[13px] font-bold leading-snug text-ink-700 tabular-nums">{column.item.key}</span>
-        <span className="block text-xs leading-snug text-ink-500">No longer available</span>
+        <span className="block text-xs leading-snug text-ink-500">
+          {column.reason === "too-far" ? "Not scheduled yet" : column.reason === "past" ? "Date has passed" : "Not on the schedule"}
+        </span>
       </>
     );
   }
@@ -457,11 +580,9 @@ function ArriveTime({ column }: { column: FlightColumn }) {
   );
 }
 
-function PilotHours({ pilot, model }: { pilot: Pilot; model: string }) {
-  return <Value main={`${formatCount(pilot.totalHours)} hours`} sub={`${formatCount(pilot.hoursOnType)} on the ${model}`} />;
-}
-
-function WeatherValue({ report }: { report: WeatherReport }) {
+/** Condition and temperature (within WEATHER_FORECAST_DAYS); wind, gusts and visibility only within WEATHER_DETAIL_DAYS. */
+function WeatherValue({ report, detail }: { report: WeatherReport; detail: boolean }) {
+  const gusts = report.gustKts ? `, gusts ${report.gustKts} kt` : "";
   return (
     <Value
       main={
@@ -469,7 +590,33 @@ function WeatherValue({ report }: { report: WeatherReport }) {
           {report.label} · {report.tempF}°F
         </>
       }
-      sub={`${report.city} at ${formatTime12(report.localTime)}`}
+      sub={
+        <>
+          {report.city} at {formatTime12(report.localTime)}
+          {detail ? (
+            <span className="block">
+              Wind {report.windKts} kt {report.windDir}
+              {gusts} · {report.visibilityMi} mi visibility
+            </span>
+          ) : null}
+        </>
+      }
     />
+  );
+}
+
+/** A table cell's marker: "Turbulence forecast from Tue, Nov 24" over "2 days before departure". */
+function PendingCell({ item, date, subject, className }: { item: PendingItem; date: string; subject?: string; className?: string }) {
+  const m = marker(item, date, subject);
+  return (
+    <span className={cn("block", className)}>
+      <span className="flex items-start gap-1.5 text-[13px] font-semibold leading-snug text-ink-700">
+        <CalendarClock aria-hidden className="mt-0.5 hidden size-3.5 shrink-0 text-breeze-700 sm:block" />
+        <span className="min-w-0 break-words">
+          {m.subject} from <span className="whitespace-nowrap">{m.from}</span>
+        </span>
+      </span>
+      <span className="mt-0.5 block text-xs leading-snug text-ink-500 sm:pl-5">{m.lead}</span>
+    </span>
   );
 }

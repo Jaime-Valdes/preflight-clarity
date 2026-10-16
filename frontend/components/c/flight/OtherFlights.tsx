@@ -13,6 +13,7 @@ import { formatFare } from "@/lib/c/format";
 import { MAX_COMPARE, flightHref, itemId, searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
 import { CompareToggle } from "./CompareToggle";
+import { PendingNote } from "./PendingNote";
 import { LINK_BASE, LINK_BUTTON, LINK_TONE, dayOffsetMark, dayOffsetWords, monthDay } from "./copy";
 
 /** How many other flights the page lists before "See all". */
@@ -24,6 +25,8 @@ interface OtherFlightsProps {
   options: readonly FlightOption[];
   /** The flight on this page — left out of the list. */
   currentKey: string;
+  /** Whether flight-specific turbulence forecasts exist yet (within TURBULENCE_FORECAST_DAYS). */
+  turbulence: boolean;
   /** Anchor id, so the fare card can link here. */
   id: string;
   className?: string;
@@ -31,19 +34,28 @@ interface OtherFlightsProps {
 
 /** Smoothest first; equal scores by departure time. */
 function smoothestFirst(a: FlightOption, b: FlightOption): number {
-  return b.flight.smoothness.score - a.flight.smoothness.score || a.flight.departTime.localeCompare(b.flight.departTime);
+  return b.flight.smoothness.score - a.flight.smoothness.score || byDeparture(a, b);
+}
+
+function byDeparture(a: FlightOption, b: FlightOption): number {
+  return a.flight.departTime.localeCompare(b.flight.departTime);
 }
 
 /**
- * Version C flight page: the day's other flights on the same route, smoothest
- * first (top five, then a link to all of them), each with Details and Compare.
+ * Version C flight page: the day's other flights on the same route (top five,
+ * then a link to all of them), each with Details and Compare. Smoothest first
+ * with their scores once the day's turbulence forecasts exist; before that, by
+ * departure time without scores, and a marker says when the forecasts start.
  */
-export function OtherFlights({ day, options, currentKey, id, className }: OtherFlightsProps) {
+export function OtherFlights({ day, options, currentKey, turbulence, id, className }: OtherFlightsProps) {
   const list = useCompareList();
   const headingId = useId();
   const noteId = useId();
   const [announcement, setAnnouncement] = useState("");
-  const others = useMemo(() => options.filter((o) => o.key !== currentKey).sort(smoothestFirst), [options, currentKey]);
+  const others = useMemo(
+    () => options.filter((o) => o.key !== currentKey).sort(turbulence ? smoothestFirst : byDeparture),
+    [options, currentKey, turbulence],
+  );
   const shown = others.slice(0, SHOWN);
 
   const toggle = (item: CompareItem, label: string) => {
@@ -65,8 +77,13 @@ export function OtherFlights({ day, options, currentKey, id, className }: OtherF
         <h2 id={headingId} className="text-lg font-bold leading-tight text-ink-900">
           Other flights this day
         </h2>
-        <p className="text-xs text-ink-500">Smoothest first · prices are illustrative</p>
+        <p className="text-xs text-ink-500">
+          {turbulence ? "Smoothest first" : "By departure time"} · prices are illustrative
+        </p>
       </div>
+      {!turbulence && shown.length > 0 ? (
+        <PendingNote item="turbulence" date={day.date} subject="Smoothness scores" className="mt-2 px-1" />
+      ) : null}
 
       {shown.length === 0 ? (
         <Card className="mt-3">
@@ -76,7 +93,7 @@ export function OtherFlights({ day, options, currentKey, id, className }: OtherF
         <ul className="mt-3 flex flex-col gap-2.5">
           {shown.map((option) => (
             <li key={option.key}>
-              <OtherFlightRow option={option} day={day} list={list} noteId={noteId} onToggle={toggle} />
+              <OtherFlightRow option={option} day={day} list={list} noteId={noteId} showScore={turbulence} onToggle={toggle} />
             </li>
           ))}
         </ul>
@@ -105,10 +122,12 @@ interface OtherFlightRowProps {
   day: RouteDay;
   list: CompareList;
   noteId: string;
+  /** Only once flight-specific turbulence forecasts exist. */
+  showScore: boolean;
   onToggle: (item: CompareItem, label: string) => void;
 }
 
-function OtherFlightRow({ option, day, list, noteId, onToggle }: OtherFlightRowProps) {
+function OtherFlightRow({ option, day, list, noteId, showScore, onToggle }: OtherFlightRowProps) {
   const f = option.flight;
   const item: CompareItem = { origin: day.origin, destination: day.destination, date: day.date, key: option.key };
   const picked = list.has(itemId(item));
@@ -136,7 +155,7 @@ function OtherFlightRow({ option, day, list, noteId, onToggle }: OtherFlightRowP
             {f.airline.name} · <span className="whitespace-nowrap tabular-nums">{f.flightNumber}</span>
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <ScoreBadge score={f.smoothness.score} label={f.smoothness.label} size="sm" />
+            {showScore ? <ScoreBadge score={f.smoothness.score} label={f.smoothness.label} size="sm" /> : null}
             <span className="text-xs text-ink-500 tabular-nums">{formatDuration(f.blockMin)} · Nonstop</span>
           </div>
         </div>

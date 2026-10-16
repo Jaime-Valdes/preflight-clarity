@@ -4,7 +4,7 @@ import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addDays, daysBetween, formatShortDate, isISODate, toISODate } from "@preflight/shared/dates";
 import { generateFlight, normalizeInput } from "@preflight/shared/fakeFlight";
-import { summarizeFlight } from "@preflight/shared/forecast";
+import { previewDaysUntil, summarizeFlight } from "@preflight/shared/forecast";
 import type { DashboardMetrics, Flight, FlightInput, FlightSummary } from "@preflight/shared/types";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 import { Button } from "@/components/ui/Button";
@@ -28,7 +28,7 @@ import {
 } from "@/lib/session";
 import { saveSession } from "@/lib/storage";
 import { DebriefScreen } from "./DebriefScreen";
-import { FlightSetupScreen, defaultOffsetDays } from "./FlightSetupScreen";
+import { FlightSetupScreen, catalogueCode, defaultOffsetDays } from "./FlightSetupScreen";
 import { OptionalDetailsScreen } from "./OptionalDetailsScreen";
 import { PostHabitsScreen } from "./PostHabitsScreen";
 import { PostPartsScreen } from "./PostPartsScreen";
@@ -261,8 +261,9 @@ function StudyFlowClient() {
       setPrepFailed(true);
       return;
     }
+    // The record keeps the real distance; forecastMode is what the day-before preview showed.
     const days = daysBetween(toISODate(new Date()), current.flightInput.date);
-    commit({ type: "flightReady", flight: summarizeFlight(generated.flight, days) }, { save: true });
+    commit({ type: "flightReady", flight: summarizeFlight(generated.flight, days, previewDaysUntil(days)) }, { save: true });
   }, [commit]);
 
   const retryPrepare = useCallback(() => {
@@ -346,9 +347,10 @@ function StudyFlowClient() {
       );
 
     case "setup": {
+      // Pre-survey route answers may be free text; only catalogue airports prefill the setup.
       const draft: FlightInput = state.setupDraft ?? {
-        origin: state.pre.routeOrigin,
-        destination: state.pre.routeDestination,
+        origin: catalogueCode(state.pre.routeOrigin),
+        destination: catalogueCode(state.pre.routeDestination),
         date: addDays(today, defaultOffsetDays(state.pre.timeframe)),
       };
       return (

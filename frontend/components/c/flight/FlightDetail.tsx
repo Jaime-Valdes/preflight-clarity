@@ -3,14 +3,14 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { daysBetween } from "@preflight/shared/dates";
-import { getForecastStatus } from "@preflight/shared/forecast";
+import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
 import type { FlightOption } from "@preflight/shared/search";
 import type { SectionContext } from "@preflight/shared/types";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
+import { daysBefore } from "./availability";
 import { monthDay, routeText } from "./copy";
 import { FareCard } from "./FareCard";
 import { FlightSections } from "./FlightSections";
@@ -40,12 +40,14 @@ function noop(): void {}
 export function FlightDetail({ day, option, options, today }: FlightDetailProps) {
   const { flight } = option;
   const item: CompareItem = { origin: day.origin, destination: day.destination, date: day.date, key: option.key };
-  const daysUntil = Math.max(0, daysBetween(today, flight.input.date));
+  // The real distance from today: the sections show only what exists by then (docs/FEASIBILITY.md).
+  const daysUntil = daysBefore(today, flight.input.date);
   const history = flight.turbulence.history;
   const ctx = useMemo<SectionContext>(
-    () => ({ daysUntil, forecast: getForecastStatus(daysUntil, history), variant: "A" }),
+    () => ({ daysUntil, forecast: getForecastStatus(daysUntil, history), variant: "A", preview: false }),
     [daysUntil, history],
   );
+  const availability = availabilityFor(daysUntil);
 
   // What the section bodies keep for this flight (the chosen seat…); see useFlightState.
   const [bodyState, setBodyState] = useState<Readonly<Record<string, unknown>>>({});
@@ -80,7 +82,14 @@ export function FlightDetail({ day, option, options, today }: FlightDetailProps)
         <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-x-8">
           {/* Focus lands here when another flight is opened from this page (see FlightPage). */}
           <div data-flight-top tabIndex={-1} className="min-w-0 rounded-3xl outline-none lg:col-start-1 lg:row-start-1">
-            <DashboardHeader flight={flight} daysUntil={daysUntil} label="Flight details" className="animate-fade-up" />
+            {/* The real distance both ways: the gate shows only on the day, the assigned aircraft only a day ahead. */}
+            <DashboardHeader
+              flight={flight}
+              daysUntil={daysUntil}
+              briefingDaysUntil={daysUntil}
+              label="Flight details"
+              className="animate-fade-up"
+            />
           </div>
 
           <div className="min-w-0 lg:col-start-2 lg:row-span-3 lg:row-start-1">
@@ -102,6 +111,7 @@ export function FlightDetail({ day, option, options, today }: FlightDetailProps)
             day={day}
             options={options}
             currentKey={option.key}
+            turbulence={availability.turbulence}
             className="mt-6 min-w-0 lg:col-start-1 lg:mt-4"
           />
         </div>

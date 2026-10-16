@@ -1,31 +1,37 @@
 "use client";
 
-import { Armchair, CircleCheck, Clock3, Info } from "lucide-react";
+import { Armchair, CircleCheck, Clock3, Info, Waves } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatOffset } from "@preflight/shared/dates";
-import type {
-  BumpWindow,
-  Flight,
-  ForecastMode,
-  ForecastStatus,
-  PhaseForecast,
-  RouteHistory,
-  SectionContext,
-  SectionProps,
-} from "@preflight/shared/types";
+import { availabilityFor } from "@preflight/shared/forecast";
+import type { BumpWindow, Flight, ForecastStatus, PhaseForecast, RouteHistory, SectionContext, SectionProps } from "@preflight/shared/types";
 import { Pill } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
 import { INTENSITY, PHASE_LABEL, TONE_CLASSES } from "@/lib/theme";
-import { useExplore } from "./explore/context";
+import { ForecastMarker } from "./turbulence/ForecastMarker";
 import { TurbulenceChart } from "./turbulence/TurbulenceChart";
-import { rangeLabel, windowMoment } from "./turbulence/format";
+import {
+  historyBasis,
+  rangeLabel,
+  turbulenceForecastFrom,
+  typicalBumpyPhaseLine,
+  windowMoment,
+} from "./turbulence/format";
+
+/*
+ * A flight-specific turbulence forecast only exists in the last
+ * TURBULENCE_FORECAST_DAYS days (docs/FEASIBILITY.md). `ctx.daysUntil` is the
+ * distance the briefing describes (the study's day-before preview passes 1,
+ * version C the real days). Before that: a calm marker and the route's history
+ * for the month, labelled typical, with no timeline, stretches or causes.
+ */
 
 /* ── Teaser (collapsed header line) ─────────────────────────────────────── */
 
 export function turbulenceTeaser(flight: Flight, ctx: SectionContext): string {
   const { history, windows } = flight.turbulence;
-  if (ctx.forecast.mode === "history") {
-    return `${history.smoothPct}% of flights on this route are smooth in ${history.month}`;
+  if (!availabilityFor(ctx.daysUntil).turbulence) {
+    return `Forecast from ${turbulenceForecastFrom(flight.input.date)} · typically ${history.smoothPct}% of ${history.month} flights are smooth`;
   }
   if (windows.length === 0) return "Smooth from takeoff to landing";
   const moderate = windows.find((w) => w.intensity === "moderate");
@@ -42,19 +48,27 @@ export function turbulenceTeaser(flight: Flight, ctx: SectionContext): string {
 
 export function TurbulenceSection({ flight, ctx }: SectionProps) {
   const { turbulence } = flight;
-  const { forecast } = ctx;
-  const historyMode = forecast.mode === "history";
-  const ownFlight = useExplore()?.showingOwnFlight ?? true;
+
+  if (!availabilityFor(ctx.daysUntil).turbulence) {
+    return (
+      <div className="flex flex-col gap-4">
+        <ForecastMarker date={flight.input.date}>
+          Until then, here is what&rsquo;s typical on this route. The forecast for this flight updates every few hours
+          once it starts.
+        </ForecastMarker>
+        <TypicalTile history={turbulence.history} />
+        <FeelLegend />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      <ConfidenceTile forecast={forecast} ownFlight={ownFlight} />
-
-      {historyMode ? <HistoryTile history={turbulence.history} emphasized /> : null}
+      <ConfidenceTile forecast={ctx.forecast} preview={ctx.preview === true} />
 
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-          <Eyebrow>{historyMode ? "Typical pattern" : "Expected intensity"}</Eyebrow>
+          <Eyebrow>Expected intensity</Eyebrow>
           <span className="text-[11px] text-ink-500">Tap the chart for details</span>
         </div>
         <TurbulenceChart
@@ -67,9 +81,9 @@ export function TurbulenceSection({ flight, ctx }: SectionProps) {
 
       <PhaseList phases={turbulence.phases} />
 
-      <BumpWindows windows={turbulence.windows} airborneMin={flight.airborneMin} mode={forecast.mode} />
+      <BumpWindows windows={turbulence.windows} airborneMin={flight.airborneMin} />
 
-      {historyMode ? null : <HistoryTile history={turbulence.history} />}
+      <HistoryTile history={turbulence.history} />
 
       <FeelLegend />
     </div>
@@ -105,55 +119,61 @@ function ConfidenceMeter({ level }: { level: number }) {
   );
 }
 
-/** The shared forecast copy speaks of "your" flight; on an explored option it is this flight. */
-function forOption(text: string): string {
-  return text
-    .replace("Your forecast", "This flight’s forecast")
-    .replace("your route", "this route")
-    .replace("your planned flight path", "its planned flight path");
-}
-
-function ConfidenceTile({ forecast, ownFlight }: { forecast: ForecastStatus; ownFlight: boolean }) {
+function ConfidenceTile({ forecast, preview }: { forecast: ForecastStatus; preview: boolean }) {
   return (
     <div className="rounded-2xl bg-canvas/70 p-3.5 ring-1 ring-inset ring-line/70">
+      {/* The study shows the briefing as it will look the day before the flight. */}
+      {preview ? <Eyebrow className="mb-2">Day-before forecast</Eyebrow> : null}
       <div className="flex items-center gap-3">
         <ConfidenceMeter level={forecast.confidenceLevel} />
         <div className="min-w-0">
           <p className="text-sm font-semibold leading-snug text-ink-900">{forecast.confidenceLabel}</p>
-          <p className="mt-0.5 text-xs leading-snug text-ink-500">{ownFlight ? forecast.basis : forOption(forecast.basis)}</p>
+          <p className="mt-0.5 text-xs leading-snug text-ink-500">{forecast.basis}</p>
         </div>
       </div>
       <p className="mt-3 flex gap-1.5 text-xs leading-snug text-ink-500">
         <Info aria-hidden className="mt-px size-3.5 shrink-0 text-breeze-500" />
-        <span>{ownFlight ? forecast.note : forOption(forecast.note)}</span>
+        <span>{forecast.note}</span>
       </p>
     </div>
   );
 }
 
-function HistoryTile({ history, emphasized = false }: { history: RouteHistory; emphasized?: boolean }) {
-  if (emphasized) {
-    return (
-      <div className="rounded-2xl bg-calm-50 p-4 ring-1 ring-inset ring-calm-100">
-        <Eyebrow className="text-calm-700/80">Route history</Eyebrow>
-        <div className="mt-2 grid grid-cols-[auto_1fr] items-center gap-x-3">
-          <span className="text-[34px] font-bold leading-none tracking-tight text-calm-700">{history.smoothPct}%</span>
-          <p className="text-sm leading-snug text-ink-700">
-            of flights on this route in {history.month} had little or no turbulence.
-          </p>
-        </div>
-        <p className="mt-3 flex gap-1.5 text-[13px] leading-snug text-ink-700">
-          <Clock3 aria-hidden className="mt-0.5 size-3.5 shrink-0 text-calm-600" />
-          <span>{history.bestDepartureWindow}</span>
+/** Before the flight's own forecast exists: the route's history for the month, clearly typical. */
+function TypicalTile({ history }: { history: RouteHistory }) {
+  return (
+    <div className="rounded-2xl bg-calm-50 p-4 ring-1 ring-inset ring-calm-100">
+      <Eyebrow className="text-calm-700/80">Typical for {history.month} on this route</Eyebrow>
+      <div className="mt-2 grid grid-cols-[auto_1fr] items-center gap-x-3">
+        <span className="text-[34px] font-bold leading-none tracking-tight text-calm-700 tabular-nums">
+          <span className="sr-only">About </span>
+          {history.smoothPct}%
+        </span>
+        <p className="text-sm leading-snug text-ink-700">
+          of {history.month} flights on this route have little or no turbulence.
         </p>
       </div>
-    );
-  }
+      <p className="mt-2 text-xs leading-snug text-ink-500">Route history, {historyBasis(history)}.</p>
+      <ul className="mt-3 flex flex-col gap-2 text-[13px] leading-snug text-ink-700">
+        <li className="flex gap-1.5">
+          <Waves aria-hidden className="mt-0.5 size-3.5 shrink-0 text-calm-600" />
+          <span>{typicalBumpyPhaseLine(history.typicalBumpyPhase)}</span>
+        </li>
+        <li className="flex gap-1.5">
+          <Clock3 aria-hidden className="mt-0.5 size-3.5 shrink-0 text-calm-600" />
+          <span>{history.bestDepartureWindow}</span>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+function HistoryTile({ history }: { history: RouteHistory }) {
   return (
     <div className="rounded-2xl bg-canvas/70 p-3.5 ring-1 ring-inset ring-line/70">
       <Eyebrow>Route history</Eyebrow>
       <p className="mt-1.5 text-[13px] leading-snug text-ink-700">
-        On this route in {history.month}, {history.smoothPct}% of flights had little or no turbulence.
+        On this route in {history.month}, about {history.smoothPct}% of flights had little or no turbulence ({historyBasis(history)}).
       </p>
       <p className="mt-2 flex gap-1.5 text-xs leading-snug text-ink-500">
         <Clock3 aria-hidden className="mt-px size-3.5 shrink-0 text-calm-600" />
@@ -197,7 +217,7 @@ function PhaseList({ phases }: { phases: PhaseForecast[] }) {
   );
 }
 
-function BumpWindows({ windows, airborneMin, mode }: { windows: BumpWindow[]; airborneMin: number; mode: ForecastMode }) {
+function BumpWindows({ windows, airborneMin }: { windows: BumpWindow[]; airborneMin: number }) {
   return (
     <div>
       <Eyebrow>Bumpy stretches</Eyebrow>
@@ -233,9 +253,7 @@ function BumpWindows({ windows, airborneMin, mode }: { windows: BumpWindow[]; ai
                     {band.short} · {formatOffset(w.durationMin)}
                   </Pill>
                 </div>
-                <p className="mt-2 text-sm font-semibold leading-snug text-ink-900">
-                  {mode === "history" ? w.typicalLabel : w.label}
-                </p>
+                <p className="mt-2 text-sm font-semibold leading-snug text-ink-900">{w.label}</p>
                 <p className="mt-1 text-[13px] leading-snug text-ink-700">{w.cause}</p>
                 <p className="mt-2.5 flex gap-1.5 text-xs leading-snug text-ink-500">
                   <Armchair aria-hidden className="mt-px size-3.5 shrink-0" />

@@ -27,16 +27,25 @@ npm workspaces, one `package-lock.json` at the root, Node 20.12 or newer.
 One link, one phone, about 5–10 minutes:
 
 1. **Welcome / consent** — "We're testing a prototype for nervous flyers. All data shown is illustrative."
+   It also says the briefing is an example flight on a route they choose, shown as it would look the day
+   before departure.
 2. **Pre-survey** — anxiety, control and predictability about their next flight, each 0–10. Sliders start
    unset. Optional: route, how far away the flight is, how often they fly.
-3. **Flight setup** — origin, destination and date. The app generates a believable fake flight from them
-   (airline, flight number, aircraft, crew, forecast…). Deterministic: same inputs, same flight.
-4. **Dashboard** — the main part. Header, smoothness score and, in variant A, nine collapsible sections
-   (turbulence by phase, pilots, aircraft, airline, weather, best seat, sounds and sensations, smoother
-   options, forecast alerts). Time on page and every section open/close are recorded.
+3. **Flight setup** — origin, destination and date. Airports come from the app's list (pick a suggestion;
+   for a small airport, the nearest major one) and the date can be up to 330 days ahead, about as far as
+   airlines publish schedules. The app generates a believable fake flight from them (airline, flight
+   number, aircraft, forecast…), labelled "An example flight on your route". Deterministic: same inputs,
+   same flight.
+4. **Dashboard** — the main part, shown as the briefing would look **the day before the flight** (a quiet
+   banner says so; the countdown stays true). Only information a real product could have by then appears
+   (docs/FEASIBILITY.md): no pilot names, hours or ratings, no maintenance records. Header, smoothness
+   score and, in variant A, nine collapsible sections (turbulence by phase, who flies your plane, aircraft,
+   airline, weather, best seat, sounds and sensations, smoother options, forecast alerts). Time on page and
+   every section open/close are recorded.
 5. **Post-survey** — the same three sliders, which parts helped or worried them, how often they'd check
    it, what it would replace, what they'd still be scared of.
-6. **Debrief** — reminder that nothing was a real forecast; optional email for a follow-up interview.
+6. **Debrief** — reminder that the briefing was a day-before preview for an example flight and nothing was
+   a real forecast; optional email for a follow-up interview.
 
 Progress lives in the browser tab (`sessionStorage`), so a reload resumes the same session at the same
 screen. The record is saved to the backend after every step, every ~20 s on the dashboard, and with a
@@ -179,7 +188,7 @@ stored with the record (`variant`, `variant_source`):
 
 | Variant | Dashboard |
 | --- | --- |
-| **A · Full** | Header, smoothness score and all nine sections: turbulence by phase, pilots, aircraft, airline, weather, best seat, sounds & sensations, smoother options, forecast alerts. |
+| **A · Full** | Header, smoothness score and all nine sections: turbulence by phase, who flies your plane, aircraft, airline, weather, best seat, sounds & sensations, smoother options, forecast alerts. |
 | **B · Minimal** | Header, smoothness score and the turbulence section only. |
 
 Everything else (surveys, wording, order, visuals) is identical, so the only difference is *how much*

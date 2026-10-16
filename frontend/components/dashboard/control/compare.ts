@@ -1,4 +1,5 @@
 import { daysBetween, formatShortDate } from "@preflight/shared/dates";
+import { availabilityFor } from "@preflight/shared/forecast";
 import type { AlternativeFlight, BodyType, Flight } from "@preflight/shared/types";
 import type { Tone } from "@/lib/theme";
 
@@ -79,6 +80,10 @@ export function visibleAlternatives(flight: Flight, daysUntil: number): Alternat
 export function compareTeaserLine(flight: Flight, daysUntil: number, ownFlight = true): string {
   const alts = visibleAlternatives(flight, daysUntil);
   if (alts.length === 0) return "No other flights found on this route";
+  // Scores and deltas are flight-specific turbulence: they don't exist before the forecast does.
+  if (!availabilityFor(daysUntil).turbulence) {
+    return `${alts.length} other option${alts.length === 1 ? "" : "s"} on this route`;
+  }
   const smoother = alts.filter((a) => a.scoreDelta > 0);
   if (smoother.length === 0) {
     return `${alts.length} other option${alts.length === 1 ? "" : "s"} · none smoother than ${ownFlight ? "yours" : "this one"}`;

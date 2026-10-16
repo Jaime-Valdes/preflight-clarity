@@ -1,12 +1,13 @@
-import { daysBetween, formatOffset } from "@preflight/shared/dates";
-import { getForecastStatus } from "@preflight/shared/forecast";
+import { formatOffset } from "@preflight/shared/dates";
+import { availabilityFor, getForecastStatus, type Availability } from "@preflight/shared/forecast";
 import { findOption, type FlightOption } from "@preflight/shared/search";
-import type { Flight, ForecastMode, ForecastStatus, Intensity } from "@preflight/shared/types";
+import type { CrewInfo, Flight, ForecastMode, ForecastStatus, Intensity } from "@preflight/shared/types";
 import { KIND_LABEL, describeSeat } from "@/components/dashboard/control/seatMap";
 import { windowMoment } from "@/components/dashboard/turbulence/format";
-import { itemId, type CompareItem } from "@/lib/c/model";
+import { MAX_DAYS_AHEAD, dateStatus, itemId, type CompareItem } from "@/lib/c/model";
 import { COLORS, INTENSITY } from "@/lib/theme";
-import { dateStatus, monthDay, routeText } from "../flight/copy";
+import { daysBefore } from "../flight/availability";
+import { monthDay, routeText } from "../flight/copy";
 
 /*
  * Version C compare page: pure helpers — which columns to show, the quiet
@@ -25,6 +26,8 @@ export interface FlightColumn {
   flight: Flight;
   daysUntil: number;
   forecast: ForecastStatus;
+  /** What exists for this flight today (availabilityFor its real distance). */
+  avail: Availability;
 }
 
 export interface UnavailableColumn {
@@ -32,7 +35,7 @@ export interface UnavailableColumn {
   id: string;
   item: CompareItem;
   /** Not in that day's schedule, or a date the tool no longer (or doesn't yet) shows. */
-  reason: "missing" | "past" | "far";
+  reason: "missing" | "past" | "too-far";
 }
 
 export type Column = FlightColumn | UnavailableColumn;
@@ -54,7 +57,7 @@ export function resolveColumns(items: readonly CompareItem[], today: string): Co
       option = null;
     }
     if (!option) return { kind: "unavailable", id, item, reason: "missing" };
-    const daysUntil = Math.max(0, daysBetween(today, item.date));
+    const daysUntil = daysBefore(today, item.date);
     return {
       kind: "flight",
       id,
@@ -63,6 +66,7 @@ export function resolveColumns(items: readonly CompareItem[], today: string): Co
       flight: option.flight,
       daysUntil,
       forecast: getForecastStatus(daysUntil, option.flight.turbulence.history),
+      avail: availabilityFor(daysUntil),
     };
   });
 }
@@ -70,7 +74,7 @@ export function resolveColumns(items: readonly CompareItem[], today: string): Co
 export const UNAVAILABLE_NOTE: Record<UnavailableColumn["reason"], string> = {
   missing: "This flight is no longer on the schedule.",
   past: "This flight’s date has passed.",
-  far: "This date is more than a year ahead.",
+  "too-far": `Schedules are published about ${MAX_DAYS_AHEAD} days ahead; this date is further out.`,
 };
 
 // ── Markers ─────────────────────────────────────────────────────────────────
@@ -184,24 +188,88 @@ export const STRONGEST_BUMPS: Record<Intensity, string> = {
   moderate: "Moderate",
 };
 
-export const FORECAST_BASIS: Record<ForecastMode, string> = {
-  history: "From route history",
-  outlook: "Seasonal outlook",
-  forecast: "Latest forecast",
-};
+/** Under the confidence label, once a flight-specific forecast exists (getForecastStatus tiers). */
+export function forecastBasis(forecast: ForecastStatus): string {
+  if (forecast.mode === "history") return "Typical pattern only";
+  return forecast.confidence === "high" ? "Hourly forecasts and pilot reports" : "Latest turbulence forecasts";
+}
 
-/** Best seat on the map: "15A" with "Window · Over the wing", or null when no seat is free in the smooth zone. */
-export function bestSeat(flight: Flight): { seat: string; detail: string } | null {
+/** "89% smooth" + "October · about 1,200 past flights with turbulence reports" — the route, never this flight. */
+export function routeTypical(flight: Flight): { main: string; sub: string } {
+  const { smoothPct, month, flightsAnalyzed } = flight.turbulence.history;
+  const step = flightsAnalyzed >= 1000 ? 100 : 10;
+  const about = Math.max(step, Math.round(flightsAnalyzed / step) * step).toLocaleString("en-US");
+  return { main: `${smoothPct}% smooth`, sub: `Typical for ${month} · about ${about} past flights with reports` };
+}
+
+// ── Aircraft ────────────────────────────────────────────────────────────────
+
+/** 6.2 → "6.2 years", 0.8 → "10 months". */
+export function yearsText(years: number): string {
+  const age = Math.max(0, years);
+  if (age < 1) {
+    const months = Math.max(1, Math.round(age * 12));
+    return `${months} ${months === 1 ? "month" : "months"}`;
+  }
+  return `${Number.isInteger(age) ? age : age.toFixed(1)} years`;
+}
+
+/** "1–9 years": whole years, never "0". */
+export function rangeText([min, max]: readonly [number, number]): string {
+  const lo = Math.max(1, Math.floor(min));
+  const hi = Math.max(lo, Math.ceil(max));
+  return lo === hi ? `${lo} ${lo === 1 ? "year" : "years"}` : `${lo}–${hi} years`;
+}
+
+// ── Who flies it ────────────────────────────────────────────────────────────
+
+/** "2 pilots" + "Licensed and type-rated on the A321neo" (relief pilots on long flights). */
+export function crewLine(crew: CrewInfo, model: string): { main: string; sub: string } {
+  const relief = crew.pilots - 2;
+  if (relief <= 0) return { main: "2 pilots", sub: `Licensed and type-rated on the ${model}` };
+  return {
+    main: `${crew.pilots} pilots`,
+    sub: `Captain, first officer and ${relief === 1 ? "a relief pilot" : `${relief} relief pilots`}, so the crew can rest on this long flight`,
+  };
+}
+
+/** The licence every pilot on board holds and the rules behind it — the same for every airline under that regulator. */
+export function crewRules(crew: CrewInfo): { licence: { main: string; sub: string }; checks: { main: string; sub: string } } {
+  if (crew.regime === "faa") {
+    return {
+      licence: { main: "Airline Transport Pilot certificate", sub: "1,500+ flight hours · FAA rules" },
+      checks: { main: "Simulator checks every 6–12 months", sub: "Plus regular medicals and Part 117 rest rules" },
+    };
+  }
+  const regulator = crew.regulator.trim() || "the national aviation authority";
+  if (crew.regime === "easa") {
+    return {
+      licence: { main: "Airline pilot licence", sub: `The captain holds the full ATPL · ${regulator} rules` },
+      checks: { main: "Proficiency checks every 6 months", sub: "Plus yearly medicals and flight-time limits" },
+    };
+  }
+  return {
+    licence: { main: "Airline pilot licence", sub: `ICAO standard · licensed by ${regulator}` },
+    checks: { main: "Recurrent simulator checks", sub: "Usually twice a year, plus regular medicals and rest limits" },
+  };
+}
+
+// ── Best seat ───────────────────────────────────────────────────────────────
+
+/** The smoothest zone from the seat map's rows: "Rows 14–19" + "Over the wing" (the wing span if no row is marked). */
+export function smoothestZone(flight: Flight): { main: string; sub: string } {
+  const rows = flight.seatMap.rows.filter((r) => r.zone === "smoothest").map((r) => r.row);
+  const first = rows.length ? Math.min(...rows) : flight.seatMap.wingStartRow;
+  const last = rows.length ? Math.max(...rows) : flight.seatMap.wingEndRow;
+  return { main: first === last ? `Row ${first}` : `Rows ${first}–${last}`, sub: "Over the wing, where the cabin moves least" };
+}
+
+/** An open seat in that zone right now: "Seat 15A" + "Window · open right now", or null when none is. */
+export function openSeat(flight: Flight): { seat: string; detail: string } | null {
   const id = flight.seatMap.recommended[0];
   const info = id ? describeSeat(flight.seatMap, id) : null;
   if (!info) return null;
-  return { seat: info.id, detail: `${KIND_LABEL[info.kind]} · ${info.position.toLowerCase()}` };
-}
-
-/** "Rows 14–19, over the wing" */
-export function smoothestRows(flight: Flight): string {
-  const { wingStartRow, wingEndRow } = flight.seatMap;
-  return wingStartRow === wingEndRow ? `Row ${wingStartRow}, over the wing` : `Rows ${wingStartRow}–${wingEndRow}, over the wing`;
+  return { seat: info.id, detail: `${KIND_LABEL[info.kind]} · open right now` };
 }
 
 function capitalize(text: string): string {

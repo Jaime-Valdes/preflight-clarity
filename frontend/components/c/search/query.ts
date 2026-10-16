@@ -1,16 +1,24 @@
 import { getAirport } from "@preflight/shared/airports";
 import { addDays, daysBetween, formatShortDate, isISODate } from "@preflight/shared/dates";
-import { airportCode, type RouteDay } from "@/lib/c/model";
+import { airportCode, dateStatus, MAX_DAYS_AHEAD, type RouteDay } from "@/lib/c/model";
 
 /*
  * Version C search: what the visitor typed (form) or linked (URL), checked
- * against the catalogue and the searchable window (today … today + 365 days).
- * Pure — safe in render. Copy is calm: hints say what to do, never "error".
+ * against the catalogue and the searchable window — today … today + 330 days,
+ * as far as airlines publish schedules and fares (MAX_DAYS_AHEAD / dateStatus
+ * in lib/c/model.ts). Pure — safe in render. Copy is calm: hints say what to
+ * do, never "error".
  */
 
-export const MAX_DAYS_AHEAD = 365;
-/** The date the home form starts with, and popular routes link to. */
-export const DEFAULT_DAYS_AHEAD = 21;
+/**
+ * The date the home form starts with, and popular routes link to: tomorrow,
+ * so a first search shows the whole picture (the turbulence forecast for each
+ * flight exists from 2 days before departure).
+ */
+export const DEFAULT_DAYS_AHEAD = 1;
+
+/** "the next 11 months" — the searchable window, for copy. */
+export const WINDOW_TEXT = "the next 11 months";
 
 /** A search form's fields: catalogue codes once picked (free text otherwise), "YYYY-MM-DD" or "". */
 export interface SearchDraft {
@@ -39,8 +47,9 @@ export function defaultSearchDate(today: string): string {
 export function dateHint(date: string, today: string): string | undefined {
   if (!date) return "Pick a date.";
   if (!isISODate(date)) return "That date doesn’t look right.";
-  if (date < today) return "Pick a date from today onwards.";
-  if (daysBetween(today, date) > MAX_DAYS_AHEAD) return "Pick a date within the next 12 months.";
+  const status = dateStatus(date, today);
+  if (status === "past") return "Pick a date from today onwards.";
+  if (status === "too-far") return `Pick a date within ${WINDOW_TEXT}.`;
   return undefined;
 }
 
@@ -55,9 +64,10 @@ export function validateDraft(draft: SearchDraft, today: string): DraftCheck {
   const errors: DraftErrors = {};
   const origin = airportCode(draft.origin);
   const destination = airportCode(draft.destination);
-  if (!draft.origin.trim()) errors.origin = "Where are you flying from?";
+  // Typed text that matches no airport isn't kept (flights only exist between real airports).
+  if (!draft.origin.trim()) errors.origin = "Where are you flying from? Pick an airport from the suggestions.";
   else if (!origin) errors.origin = "Pick an airport from the suggestions.";
-  if (!draft.destination.trim()) errors.destination = "Where are you flying to?";
+  if (!draft.destination.trim()) errors.destination = "Where are you flying to? Pick an airport from the suggestions.";
   else if (!destination) errors.destination = "Pick an airport from the suggestions.";
   else if (origin && origin === destination) errors.destination = "Pick a destination different from where you’re leaving.";
   const date = dateHint(draft.date, today);
@@ -102,7 +112,8 @@ export function checkQuery(params: Params, today: string): QueryCheck {
   const origin = airportCode(raw.from);
   const destination = airportCode(raw.to);
   const dateOk = isISODate(raw.date);
-  const inWindow = dateOk && raw.date >= today && daysBetween(today, raw.date) <= MAX_DAYS_AHEAD;
+  const status = dateOk ? dateStatus(raw.date, today) : null;
+  const inWindow = status === "ok";
   const draft: SearchDraft = {
     origin: origin ?? "",
     destination: destination && destination !== origin ? destination : "",
@@ -118,8 +129,8 @@ export function checkQuery(params: Params, today: string): QueryCheck {
   else if (origin === destination) issue = "same";
   else if (!raw.date) issue = "date-missing";
   else if (!dateOk) issue = "date-invalid";
-  else if (raw.date < today) issue = "date-past";
-  else if (!inWindow) issue = "date-far";
+  else if (status === "past") issue = "date-past";
+  else if (status === "too-far") issue = "date-far";
 
   return {
     day: issue === null && origin && destination ? { origin, destination, date: raw.date } : null,
@@ -165,12 +176,12 @@ export function issueMessage(issue: QueryIssue, raw: QueryCheck["raw"]): { title
     case "date-past":
       return {
         title: "That date has passed",
-        text: "Flights are shown from today up to 12 months ahead. Pick another date.",
+        text: "Flights are shown from today up to about 11 months ahead. Pick another date.",
       };
     case "date-far":
       return {
         title: "That date is a little far ahead",
-        text: "Flights are shown up to 12 months ahead. Pick an earlier date.",
+        text: "Airlines publish schedules and fares about 11 months ahead, so flights are shown up to then. Pick an earlier date.",
       };
   }
 }

@@ -5,7 +5,7 @@ import { FlightSkeleton } from "@/components/c/flight/FlightSkeleton";
 
 export const metadata: Metadata = {
   title: "Flight details",
-  description: "One flight in full: smoothness, turbulence timeline, pilots, aircraft, weather and an illustrative fare.",
+  description: "One flight in full: schedule, aircraft, who flies it, airline, weather, turbulence as departure gets closer and an illustrative fare.",
 };
 
 /**

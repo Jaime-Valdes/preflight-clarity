@@ -14,7 +14,8 @@ const POINTS: Array<{ icon: ReactNode; title: string; detail: string }> = [
   {
     icon: <Sparkles />,
     title: "Illustrative data",
-    detail: "The flight details you'll see are made up for this study. They are not a real forecast.",
+    detail:
+      "You'll see an example flight on a route you choose, shown as its briefing would look the day before departure. The details are made up for this study. They are not a real forecast.",
   },
   { icon: <DoorOpen />, title: "Stop anytime", detail: "Just close the page. Answers you've already given are kept." },
 ];

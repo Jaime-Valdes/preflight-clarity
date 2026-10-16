@@ -4,19 +4,23 @@
  *
  *   npx tsx shared/scripts/check-search.ts        (also: npm run test -w shared)
  *
- * Schedule plausibility and counts by market, unique keys / numbers / ids, full
- * dashboard flights, shared facts (airborne time, route history, weather by hour,
- * bumps by air block), fares, determinism, caching, A/B safety and the speed
- * budget. Exits non-zero on any failure; prints the numbers the UI cares about.
+ * Nonstop service (only routes an airline would plausibly fly nonstop get flights,
+ * docs/FEASIBILITY.md), schedule plausibility and counts by market, unique keys /
+ * numbers / ids, full dashboard flights with the feasibility rules (crew from the
+ * rules, fleet ages, one seat map per airline and model, no pilot profiles), shared
+ * facts (airborne time, route history, weather by hour, bumps by air block), fares,
+ * determinism, caching, A/B safety and the speed budget. Exits non-zero on any
+ * failure; prints the numbers the UI cares about.
  */
 import { createHash } from "node:crypto";
-import { dayOverview, findOption, optionKey, searchFlights, type SearchResults } from "../src/search";
+import { dayOverview, findOption, hasNonstopService, optionKey, searchFlights, type SearchResults } from "../src/search";
 import { departWindowOf, generateFlight, normalizeInput, routeDay, type RouteDay } from "../src/fakeFlight";
-import { candidateAirlines, getAirline, isRetiredFlightNumber } from "../src/airlines";
-import { getAircraftModel } from "../src/aircraft";
+import { LISTED_NONSTOPS, getAirline, isRetiredFlightNumber } from "../src/airlines";
+import { cabinConfigFor, getAircraftModel } from "../src/aircraft";
+import { AIRPORTS, getAirport, greatCircleMi } from "../src/airports";
 import { addDays, timeToMinutes, weekdayIndex } from "../src/dates";
-import { hashId } from "../src/random";
-import type { DepartWindow, Flight, FlightInput, FlightPhase, FlightPrefs } from "../src/types";
+import { createRng, hashId } from "../src/random";
+import type { CrewInfo, DepartWindow, Flight, FlightInput, FlightPhase, FlightPrefs } from "../src/types";
 
 let failures = 0;
 let warnings = 0;
@@ -59,10 +63,19 @@ function pearson(xs: readonly number[], ys: readonly number[]): number {
 //
 // Variants A and B are a running study: version C must not change what they show. These
 // 329 flights (long-haul, oceanic, perimeter and typed routes, dates across the year, empty
-// prefs and every departWindow / bodyType / airline) hash to what the generator produced
-// before version C existed (2026-10-15). A deliberate A/B change must update the constant.
+// prefs and every departWindow / bodyType / airline) hash to what the study's generator
+// produces. Only a deliberate A/B change may update the constant, and it says so here:
+//  - 2026-10-15, version C: the generator as it was before version C existed
+//    (f5bcd91f0ae2435867f8913d70aa23eb18c96927783654832d08ca992acd812d).
+//  - 2026-10-15, feasibility rules (docs/FEASIBILITY.md) — a deliberate A/B change: crew from
+//    the rules instead of pilot profiles, fleet ages (following each type's production years)
+//    instead of maintenance records, each airline's own cabin and seat map per model, sound
+//    timings on a 5-minute grid with type-level wording, neutral weather notes, the seatbelt sign
+//    only for moderate stretches, one on-time figure per airline and route, verifiable model
+//    facts, and route histories that count about as many past flights as the route's daily
+//    nonstops allow.
 
-const AB_SNAPSHOT = "f5bcd91f0ae2435867f8913d70aa23eb18c96927783654832d08ca992acd812d";
+const AB_SNAPSHOT = "0e5088d2b8429659271b573de4b7312d6ea5dc5d7f142e3c05ae6ff84a798257";
 const SNAPSHOT_ROUTES: Array<[string, string]> = [
   ["JFK", "LAX"], ["LAX", "JFK"], ["JFK", "BOS"], ["LGA", "ORD"], ["LGA", "BOS"], ["EWR", "MCO"], ["SFO", "DEN"],
   ["DEN", "ATL"], ["SEA", "HNL"], ["DFW", "PHX"], ["MIA", "SJU"], ["BOS", "SFO"], ["YYZ", "YVR"], ["ORD", "MEX"],
@@ -99,7 +112,10 @@ SNAPSHOT_ROUTES.forEach(([origin, destination], i) => {
   });
 });
 const abSnapshot = createHash("sha256").update(snapshotLines.join("\n")).digest("hex");
-check(snapshotLines.length === 329 && abSnapshot === AB_SNAPSHOT, `A/B: generateFlight output changed for the study (${snapshotLines.length} flights, hash ${abSnapshot.slice(0, 12)}…)`);
+check(
+  snapshotLines.length === 329 && abSnapshot === AB_SNAPSHOT,
+  `A/B: generateFlight output changed for the study (${snapshotLines.length} flights, hash ${abSnapshot}) — only a deliberate A/B change may update AB_SNAPSHOT, with a line above saying why`,
+);
 
 // ── A/B safety, part 2: generateFlight before any search ────────────────────
 
@@ -162,9 +178,28 @@ const KNOWN_MARKETS: Record<string, Market> = {
   "HKG-TPE": "busy", "BOS-SFO": "busy",
   "ATL-CUN": "ordinary", "BUF-ORD": "ordinary", "BOI-SEA": "ordinary", "RDU-BOS": "ordinary", "SAV-ATL": "ordinary", "PWM-JFK": "ordinary",
   "JFK-LHR": "long", "LHR-JFK": "long", "SFO-NRT": "long", "NRT-SFO": "long", "JFK-SIN": "long", "SIN-JFK": "long", "LAX-SYD": "long",
-  "SYD-LAX": "long", "LHR-DXB": "long", "BOS-DUB": "long", "PER-LHR": "long", "JFK-HKG": "long", "JFK-SYD": "long", "SIN-SYD": "long",
+  "SYD-LAX": "long", "LHR-DXB": "long", "BOS-DUB": "long", "PER-LHR": "long", "JFK-HKG": "long", "SIN-SYD": "long",
   "DEN-HNL": "long",
 };
+// (JFK-SYD left the list with the nonstop rule: nobody flies it nonstop — it is in UNSERVED below.)
+
+/** Version C's home-page routes (frontend/components/c/search/HomeSearch.tsx): they must have flights. */
+const C_HOME_ROUTES: Array<[string, string]> = [
+  ["JFK", "LAX"], ["LGA", "BOS"], ["ORD", "DEN"], ["ATL", "MCO"], ["LAX", "SFO"], ["SEA", "HNL"], ["JFK", "LHR"], ["SFO", "NRT"],
+];
+
+/**
+ * Pairs nobody flies nonstop: one metro area or a short drive, small cities far from any hub, distances
+ * no airline flies nonstop, typed (made-up) airports, the same airport twice.
+ */
+const UNSERVED: Array<[string, string]> = [
+  ["JFK", "LGA"], ["JFK", "EWR"], ["SFO", "OAK"], ["SFO", "SJC"], ["DCA", "IAD"], ["ORD", "MDW"], ["DFW", "DAL"], ["IAH", "HOU"],
+  ["LHR", "LGW"], ["CDG", "ORY"], ["HND", "NRT"], ["MIA", "FLL"], ["JFK", "PHL"], ["DXB", "AUH"], ["HKG", "SZX"],
+  ["BTV", "DPS"], ["ROC", "KTM"], ["TUS", "BOI"], ["BUF", "ROC"], ["OMA", "DSM"], ["GEG", "BOI"], ["LAX", "BTV"], ["SEA", "PWM"],
+  ["MIA", "GEG"], ["HNL", "BTV"], ["LHR", "BOI"], ["JFK", "KTM"], ["SIN", "ATL"], ["SYD", "MIA"],
+  ["JFK", "SYD"], ["LHR", "SYD"], ["LHR", "AKL"], ["JFK", "MEL"], ["MNL", "EZE"],
+  ["Fargo", "Orlando"], ["Timbuktu", "Shangri-La"], ["JFK", "JFK"],
+];
 
 const ROUTES: Array<[string, string]> = [
   // Busy markets
@@ -175,12 +210,12 @@ const ROUTES: Array<[string, string]> = [
   ["ATL", "CUN"], ["BUF", "ORD"], ["BOI", "SEA"], ["RDU", "BOS"], ["SAV", "ATL"], ["PWM", "JFK"], ["DXB", "DEL"], ["NBO", "ADD"],
   // Long-haul and oceanic
   ["JFK", "LHR"], ["LHR", "JFK"], ["SFO", "NRT"], ["NRT", "SFO"], ["JFK", "SIN"], ["SIN", "JFK"], ["LAX", "SYD"], ["SYD", "LAX"],
-  ["LHR", "DXB"], ["DXB", "LHR"], ["BOS", "DUB"], ["BOG", "MIA"], ["PER", "LHR"], ["JFK", "HKG"], ["SIN", "SYD"], ["JFK", "SYD"],
-  ["DEN", "HNL"], ["EZE", "MAD"],
+  ["LHR", "DXB"], ["DXB", "LHR"], ["BOS", "DUB"], ["BOG", "MIA"], ["PER", "LHR"], ["JFK", "HKG"], ["SIN", "SYD"], ["DEN", "HNL"],
+  ["EZE", "MAD"], ["LHR", "ACC"],
   // Perimeter airports (a long LaGuardia / National trip leaves from JFK / Dulles)
   ["LGA", "LAX"], ["DCA", "LAX"], ["DCA", "LHR"], ["LGA", "DEN"], ["DCA", "BOS"],
   // Typed text (the UI only sends catalogue codes, but the API takes anything generateFlight does)
-  ["New York", "Los Angeles"], ["Fargo", "Orlando"],
+  ["New York", "Los Angeles"],
 ];
 
 /** A year from "today" (2026-10-15): Saturdays, daylight-saving changes (US, EU, Australia), IATA season edges. */
@@ -195,6 +230,47 @@ const FORBIDDEN =
   /\b(crash\w*|danger\w*|severe\w*|emergenc\w*|warning\w*|fatal\w*|accident\w*|incident\w*|death\w*|die|dies|died|dying|risk\w*)\b/i;
 const DISCOURAGED = /\b(storm\w*|thunder\w*|lightning|fail\w*|plunge\w*|stall\w*|fear\w*|panic\w*|scary|alarm\w*|violent\w*|rough)\b/i;
 const PHASES: FlightPhase[] = ["takeoff", "climb", "cruise", "descent", "landing"];
+
+const EASA_COUNTRIES = new Set([
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT",
+  "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "IS", "LI", "NO", "CH",
+]);
+const NATIONAL_REGULATORS: Record<string, string> = {
+  CA: "Transport Canada", AU: "CASA", NZ: "CAA New Zealand", SG: "CAAS", JP: "JCAB", AE: "GCAA", IN: "DGCA",
+};
+
+/** Independent restatement of the crew rule: relief pilots by scheduled block time, the rule set by the airline's country. */
+function expectedCrew(airlineCountry: string, blockMin: number): CrewInfo {
+  const pilots: CrewInfo["pilots"] = blockMin > 12.5 * 60 ? 4 : blockMin > 8.5 * 60 ? 3 : 2;
+  if (airlineCountry === "US") return { pilots, regime: "faa", regulator: "FAA" };
+  if (airlineCountry === "GB") return { pilots, regime: "easa", regulator: "UK CAA" };
+  if (EASA_COUNTRIES.has(airlineCountry)) return { pilots, regime: "easa", regulator: "EASA" };
+  return { pilots, regime: "icao", regulator: NATIONAL_REGULATORS[airlineCountry] ?? "the national aviation authority" };
+}
+
+/** Pilot-profile and maintenance-record fields: never anywhere in a Flight. */
+const IMPOSSIBLE_KEYS = new Set([
+  "captain", "firstOfficer", "pilot", "initials", "rating", "ratingCount", "totalHours", "hoursOnType", "yearsFlying",
+  "timesOnRoute", "base", "background", "badges", "lastInspectionDaysAgo", "lastCheckType", "nextCheckDueDays", "maintenanceStatus",
+]);
+const PILOT_PROFILE_PATTERN =
+  /\b(based in|passengers? mention|passenger ratings?|\d{1,3}(,\d{3})+ (flight )?hours|\d{3,} (flight )?hours|hours on (type|the)|years flying|times on this route|smooth landings|clear announcements|calm voice|former flight instructor|check pilot)\b/i;
+const NAMED_PILOT = /\b(Capt\. [A-Z]|Captain [A-Z][a-z]|First Officer [A-Z][a-z])/;
+/** Version C never assumes the reader is on the flight. */
+const YOUR_FLIGHT = /\byour (flight|departure|arrival|pilots?|plane|aircraft)\b/i;
+
+function keysOf(value: unknown, path: string, out: Array<[string, string]>): void {
+  if (Array.isArray(value)) value.forEach((v, i) => keysOf(v, `${path}[${i}]`, out));
+  else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out.push([`${path}.${k}`, k]);
+      keysOf(v, `${path}.${k}`, out);
+    }
+  }
+}
+
+/** One seat map per airline and model, across every C flight in the run. */
+const SEAT_GEOMETRY = new Map<string, string>();
 
 /** Independent restatement of the contract's market rule (see search.ts marketOf). */
 function marketFor(day: RouteDay): Market {
@@ -227,16 +303,22 @@ function checkFlightShape(tag: string, f: Flight): void {
   check([-1, 0, 1, 2].includes(f.arriveDayOffset), `${tag}: day offset ${f.arriveDayOffset}`);
   check(f.terminal.length > 0 && /^[A-Z]\d{1,2}$/.test(f.gate), `${tag}: terminal/gate ${f.terminal} ${f.gate}`);
 
+  // The scheduled type with the airline's fleet ages (known any time) and the assigned airframe within them.
   const ac = f.aircraft;
   check(ac.ageYears >= 0.8 && ac.ageYears <= 36 && ac.deliveredYear >= ac.modelInServiceSince, `${tag}: aircraft age ${ac.ageYears}`);
-  const ended = getAircraftModel(ac.model)?.productionEnded;
+  const model = getAircraftModel(ac.model);
+  const ended = model?.productionEnded;
   check(ended === undefined || ac.deliveredYear <= ended, `${tag}: ${ac.model} delivered after production ended`);
   check(!/MAX/i.test(ac.model) && ac.safetyRecord.length >= 3 && /^[A-Z0-9-]{4,}$/.test(ac.tailNumber), `${tag}: aircraft facts`);
+  const [youngest, oldest] = ac.fleetAgeRange;
+  check(youngest <= ac.ageYears && ac.ageYears <= oldest && youngest <= ac.fleetAvgAgeYears && ac.fleetAvgAgeYears <= oldest, `${tag}: ages ${ac.ageYears} / avg ${ac.fleetAvgAgeYears} vs fleet ${youngest}–${oldest}`);
+  for (const key of ["lastInspectionDaysAgo", "lastCheckType", "nextCheckDueDays", "maintenanceStatus"]) check(!(key in ac), `${tag}: maintenance field ${key}`);
 
-  const { captain, firstOfficer } = f.crew;
-  check(captain.totalHours >= 8000 && captain.totalHours <= 24000 && captain.hoursOnType <= captain.totalHours, `${tag}: captain hours`);
-  check(firstOfficer.totalHours >= 2500 && firstOfficer.totalHours <= 9000 && firstOfficer.hoursOnType <= firstOfficer.totalHours, `${tag}: FO hours`);
-  check(captain.name !== firstOfficer.name && captain.badges.length >= 2 && firstOfficer.badges.length >= 2, `${tag}: crew`);
+  // Who flies it: the rules, never a profile.
+  check(JSON.stringify(f.crew) === JSON.stringify(expectedCrew(f.airline.country, f.blockMin)), `${tag}: crew ${JSON.stringify(f.crew)} vs the rules`);
+  const keys: Array<[string, string]> = [];
+  keysOf(f, "flight", keys);
+  for (const [path, key] of keys) check(!IMPOSSIBLE_KEYS.has(key), `${tag}: impossible field at ${path}`);
 
   const t = f.turbulence;
   check(t.points[0]?.minute === 0 && t.points[t.points.length - 1]?.minute === f.airborneMin && t.points.length >= 7, `${tag}: points span`);
@@ -277,7 +359,7 @@ function checkFlightShape(tag: string, f: Flight): void {
   check(new Set(cruiseCauses).size === cruiseCauses.length, `${tag}: two cruise windows share a cause`);
   const expectedMax = t.windows.some((w) => w.intensity === "moderate") ? "moderate" : t.windows.length > 0 ? "light" : "none";
   check(t.maxIntensity === expectedMax && t.smoothMinutesPct >= 0 && t.smoothMinutesPct <= 100, `${tag}: maxIntensity / smooth share`);
-  check(t.history.smoothPct >= 72 && t.history.smoothPct <= 96 && t.history.flightsAnalyzed >= 400, `${tag}: history ranges`);
+  check(t.history.smoothPct >= 72 && t.history.smoothPct <= 96 && t.history.flightsAnalyzed >= 180 && t.history.flightsAnalyzed % 10 === 0, `${tag}: history ranges`);
 
   const s = f.smoothness;
   check(s.score >= 58 && s.score <= 97, `${tag}: score ${s.score}`);
@@ -303,6 +385,20 @@ function checkFlightShape(tag: string, f: Flight): void {
   check(sm.rows.length >= 18 && sm.rows.length <= 28 && rows.every((r, i) => i === 0 || r > rows[i - 1]), `${tag}: seat rows`);
   check(sm.rows.some((r) => r.exit) && sm.rows.filter((r) => r.exit).every((r) => r.zone === "smoothest"), `${tag}: exit rows`);
   check(sm.recommended.length === 3, `${tag}: recommended seats`);
+  // The airline's cabin for the model: the same map on every flight (and in the study); only open seats vary.
+  if (model) {
+    const cabin = cabinConfigFor(f.airline.code, model);
+    check(
+      ac.seatLayout === cabin.seatLayout && ac.typicalSeats === cabin.typicalSeats && f.airlineStats.seatWidthIn === cabin.seatWidthIn &&
+        JSON.stringify(rows) === JSON.stringify(cabin.rowNumbers) && sm.wingStartRow === cabin.rowNumbers[cabin.wingFirstIndex] &&
+        sm.wingEndRow === cabin.rowNumbers[cabin.wingLastIndex] && sm.columnGroups.map((g) => g.length).join("-") === cabin.seatLayout,
+      `${tag}: seat map is not ${f.airline.code}'s ${ac.model} cabin`,
+    );
+  }
+  const geometry = JSON.stringify([ac.seatLayout, ac.typicalSeats, sm.columnGroups, sm.rows, sm.wingStartRow, sm.wingEndRow]);
+  const cabinKey = `${f.airline.code}|${ac.model}`;
+  check((SEAT_GEOMETRY.get(cabinKey) ?? geometry) === geometry, `${tag}: ${cabinKey} shows another seat map than on another flight`);
+  SEAT_GEOMETRY.set(cabinKey, geometry);
   // Best free seats, smoothest first: over the wing while it has free seats, then the nearest others.
   const occupied = new Set(sm.occupied);
   const freeOverWing = sm.rows.filter((r) => r.zone === "smoothest").reduce((n, r) => n + letters.filter((l) => !occupied.has(`${r.row}${l}`)).length, 0);
@@ -326,6 +422,14 @@ function checkFlightShape(tag: string, f: Flight): void {
     const d = DISCOURAGED.exec(value);
     if (d) warn(`${tag}: discouraged word "${d[0]}" at ${path}: "${value}"`);
     check(!value.includes("!") && !/undefined|NaN|\[object/.test(value), `${tag}: bad text at ${path}: "${value}"`);
+    const profile = PILOT_PROFILE_PATTERN.exec(value)?.[0] ?? NAMED_PILOT.exec(value)?.[0];
+    check(!profile, `${tag}: pilot-profile text "${profile}" at ${path}`);
+    check(!YOUR_FLIGHT.test(value), `${tag}: "${YOUR_FLIGHT.exec(value)?.[0]}" at ${path} (version C never says "your flight")`);
+  }
+  // Sound timings: typical, on the 5-minute grid.
+  for (const c of f.sounds) {
+    const offGrid = [...c.when.matchAll(/(\d+)h (\d+)m\b/g)].some((m) => Number(m[2]) % 5 !== 0) || [...c.when.matchAll(/(\d+) min\b/g)].some((m) => Number(m[1]) % 5 !== 0);
+    check(!offGrid, `${tag}: ${c.id} timing "${c.when}" not rounded to 5 minutes`);
   }
 }
 
@@ -363,7 +467,9 @@ function checkDay(q: FlightInput, res: SearchResults): void {
 
   // Departures: grid, operating day, order and spacing.
   const first = market === "long" ? 6 * 60 : 5 * 60 + 30;
-  const candidates = new Map(candidateAirlines(day.origin, day.destination, day.distanceMi, day.oceanic).map(([a]) => [a.code, a]));
+  // Only carriers that would plausibly fly the route nonstop (nonstopCarriers via routeDay).
+  const candidates = new Map(day.carriers.map((c) => [c.airline.code, c.airline]));
+  check(hasNonstopService(q.origin, q.destination) === day.carriers.length > 0 && day.carriers.length > 0, `${tag}: a route with flights must have nonstop service`);
   const parity = day.eastbound ? 0 : 1;
   for (let i = 0; i < opts.length; i++) {
     const f = flights[i];
@@ -385,7 +491,7 @@ function checkDay(q: FlightInput, res: SearchResults): void {
 
     // Carrier, number, aircraft.
     const profile = getAirline(f.airline.code);
-    check(candidates.has(f.airline.code) && Boolean(profile), `${tag}: ${f.airline.code} is not a candidate carrier`);
+    check(candidates.has(f.airline.code) && Boolean(profile), `${tag}: ${f.airline.code} doesn't fly this route nonstop`);
     const m = /^([A-Z0-9]{2}) (\d{1,4})$/.exec(f.flightNumber);
     check(Boolean(m) && m![1] === f.airline.code, `${tag}: flight number "${f.flightNumber}"`);
     const n = Number(m?.[2] ?? 0);
@@ -421,9 +527,12 @@ function checkDay(q: FlightInput, res: SearchResults): void {
   check(Math.max(...blocks) - Math.min(...blocks) <= 12, `${tag}: block times ${Math.min(...blocks)}–${Math.max(...blocks)}`);
   check(flights.every((f) => f.origin.code === day.origin.code && f.destination.code === day.destination.code), `${tag}: endpoints`);
 
-  // The A/B route history.
+  // The A/B route history, which counts about as many past flights as the market flies in that month over 4 years.
   const history = JSON.stringify(generateFlight(norm).turbulence.history);
   check(flights.every((f) => JSON.stringify(f.turbulence.history) === history), `${tag}: route history differs from generateFlight's`);
+  const monthDays = new Date(Date.UTC(2025, Number(norm.date.slice(5, 7)), 0)).getUTCDate();
+  const analyzed = flights[0]?.turbulence.history.flightsAnalyzed ?? 0;
+  check(analyzed >= lo * monthDays * 4 * 0.85 - 5 && analyzed <= hi * monthDays * 4 + 5, `${tag}: about ${analyzed} past flights in a month for a ${market} market (${lo}–${hi} a day)`);
 
   // Weather by airport, date and hour — across every flight in the sample, and the A/B flights then.
   const sides = (f: Flight): Array<[string, Flight["weather"]["origin"]]> => [
@@ -518,7 +627,10 @@ for (const date of ["2026-11-26", "2027-07-09"]) {
   const jfk = searchFlights({ origin: "JFK", destination: "LAX", date });
   check(lga.options.length === jfk.options.length && lga.options.every((o, i) => o.key === jfk.options[i].key && o.fareUsd === jfk.options[i].fareUsd), `LGA-LAX ${date}: not the JFK-LAX flights`);
   check(lga.options.every((o, i) => o.flight.id !== jfk.options[i].flight.id && o.flight.origin.code === "JFK"), `LGA-LAX ${date}: ids must differ from JFK-LAX, origin must be JFK`);
-  check(lga.options.every((o, i) => o.flight.smoothness.score === jfk.options[i].flight.smoothness.score && o.flight.crew.captain.name === jfk.options[i].flight.crew.captain.name), `LGA-LAX ${date}: same flight, different facts`);
+  check(
+    lga.options.every((o, i) => o.flight.smoothness.score === jfk.options[i].flight.smoothness.score && JSON.stringify(o.flight.crew) === JSON.stringify(jfk.options[i].flight.crew) && JSON.stringify(o.flight.seatMap) === JSON.stringify(jfk.options[i].flight.seatMap)),
+    `LGA-LAX ${date}: same flight, different facts`,
+  );
 }
 check(JSON.stringify(searchFlights({ origin: " jfk ", destination: "Los Angeles", date: "2026-11-26" }).query) === JSON.stringify({ origin: "JFK", destination: "LAX", date: "2026-11-26" }), "query not normalized");
 check(searchFlights({ origin: " jfk ", destination: "lax", date: "2026-11-26" }) === searchFlights({ origin: "JFK", destination: "LAX", date: "2026-11-26" }), "normalized queries share a cache entry");
@@ -692,6 +804,92 @@ check(quantile(coldDayMs, 0.5) <= 15 && quantile(coldDayMs, 0.9) <= 15, `a cold 
 check(Math.max(...coldWeekMs) <= 100, `a cold 7-day overview takes ${Math.max(...coldWeekMs).toFixed(0)} ms`);
 check(hitUs < 50, `a cached search takes ${hitUs.toFixed(1)} µs`);
 
+// ── Nonstop service (docs/FEASIBILITY.md: no invented nonstops) ─────────────
+//
+// After the speed checks, so the routes timed above were really cold.
+
+// Every catalogue pair, both ways: a fact about the route, symmetric, and no catalogue airport left without nonstops.
+const serviceStart = performance.now();
+let servedPairs = 0;
+let totalPairs = 0;
+let oneWay = 0;
+const partners = new Map<string, number>();
+const servedList: string[] = [];
+const unservedList: string[] = [];
+for (const a of AIRPORTS) {
+  for (const b of AIRPORTS) {
+    if (a.code >= b.code) continue;
+    totalPairs += 2;
+    const there = hasNonstopService(a.code, b.code);
+    if (there !== hasNonstopService(b.code, a.code)) oneWay++;
+    if (!there) {
+      unservedList.push(`${a.code}-${b.code}`);
+      continue;
+    }
+    servedPairs += 2;
+    servedList.push(`${a.code}-${b.code}`);
+    partners.set(a.code, (partners.get(a.code) ?? 0) + 1);
+    partners.set(b.code, (partners.get(b.code) ?? 0) + 1);
+  }
+}
+const serviceMs = performance.now() - serviceStart;
+check(oneWay === 0, `nonstop service: ${oneWay} pairs served one way only`);
+check(servedPairs / totalPairs >= 0.25 && servedPairs / totalPairs <= 0.5, `nonstop service: ${pct(servedPairs, totalPairs)} of catalogue pairs served`);
+const fewest = [...AIRPORTS].sort((x, y) => (partners.get(x.code) ?? 0) - (partners.get(y.code) ?? 0) || x.code.localeCompare(y.code)).slice(0, 6);
+const islands = AIRPORTS.filter((a) => (partners.get(a.code) ?? 0) < 5);
+check(islands.length === 0, `nonstop service: airports with fewer than 5 nonstop partners: ${islands.map((a) => `${a.code} (${partners.get(a.code) ?? 0})`).join(", ")}`);
+
+// Every route the UI and these checks rely on is served; the obviously unserved pairs are not, on any day.
+const mustServe: Array<[string, string]> = [...Object.keys(KNOWN_MARKETS).map((r) => r.split("-") as [string, string]), ...C_HOME_ROUTES, ...ROUTES];
+for (const [o, d] of mustServe) check(hasNonstopService(o, d), `${o}-${d}: must have nonstop service`);
+check(hasNonstopService("lga", "lax") && hasNonstopService("New York", "Los Angeles") && hasNonstopService("DCA", "LHR"), "perimeter airports and typed city names follow the route as flown");
+for (const [o, d] of UNSERVED) {
+  check(!hasNonstopService(o, d) && !hasNonstopService(d, o), `${o}-${d}: nobody flies it nonstop, but it has service`);
+  for (const date of ["2026-10-16", "2026-11-26", "2027-07-09"]) {
+    const q = { origin: o, destination: d, date };
+    const res = searchFlights(q);
+    check(res.options.length === 0 && Object.isFrozen(res.options), `${o}-${d} ${date}: ${res.options.length} invented nonstops`);
+    const ov = dayOverview(q, date);
+    check(ov.count === 0 && ov.lowestFareUsd === 0 && ov.bestScore === 0, `${o}-${d} ${date}: overview ${JSON.stringify(ov)} for a route without nonstops`);
+    check(findOption(q, "DL1") === null, `${o}-${d} ${date}: findOption on a route without nonstops`);
+  }
+}
+// The few real routes the size rule misses come with exactly the carriers that fly them.
+for (const [route, codes] of Object.entries(LISTED_NONSTOPS)) {
+  const [a, b] = route.split("-");
+  const carriers = routeDay({ origin: a, destination: b, date: "2026-12-01" }).carriers.map((c) => c.airline.code);
+  check(codes.every((c) => carriers.includes(c)), `${route}: listed ${codes.join(", ")}, flown by ${carriers.join(", ") || "nobody"}`);
+}
+// Who flies a route never depends on the date.
+for (const [o, d] of [["JFK", "LAX"], ["LHR", "ACC"], ["BOI", "SEA"], ["SFO", "NRT"], ["LGA", "DEN"], ["HKG", "TPE"]]) {
+  const byDate = ["2026-10-16", "2027-01-15", "2027-07-04", "2027-09-10"].map((date) => routeDay({ origin: o, destination: d, date }).carriers.map((c) => c.airline.code).join(","));
+  check(new Set(byDate).size === 1, `${o}-${d}: carriers change with the date (${byDate.join(" / ")})`);
+}
+// hasNonstopService agrees with the days: a served route has flights every day (a Saturday and a summer day here), an unserved one never.
+const serviceRng = createRng("check|service");
+let servedDaysChecked = 0;
+let emptyServedDays = 0;
+for (let i = 0; i < 120; i++) {
+  const [o, d] = serviceRng.pick(servedList).split("-");
+  for (const date of ["2026-12-12", "2027-06-23"]) {
+    servedDaysChecked++;
+    if (searchFlights({ origin: o, destination: d, date }).options.length === 0) {
+      emptyServedDays++;
+      check(false, `${o}-${d} ${date}: served route without a flight that day`);
+    }
+  }
+}
+for (let i = 0; i < 80; i++) {
+  const [o, d] = serviceRng.pick(unservedList).split("-");
+  check(searchFlights({ origin: d, destination: o, date: "2027-01-20" }).options.length === 0, `${d}-${o}: flights on a route without nonstop service`);
+}
+const describePair = (pair: string) => {
+  const [a, b] = pair.split("-");
+  return `${pair} (${Math.round(greatCircleMi(getAirport(a)!, getAirport(b)!)).toLocaleString("en-US")} mi)`;
+};
+const servedExamples = serviceRng.shuffle(servedList).slice(0, 8).map(describePair);
+const unservedExamples = serviceRng.shuffle(unservedList).slice(0, 8).map(describePair);
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 function showDay(q: FlightInput): void {
@@ -714,7 +912,12 @@ console.log(`Air blocks · ${blockPairs} flight pairs share a block (${widePairs
 console.log(`Fares · ${bandLines.join(" · ")}`);
 console.log(`Fares vs the day's mean · value carriers ${valueRel.toFixed(2)} · standard ${standardRel.toFixed(2)} · premium long-haul ${premiumLongRel.toFixed(2)} · Fri/Sun ${weekdayRel([0, 5]).toFixed(2)} vs Tue/Wed/Sat ${weekdayRel([2, 3, 6]).toFixed(2)}`);
 console.log(`Fare–score correlation · within a day r = ${rWithin.toFixed(3)} · across a route's days (date strip) r = ${rStrip.toFixed(3)} · raw over all routes r = ${rRaw.toFixed(3)} (distance drives both)`);
-console.log(`Seat maps · ${seatFallbacks} of ${flightsChecked} flights have under 3 free seats over the wing, so a pick sits just off it`);
+console.log(`Seat maps · one map per airline and model (${SEAT_GEOMETRY.size} cabins seen) · ${seatFallbacks} of ${flightsChecked} flights have under 3 open seats over the wing, so a pick sits just off it`);
+console.log(
+  `Nonstop service · ${pct(servedPairs, totalPairs)} of ${totalPairs.toLocaleString("en-US")} ordered catalogue pairs (${servedPairs.toLocaleString("en-US")}) in ${Math.round(serviceMs)} ms · symmetric · fewest partners ${fewest.map((a) => `${a.code} ${partners.get(a.code) ?? 0}`).join(", ")} · ${servedDaysChecked} sampled days on served routes, ${emptyServedDays} empty`,
+);
+console.log(`  served, e.g. ${servedExamples.join(", ")}`);
+console.log(`  not served, e.g. ${unservedExamples.join(", ")}`);
 console.log(`Timetable · ${pct(repeatKeys, repeatTotal)} of a Monday's flights fly Tue–Fri too, ${pct(repeatTimes, repeatTotal)} at the same time`);
 console.log(`Speed · first search of this run ${firstCallMs.toFixed(1)} ms (after the A/B flights warmed up the JIT; a fresh browser tab adds ~10 ms of time-zone data and JIT warm-up once) · cold day median ${quantile(coldDayMs, 0.5).toFixed(1)} ms, p90 ${quantile(coldDayMs, 0.9).toFixed(1)} ms, max ${Math.max(...coldDayMs).toFixed(1)} ms · cold 7-day overview ${Math.round(mean(coldWeekMs))} ms (max ${Math.round(Math.max(...coldWeekMs))}) · cache hit ${hitUs.toFixed(1)} µs`);
 

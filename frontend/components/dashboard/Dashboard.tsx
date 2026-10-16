@@ -1,6 +1,6 @@
 "use client";
 
-import { Armchair, ArrowLeftRight, Bell, CloudSun, Ear, Plane, ShieldCheck, UserRound, Wind } from "lucide-react";
+import { Armchair, ArrowLeftRight, Bell, CalendarClock, CloudSun, Ear, Plane, ShieldCheck, UserRound, Wind } from "lucide-react";
 import {
   Component,
   Fragment,
@@ -14,7 +14,7 @@ import {
 } from "react";
 import { daysBetween } from "@preflight/shared/dates";
 import { flightSeed, generateFlight, normalizePrefs } from "@preflight/shared/fakeFlight";
-import { getForecastStatus, summarizeFlight } from "@preflight/shared/forecast";
+import { getForecastStatus, previewDaysUntil, summarizeFlight } from "@preflight/shared/forecast";
 import { hashId } from "@preflight/shared/random";
 import { VARIANT_SECTIONS, sectionMeta } from "@preflight/shared/sections";
 import type {
@@ -33,6 +33,7 @@ import type {
 import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { SectionCard } from "@/components/ui/SectionCard";
+import { cn } from "@/lib/cn";
 import { useTodayISO } from "@/lib/hooks";
 import type { Tone } from "@/lib/theme";
 import { DashboardTracker, MAX_EXPLORED_FLIGHTS, TrackerContext } from "@/lib/tracking";
@@ -118,7 +119,8 @@ function exploredFor(flight: Flight, today: string, addedVia: AddedVia, prefs?: 
     id: flight.id,
     input: { ...flight.input },
     prefs: normalizePrefs(flight.prefs ?? prefs),
-    summary: summarizeFlight(flight, daysBetween(today, flight.input.date)),
+    // The real distance, and the day-before horizon the briefing is shown at.
+    summary: summarizeFlight(flight, daysBetween(today, flight.input.date), previewDaysUntil(daysBetween(today, flight.input.date))),
     addedVia,
     addedAtMs: 0,
   };
@@ -221,11 +223,14 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
   const shown = exploring ? (explored[activeIndex]?.flight ?? flight) : flight;
   const openIds = openByFlight[activeId] ?? NO_SECTIONS;
 
+  // The countdown stays true; every section describes the day before the flight, or the day
+  // itself for a flight today (docs/FEASIBILITY.md).
   const daysUntil = daysBetween(today, shown.input.date);
+  const briefingDays = previewDaysUntil(daysUntil);
   const history = shown.turbulence.history;
   const ctx = useMemo<SectionContext>(
-    () => ({ daysUntil, forecast: getForecastStatus(daysUntil, history), variant }),
-    [daysUntil, history, variant],
+    () => ({ daysUntil: briefingDays, forecast: getForecastStatus(briefingDays, history), variant, preview: true }),
+    [briefingDays, history, variant],
   );
   useEffect(() => {
     checkpointRef.current = onCheckpoint;
@@ -457,6 +462,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
           <h1 tabIndex={-1} data-focus-start className="sr-only outline-none">
             {explore && activeIndex > 0 ? "Flight briefing" : "Your flight briefing"}
           </h1>
+          <PreviewBanner today={briefingDays === 0} className="-mt-2 mb-3 animate-fade-up" />
           {explore ? (
             <>
               <FlightStrip
@@ -465,7 +471,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
                 onSelect={explore.switchTo}
                 onAdd={explore.openWhatIf}
                 onCompare={explore.compare}
-                className="-mt-2 mb-3 animate-fade-up"
+                className="mb-3 animate-fade-up"
               />
               <p role="status" className="sr-only">
                 {announcement}
@@ -476,7 +482,9 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
             <DashboardHeader
               flight={shown}
               daysUntil={daysUntil}
+              briefingDaysUntil={briefingDays}
               label={explore ? exploreLabel(activeIndex) : undefined}
+              example
               className="animate-fade-up"
             />
             <SummaryCard flight={shown} ctx={ctx} className="mt-4 animate-fade-up [animation-delay:60ms]" />
@@ -544,6 +552,24 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
   );
 }
 
+/** Identical in A and B: the study shows the briefing as it will look the day before the flight. */
+function PreviewBanner({ today, className }: { today: boolean; className?: string }) {
+  return (
+    <p
+      className={cn(
+        "flex items-start gap-2 rounded-2xl bg-surface/70 px-3.5 py-2.5 text-[13px] leading-snug text-ink-700 ring-1 ring-inset ring-line",
+        className,
+      )}
+    >
+      <CalendarClock aria-hidden className="mt-px size-4 shrink-0 text-dusk-600" />
+      <span>
+        <span className="font-semibold text-ink-900">Preview</span> · This is how your briefing will look{" "}
+        {today ? "on the day of your flight." : "the day before your flight."}
+      </span>
+    </p>
+  );
+}
+
 /** One broken section body must not take the whole dashboard (and its tracking) down. */
 class SectionBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -566,6 +592,7 @@ export function DashboardSkeleton({ variant }: { variant: Variant }) {
   return (
     <Screen footer={<div aria-hidden className="h-14 rounded-full bg-ink-300/40" />}>
       <div role="status" aria-label="Preparing your briefing" className="animate-pulse">
+        <div className="mb-3 h-[42px] rounded-2xl bg-surface/70 ring-1 ring-inset ring-line" />
         <div className="h-[318px] rounded-3xl bg-night-900/90" />
         <div className="mt-4 rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80">
           <div className="flex items-center gap-4">

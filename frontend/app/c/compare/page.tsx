@@ -5,7 +5,7 @@ import { CompareSkeleton } from "@/components/c/compare/CompareSkeleton";
 
 export const metadata: Metadata = {
   title: "Flight comparison",
-  description: "Two or three flights side by side: smoothness, turbulence timelines, schedule, aircraft, airline, crew, weather and an illustrative fare.",
+  description: "Two or three flights side by side: schedule, aircraft, airline, who flies it, weather, smoothness close to departure and an illustrative fare.",
 };
 
 /**

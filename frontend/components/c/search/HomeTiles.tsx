@@ -1,24 +1,25 @@
-import { CloudSun, Gauge, Info, UsersRound } from "lucide-react";
+import { CalendarClock, CloudSun, Gauge, Info, UsersRound } from "lucide-react";
 import type { ReactNode } from "react";
+import { TURBULENCE_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { cn } from "@/lib/cn";
 import { TONE_CLASSES, type Tone } from "@/lib/theme";
 
 const TILES: ReadonlyArray<{ title: string; text: string; icon: ReactNode; tone: Tone }> = [
   {
     title: "Smoothness score & turbulence timeline",
-    text: "A score out of 100 for every flight, and a timeline of where light bumps are expected between takeoff and landing.",
+    text: `A score out of 100 for each flight and a timeline of where light bumps are expected, from the turbulence forecast that comes out ${TURBULENCE_FORECAST_DAYS} days before departure.`,
     icon: <Gauge />,
     tone: "calm",
   },
   {
-    title: "Crew & aircraft",
-    text: "Who is flying — the captain’s and first officer’s hours — and the plane itself: model, age and seat layout.",
+    title: "Who flies it & the aircraft",
+    text: "How many pilots are on board and the rules every airline pilot meets, plus the plane itself: the scheduled model, its seat layout and the airline’s fleet age.",
     icon: <UsersRound />,
     tone: "dusk",
   },
   {
     title: "Airline & weather",
-    text: "How often the airline arrives on time, cabin comfort, and the expected weather at both ends of the trip.",
+    text: "How often the airline arrived on time on the route over the last 12 months, cabin comfort, and the weather forecast at both ends from about a week before.",
     icon: <CloudSun />,
     tone: "breeze",
   },
@@ -33,6 +34,13 @@ export function HomeTiles() {
           What you can compare
         </h2>
         <p className="mt-1 text-sm text-ink-500">Every result carries the same pre-flight information, so two flights line up fact by fact.</p>
+        <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-ink-700">
+          <CalendarClock aria-hidden className="mt-0.5 size-4 shrink-0 text-breeze-700" />
+          <span>
+            Forecasts appear as the date gets closer — turbulence {TURBULENCE_FORECAST_DAYS} days before departure, weather
+            about a week before. Further out, you’ll see when each one comes out.
+          </span>
+        </p>
         <ul className="mt-4 grid gap-3 sm:grid-cols-3 sm:gap-4">
           {TILES.map((tile) => {
             const tone = TONE_CLASSES[tile.tone];

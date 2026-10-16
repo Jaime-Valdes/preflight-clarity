@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { TURBULENCE_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { CompareTray } from "@/components/c/shell/CompareTray";
 import { Footer } from "@/components/c/shell/Footer";
 import { Header } from "@/components/c/shell/Header";
 
-const DESCRIPTION =
-  "Compare nonstop flights side by side with the pre-flight picture in hand: smoothness forecast, turbulence timeline, crew, aircraft, airline and weather. A prototype — all data is illustrative.";
+const DESCRIPTION = `Compare nonstop flights side by side with the pre-flight picture in hand: times and fares, aircraft, airline and who flies it, plus the turbulence forecast from ${TURBULENCE_FORECAST_DAYS} days before departure and the weather from about a week before. A prototype — all data is illustrative.`;
 
 export const metadata: Metadata = {
   title: { default: "Compare flights", template: "%s · Pre-Flight Clarity" },

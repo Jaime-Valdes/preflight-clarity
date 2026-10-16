@@ -54,11 +54,20 @@ import {
   getAirline,
   makeFlightNumber,
   marketOf,
+  nonstopCarriers,
   regionOf,
   toAirline,
   type AirlineProfile,
 } from "./airlines";
-import { buildAircraft, chooseAircraftModel, columnGroupsFor, getAircraftModel, type AircraftModel } from "./aircraft";
+import {
+  buildAircraft,
+  cabinConfigFor,
+  chooseAircraftModel,
+  columnGroupsFor,
+  getAircraftModel,
+  type AircraftModel,
+  type CabinConfig,
+} from "./aircraft";
 import { addDays, daysBetween, formatOffset, isISODate, minutesToTime, monthName, parseISODate, timeToMinutes } from "./dates";
 
 // ── Input ───────────────────────────────────────────────────────────────────
@@ -737,14 +746,15 @@ function buildWeather(rng: Rng, airport: Airport, moment: "departure" | "arrival
       : "minor";
 
   const departure = moment === "departure";
+  // Worded for any reader ("the departure", never "your flight"): version C shows these for flights the reader isn't on.
   const notes: Record<WeatherCondition, string> = {
     clear: departure
       ? windKts < 10 ? "Light winds — ideal for takeoff." : "Clear skies with a steady breeze — a smooth, routine takeoff."
-      : "Clear skies for your arrival — a straightforward approach.",
+      : "Clear skies for the arrival — a straightforward approach.",
     mostly_clear: departure
       ? windKts < 10 ? "Light winds and mostly clear skies — ideal for takeoff." : "Mostly clear with a steady breeze — a routine takeoff."
-      : "Mostly clear skies for your arrival — a straightforward approach.",
-    partly_cloudy: departure ? "A few clouds — no effect on your departure." : "A few clouds — no effect on your arrival.",
+      : "Mostly clear skies for the arrival — a straightforward approach.",
+    partly_cloudy: departure ? "A few clouds — no effect on the departure." : "A few clouds — no effect on the arrival.",
     cloudy: departure
       ? "An overcast layer — a few light bumps are possible while climbing through it, with clear air above."
       : "An overcast layer — a few light bumps are possible on the way down through it.",
@@ -1260,15 +1270,21 @@ function buildTurbulence(
     return { phase: b.phase, startMin: b.startMin, endMin: b.endMin, intensity, note: phaseNote(b.phase, intensity, windows, wx, airborneMin, cruiseAltitudeFt, noteRng) };
   });
 
-  const windows: BumpWindow[] = drafts.map((d) => ({
-    phase: d.phase,
-    startMin: d.startMin,
-    durationMin: d.durationMin,
-    intensity: d.intensity,
-    ...windowLabel(d, airborneMin),
-    cause: d.cause.text,
-    seatbeltSign: d.intensity === "moderate" ? true : rng.chance(0.5),
-  }));
+  const windows: BumpWindow[] = drafts.map((d) => {
+    // Whether the sign goes on is the crew's call on the day; what can be said ahead is that a
+    // moderate stretch almost always has it on. (The draw that once decided light stretches is
+    // kept, so the rest of the stream — the score below — stays where it was.)
+    if (d.intensity === "light") rng.next();
+    return {
+      phase: d.phase,
+      startMin: d.startMin,
+      durationMin: d.durationMin,
+      intensity: d.intensity,
+      ...windowLabel(d, airborneMin),
+      cause: d.cause.text,
+      seatbeltSign: d.intensity === "moderate",
+    };
+  });
 
   const maxIntensity: Intensity = drafts.some((d) => d.intensity === "moderate") ? "moderate" : drafts.length > 0 ? "light" : "none";
   const smoothMinutesPct = Math.round((100 * points.filter((p) => p.level < 0.5).length) / points.length);
@@ -1346,6 +1362,11 @@ const PITCH_BY_AIRLINE: Record<string, number> = {
   EK: 32, QR: 31, EY: 31, SQ: 32, CX: 31, NH: 31, JL: 31, KE: 32, BR: 32, TG: 31, QF: 31, NZ: 31,
 };
 
+/**
+ * `rng` draws the airline's on-time rate on this route: seeded by route and airline
+ * (`route-stats|ROUTE|CODE`), so every flight of that airline on the route — in the
+ * study and in version C — shows the same "last 12 months" figure.
+ */
 function buildAirlineStats(rng: Rng, airline: AirlineProfile, model: AircraftModel): AirlineStats {
   // Network-wide numbers are stable per airline across every flight.
   const net = createRng(`airline-stats|${airline.code}`);
@@ -1354,15 +1375,16 @@ function buildAirlineStats(rng: Rng, airline: AirlineProfile, model: AircraftMod
   const crewRating = net.int(45, 49) / 10;
   const pitchBase = PITCH_BY_AIRLINE[airline.code] ?? (airline.region === "EU" || airline.region === "SA" ? 30 : 31);
   const seatPitchIn = clamp(pitchBase + (model.bodyType === "wide" ? 1 : 0), 30, 33);
-  const seatWidthIn = model.seatWidthIn;
+  const seatWidthIn = cabinConfigFor(airline.code, model).seatWidthIn;
   const cabinNoiseDb = model.cabinNoiseDb;
-  const cabinNoise: AirlineStats["cabinNoise"] = cabinNoiseDb < 79 ? "Very quiet" : cabinNoiseDb < 82 ? "Quiet" : "Average";
+  // Relative to other airliners (cruise levels cluster around 80–85 dB(A)): newer designs are quieter.
+  const cabinNoise: AirlineStats["cabinNoise"] = cabinNoiseDb < 80 ? "Very quiet" : cabinNoiseDb < 83 ? "Quiet" : "Average";
   const comfortScore = clamp(
     round1(
       6.4 +
         (seatPitchIn - 30) * 0.45 +
         (seatWidthIn - 17) * 0.5 +
-        (cabinNoiseDb < 79 ? 0.5 : cabinNoiseDb < 82 ? 0.25 : 0) +
+        (cabinNoise === "Very quiet" ? 0.5 : cabinNoise === "Quiet" ? 0.25 : 0) +
         airline.amenities.length * 0.1 +
         net.float(-0.2, 0.2),
     ),
@@ -1400,30 +1422,21 @@ function seatKinds(groups: string[][]): Map<string, SeatKind> {
   return kinds;
 }
 
-function buildSeatMap(rng: Rng, model: AircraftModel): SeatMap {
-  const columnGroups = columnGroupsFor(model.seatLayout);
+/**
+ * The seat map: geometry (layout, rows, exits, wing) is the airline's cabin
+ * configuration for the model (cabinConfigFor), the same on every flight; `rng`
+ * draws only what changes per flight — which seats are unavailable right now —
+ * and the recommendations follow from that and the wing rows.
+ */
+function buildSeatMap(rng: Rng, cabin: CabinConfig): SeatMap {
+  const columnGroups = columnGroupsFor(cabin.seatLayout);
   const letters = columnGroups.flat();
   const kinds = seatKinds(columnGroups);
-  const narrow = model.bodyType === "narrow";
-  const rowCount = narrow ? rng.int(18, 26) : rng.int(20, 28);
-  const firstRow = narrow ? rng.int(7, 12) : rng.int(24, 32);
-  const skip13 = rng.chance(0.5);
-
-  const rowNumbers: number[] = [];
-  for (let r = firstRow; rowNumbers.length < rowCount; r++) {
-    if (skip13 && r === 13) continue;
-    rowNumbers.push(r);
-  }
-  const i0 = Math.round(rowCount * 0.35);
-  const i1 = Math.round(rowCount * 0.6);
-  const exitRows = new Set<number>();
-  if (narrow) {
-    exitRows.add(rowNumbers[i0 + 1]);
-    if (rng.chance(0.7)) exitRows.add(rowNumbers[i0 + 2]);
-  } else {
-    exitRows.add(rowNumbers[i0]);
-    if (rng.chance(0.5)) exitRows.add(rowNumbers[i1]);
-  }
+  const rowNumbers = cabin.rowNumbers;
+  const rowCount = rowNumbers.length;
+  const i0 = cabin.wingFirstIndex;
+  const i1 = cabin.wingLastIndex;
+  const exitRows = new Set(cabin.exitRows);
   const rows: SeatRow[] = rowNumbers.map((row, i) => ({
     row,
     zone: i < i0 ? "smooth" : i <= i1 ? "smoothest" : "more_motion",
@@ -1485,25 +1498,32 @@ function buildSeatMap(rng: Rng, model: AircraftModel): SeatMap {
 
 // ── Sounds and sensations ───────────────────────────────────────────────────
 
-function buildSounds(
-  rng: Rng,
-  model: AircraftModel,
-  bounds: PhaseForecast[],
-  airborneMin: number,
-  hasBumps: boolean,
-  wetArrival: boolean,
-): SoundCue[] {
-  const climbEnd = bounds[1].endMin;
-  const descentStart = bounds[3].startMin;
+/**
+ * The normal sounds and sensations, in order. Timings are typical for the route
+ * (climb and descent lengths), rounded to 5 minutes — never a precise prediction.
+ * Cues that depend on the plane name its type ("On Airbus A320-family jets…"), so
+ * they stay true to the reader if the airline swaps the aircraft; nothing here
+ * depends on this flight's weather or turbulence forecast, which only exist close
+ * to departure. Descent cues never come before the descent starts, however short
+ * the hop.
+ */
+function buildSounds(rng: Rng, model: AircraftModel, bounds: PhaseForecast[], airborneMin: number): SoundCue[] {
   const wide = model.bodyType === "wide";
   const a320Family = model.key === "A320neo" || model.key === "A321neo";
   const a220 = model.key === "A220-300";
-  const beforeLanding = (m: number) => `About ${formatOffset(airborneMin - m)} before landing`;
+  // Typical moments on the 5-minute grid: the cruise chime a couple of minutes after the climb, the descent start.
+  const cruiseAt = Math.max(5, round5(bounds[1].endMin + 2));
+  const descentBefore = Math.max(5, Math.min(round5(airborneMin - bounds[3].startMin), round5(airborneMin) - 5));
+  const beforeLanding = (min: number) => `About ${formatOffset(min)} before landing`;
+  /** Minutes before landing for a cue that usually comes `typical` minutes out: at least 5 minutes into the descent. */
+  const inDescent = (typical: number) => Math.max(5, Math.min(typical, descentBefore - 5));
+  const speedbrakeBefore = inDescent(15);
+  const flapsBefore = inDescent(10);
 
   const takeoffRoar = wide
-    ? "A deep, powerful roar as the big engines reach takeoff power, and a firm push back into your seat. The runway rumbles underneath."
+    ? "On wide-body jets, a deep, powerful roar as the big engines reach takeoff power, and a firm push back into your seat. The runway rumbles underneath."
     : a220
-      ? "A rising, slightly higher-pitched hum as the engines reach takeoff power, and a firm push back into your seat. The runway rumbles underneath."
+      ? "On the Airbus A220, a rising, slightly higher-pitched hum as the engines reach takeoff power, and a firm push back into your seat. The runway rumbles underneath."
       : "A loud, steady roar as the engines reach takeoff power, and a firm push back into your seat. The runway rumbles underneath.";
 
   const core: SoundCue[] = [
@@ -1550,11 +1570,11 @@ function buildSounds(
     {
       id: "climb-thrust",
       moment: "climb",
-      when: "About 2 min after takeoff",
+      when: "A minute or two after takeoff",
       minute: 2,
       sense: "both",
       title: "The engines get quieter",
-      detail: "About two minutes after takeoff the engine noise drops, and it can feel as if the plane levels off a little. You are still climbing.",
+      detail: "A minute or two after takeoff the engine noise drops, and it can feel as if the plane levels off a little. You are still climbing.",
       why: "Pilots reduce power from the takeoff setting to the climb setting — a planned step on every flight. The plane keeps climbing, just more quietly.",
     },
     {
@@ -1580,8 +1600,8 @@ function buildSounds(
     {
       id: "cruise-chime",
       moment: "cruise",
-      when: `About ${formatOffset(climbEnd + 2)} after takeoff`,
-      minute: climbEnd + 2,
+      when: `About ${formatOffset(cruiseAt)} after takeoff`,
+      minute: cruiseAt,
       sense: "hear",
       title: "A chime, and the hum settles",
       detail: "A chime as the seatbelt sign goes off, then a steady, even hum for the rest of the cruise.",
@@ -1590,8 +1610,8 @@ function buildSounds(
     {
       id: "descent-start",
       moment: "descent",
-      when: beforeLanding(descentStart),
-      minute: descentStart,
+      when: beforeLanding(descentBefore),
+      minute: airborneMin - descentBefore,
       sense: "both",
       title: "The engines go quiet and the nose tips down",
       detail: "Engine noise drops and you may feel a slight downhill tilt.",
@@ -1600,7 +1620,7 @@ function buildSounds(
     {
       id: "approach-gear",
       moment: "descent",
-      when: beforeLanding(airborneMin - 4),
+      when: "A few minutes before landing",
       minute: airborneMin - 4,
       sense: "both",
       title: "A thud and more wind noise",
@@ -1615,9 +1635,7 @@ function buildSounds(
       sense: "feel",
       title: "A firm touchdown",
       detail: "A solid bump as the main wheels touch, then the nose settles.",
-      why: wetArrival
-        ? "The runway may be wet, so a firm landing is deliberate: it plants the wheels so the brakes grip. It's the sign of a well-controlled landing."
-        : "A firm landing is often deliberate: it plants the wheels so the brakes grip, especially on shorter or wet runways. It's the sign of a well-controlled landing.",
+      why: "A firm landing is often deliberate: it plants the wheels so the brakes grip, especially on shorter or wet runways. It's the sign of a well-controlled landing.",
     },
     {
       id: "landing-reverse",
@@ -1640,22 +1658,21 @@ function buildSounds(
       minute: -9,
       sense: "hear",
       title: "A barking dog sound",
-      detail: "A rhythmic 'woof-woof' from under the floor during taxi, and again after landing.",
-      why: "A pump that balances pressure between the plane's two hydraulic systems. It's a well-known Airbus sound and completely normal.",
+      detail: "On Airbus A320-family jets you may hear a rhythmic 'woof-woof' from under the floor during taxi, and again after landing.",
+      why: "A pump that balances pressure between the plane's two hydraulic systems. It's a well-known A320-family sound and completely normal.",
     });
   }
-  if (hasBumps) {
-    optional.push({
-      id: "cruise-bumps",
-      moment: "cruise",
-      when: "If bumps come",
-      minute: null,
-      sense: "feel",
-      title: "Light bumps",
-      detail: "A few nudges and gentle sways, like a car on a country road.",
-      why: "Light turbulence is the plane riding small ripples in the air. The wings are built to flex with them, and the autopilot keeps the plane steady.",
-    });
-  }
+  // Light bumps can come on any flight; the cue says what they feel like, not whether this flight will have them.
+  optional.push({
+    id: "cruise-bumps",
+    moment: "cruise",
+    when: "If bumps come",
+    minute: null,
+    sense: "feel",
+    title: "Light bumps",
+    detail: "A few nudges and gentle sways, like a car on a country road.",
+    why: "Light turbulence is the plane riding small ripples in the air. The wings are built to flex with them, and the autopilot keeps the plane steady.",
+  });
   const pool: SoundCue[] = [
     {
       id: "boarding-air",
@@ -1680,8 +1697,8 @@ function buildSounds(
     {
       id: "descent-speedbrake",
       moment: "descent",
-      when: beforeLanding(airborneMin - 15),
-      minute: airborneMin - 15,
+      when: beforeLanding(speedbrakeBefore),
+      minute: airborneMin - speedbrakeBefore,
       sense: "both",
       title: "A low rumble and a slight shudder",
       detail: "A rumble from the wings for a few seconds, with a mild vibration.",
@@ -1690,8 +1707,8 @@ function buildSounds(
     {
       id: "approach-flaps",
       moment: "descent",
-      when: beforeLanding(airborneMin - 8),
-      minute: airborneMin - 8,
+      when: beforeLanding(flapsBefore),
+      minute: airborneMin - flapsBefore,
       sense: "hear",
       title: "Whirring from the wings",
       detail: "A series of whirs as the plane slows, and the wings look bigger from a window seat.",
@@ -1700,8 +1717,8 @@ function buildSounds(
     {
       id: "descent-ears",
       moment: "descent",
-      when: beforeLanding(airborneMin - 20),
-      minute: airborneMin - 20,
+      when: "During the descent",
+      minute: airborneMin - descentBefore + 1,
       sense: "feel",
       title: "Ears popping again",
       detail: "Pressure in your ears as the cabin adjusts for landing.",
@@ -1710,7 +1727,7 @@ function buildSounds(
     {
       id: "approach-power",
       moment: "descent",
-      when: beforeLanding(airborneMin - 3),
+      when: "In the last few minutes",
       minute: airborneMin - 3,
       sense: "hear",
       title: "Small engine power changes",
@@ -1722,18 +1739,14 @@ function buildSounds(
   const extras = rng.shuffle(pool).slice(0, extraCount);
 
   const all = [...core, ...optional, ...extras];
-  const order = (c: SoundCue) => (c.minute === null ? climbEnd + 3 : c.minute);
+  const order = (c: SoundCue) => (c.minute === null ? cruiseAt + 1 : c.minute);
   all.sort((a, b) => order(a) - order(b) || a.id.localeCompare(b.id));
   return all;
 }
 
-/** The sound cues for a built flight: its phases, its bumps and its arrival weather. */
-function soundsFor(rng: Rng, model: AircraftModel, turbulence: TurbulenceBuild, airborneMin: number, weather: FlightWeather): SoundCue[] {
-  const wetArrival =
-    weather.destination.condition === "light_rain" ||
-    weather.destination.condition === "showers" ||
-    weather.destination.condition === "light_snow";
-  return buildSounds(rng, model, turbulence.forecast.phases, airborneMin, turbulence.drafts.length > 0, wetArrival);
+/** The sound cues for a built flight: the plane and the typical length of its climb and descent. */
+function soundsFor(rng: Rng, model: AircraftModel, turbulence: TurbulenceBuild, airborneMin: number): SoundCue[] {
+  return buildSounds(rng, model, turbulence.forecast.phases, airborneMin);
 }
 
 /** The airline's fleet, limited to narrow-bodies at LGA / DCA (every carrier serving them has some). */
@@ -1752,6 +1765,26 @@ function wideModelsFor(airline: AirlineProfile, ctx: RouteContext): AircraftMode
   const longest = Math.max(...wides.map((m) => m.rangeMi));
   return wides.filter((m) => m.rangeMi === longest);
 }
+
+/**
+ * About how many nonstop flights a day the route sees — the market sizes version C's timetables
+ * draw from (search.ts: busy 8–14 with hub carriers at both ends, ordinary 4–8, long-haul 2–5), by
+ * who flies it. 0 when nobody flies it nonstop. A route fact, the same on every date.
+ */
+function typicalDailyNonstops(ctx: RouteContext): number {
+  const carriers = nonstopCarriers(ctx.origin, ctx.destination, ctx.narrowOnly);
+  if (carriers.length === 0) return 0;
+  const needsWide = !ctx.narrowOnly && (ctx.oceanic || ctx.distanceMi >= 2800);
+  const wide = needsWide ? carriers.filter(([a]) => wideModelsFor(a, ctx).length > 0) : [];
+  const flying = wide.length > 0 ? wide : carriers;
+  const hubAt = (code: string) => flying.some(([a]) => a.hubs.includes(code));
+  const hubs = flying.filter(([a]) => a.hubs.includes(ctx.origin.code) || a.hubs.includes(ctx.destination.code)).length;
+  if (ctx.oceanic || ctx.distanceMi > 3000 || (!ctx.domestic && ctx.distanceMi > 2600)) return clamp(hubs + 0.5, 2, 5);
+  return hubAt(ctx.origin.code) && hubAt(ctx.destination.code) ? clamp(7 + 2 * hubs, 8, 14) : clamp(4 + hubs, 4, 8);
+}
+
+/** Years of turbulence records a route history covers (2022–2025). */
+const HISTORY_YEARS = 4;
 
 // ── Assemble ────────────────────────────────────────────────────────────────
 
@@ -1846,12 +1879,16 @@ function routeMonthFor(norm: FlightInput, ctx: RouteContext): RouteMonth {
   const typicalBumpyPhase: FlightPhase = strongest
     ? strongest.phase
     : rng.weighted<FlightPhase>(typicalAirborne(ctx) > 180 ? [["cruise", 5], ["descent", 3], ["climb", 2]] : [["descent", 5], ["climb", 4], ["cruise", 1]]);
+  // The flights the history covers: the route's daily nonstops over this month of each year of records
+  // (a route nobody flies nonstop — the study's example flight — counts flights like it, about two a day).
+  const daysInMonth = new Date(Date.UTC(2025, ctx.month, 0)).getUTCDate();
+  const covered = Math.max(2, typicalDailyNonstops(ctx)) * daysInMonth * HISTORY_YEARS;
   const value: RouteMonth = {
     bestSlot,
     history: {
       month,
       smoothPct: clamp(Math.round(72 + ((anchor.smoothness.score - 58) * 24) / 39 + rng.int(-3, 3)), 72, 96),
-      flightsAnalyzed: roundTo(rng.int(400, 3200), 10),
+      flightsAnalyzed: roundTo(covered * rng.float(0.85, 1), 10),
       typicalBumpyPhase,
       bestDepartureWindow: bestWindowText[bestSlot],
     },
@@ -1899,9 +1936,11 @@ function buildCore(norm: FlightInput, prefs: FlightPrefs): Core {
   const turbulence = sharedAir
     ? buildTurbulence((reference ? createRng(flightSeed(norm)) : root).fork("turbulence"), ctx, timing, weather, model.cruiseAltitudeFt, { ...NEUTRAL_TOD, wide }, reference)
     : buildTurbulence(root.fork("turbulence"), ctx, timing, weather, model.cruiseAltitudeFt, todModelFor(ctx, departWindowOf(timing.departTime), routeMonth.bestSlot, wide));
-  const airlineStats = buildAirlineStats(root.fork("airline-stats"), airline, model);
-  const seatMap = buildSeatMap(root.fork("seats"), model);
-  const sounds = soundsFor(root.fork("sounds"), model, turbulence, timing.airborneMin, weather);
+  // The on-time rate on this route is one per airline (the same one version C shows).
+  const flown = flownRoute(norm, ctx);
+  const airlineStats = buildAirlineStats(createRng(`route-stats|${flown.origin}|${flown.destination}|${airline.code}`), airline, model);
+  const seatMap = buildSeatMap(root.fork("seats"), cabinConfigFor(airline.code, model));
+  const sounds = soundsFor(root.fork("sounds"), model, turbulence, timing.airborneMin);
 
   return {
     flight: assembleFlight(hashId(seed), norm, {
@@ -2162,7 +2201,8 @@ export function generateFlight(input: FlightInput, prefs?: FlightPrefs): Flight 
 
 // ── Scheduled flights (version C) ───────────────────────────────────────────
 //
-// Version C (docs/VERSION_C.md) lists every nonstop flight on a route and day.
+// Version C (docs/VERSION_C.md) lists every nonstop flight on a route and day —
+// none where no airline would plausibly fly nonstop (RouteDay.carriers is empty).
 // The timetable is search.ts's; these two entry points give it the route's
 // facts and build each scheduled flight from the same parts as generateFlight,
 // so flights shown side by side never contradict each other: one airborne time
@@ -2170,10 +2210,10 @@ export function generateFlight(input: FlightInput, prefs?: FlightPrefs): Flight 
 // date and hour, and one bump draw per air block, which a wide-body feels a
 // little less (never more). Nothing here changes what generateFlight returns.
 
-/** A carrier that plausibly flies the route (candidateAirlines), with what it can fly there. */
+/** A carrier that would plausibly fly the route nonstop (nonstopCarriers), with what it can fly there. */
 export interface RouteCarrier {
   airline: AirlineProfile;
-  /** candidateAirlines' selection weight. */
+  /** Selection weight (candidateAirlines' first tier: hubs weighted up). */
   weight: number;
   /** A hub at either end of the route. */
   hub: boolean;
@@ -2206,12 +2246,31 @@ export interface RouteDay {
   typicalAirborneMin: number;
   /** The day's airborne time: the same for every flight that day, and for generateFlight's reference flight on the route as flown. */
   airborneMin: number;
+  /**
+   * The carriers that would plausibly fly the route nonstop (nonstopCarriers): empty when nobody
+   * would — a typed (made-up) airport, a hop within one metro area, a market too small for the
+   * distance, or beyond every catalogued aircraft — and version C then shows no flights.
+   */
   carriers: readonly RouteCarrier[];
   /**
    * Arrival of a departure that day at local `departTime`, `blockMin` gate to gate, and whether it
    * lands at a sensible hour: never inside a curfew, nor in the dead of night except at round-the-clock hubs.
    */
   arrival(departTime: string, blockMin: number): { arriveTime: string; arriveDayOffset: number; acceptable: boolean };
+}
+
+/** Any valid date: the airports as flown and who flies between them don't depend on it. */
+const ROUTE_FACTS_DATE = "2026-01-15";
+
+/**
+ * Who would plausibly fly the route nonstop (nonstopCarriers), between the airports as flown: a long
+ * LaGuardia trip is the JFK route, and typed text that matches no catalogue airport has nobody. A fact
+ * about the route, the same on every date — RouteDay.carriers is this list with what each can fly
+ * there. The endpoints are taken as normalizeInput takes them (codes, "City (ABC)", city names).
+ */
+export function routeNonstopCarriers(origin: string, destination: string): Array<[AirlineProfile, number]> {
+  const ctx = buildRoute(normalizeInput({ origin, destination, date: ROUTE_FACTS_DATE }));
+  return nonstopCarriers(ctx.origin, ctx.destination, ctx.narrowOnly);
 }
 
 const ROUTE_DAYS = new Map<string, RouteDay>();
@@ -2242,7 +2301,7 @@ export function routeDay(input: FlightInput): RouteDay {
     typicalAirborneMin: Math.round(typicalAirborne(ctx)),
     // The day's winds: the first draw of the route's reference timing stream (see buildTiming).
     airborneMin: airborneFor(createRng(`${route}|${norm.date}`).fork("timing"), ctx),
-    carriers: candidateAirlines(ctx.origin, ctx.destination, ctx.distanceMi, ctx.oceanic).map(([airline, weight]) => ({
+    carriers: nonstopCarriers(ctx.origin, ctx.destination, ctx.narrowOnly).map(([airline, weight]) => ({
       airline,
       weight,
       hub: airline.hubs.includes(ctx.origin.code) || airline.hubs.includes(ctx.destination.code),
@@ -2317,8 +2376,8 @@ export function buildScheduledFlight(day: RouteDay, spec: ScheduledFlightSpec): 
 
   // The on-time rate on this route is one per airline, whichever of its flights and days.
   const airlineStats = buildAirlineStats(createRng(`route-stats|${day.route}|${airline.code}`), airline, model);
-  const seatMap = buildSeatMap(root.fork("seats"), model);
-  const sounds = soundsFor(root.fork("sounds"), model, turbulence, timing.airborneMin, weather);
+  const seatMap = buildSeatMap(root.fork("seats"), cabinConfigFor(airline.code, model));
+  const sounds = soundsFor(root.fork("sounds"), model, turbulence, timing.airborneMin);
 
   const flight = assembleFlight(spec.id, norm, {
     ctx,

@@ -1,6 +1,9 @@
 /*
  * Checks the fake-flight generator: determinism, value ranges, internal
- * consistency and forbidden words. Run from the repo root:
+ * consistency, forbidden words, and the real-world feasibility rules
+ * (docs/FEASIBILITY.md): crew from the rules only (no pilot profiles anywhere),
+ * fleet ages instead of maintenance records, seat maps per airline and model,
+ * sound timings on a 5-minute grid. Run from the repo root:
  *
  *   npx tsx shared/scripts/check-fake-flight.ts        (also: npm run test -w shared)
  *
@@ -8,10 +11,10 @@
  */
 import { departWindowOf, flightSeed, generateFlight, normalizeInput, normalizePrefs } from "../src/fakeFlight";
 import { AIRPORTS, getAirport, resolveAirport, searchAirports } from "../src/airports";
-import { candidateAirlines, isRetiredFlightNumber } from "../src/airlines";
-import { getAircraftModel } from "../src/aircraft";
+import { AIRLINES, candidateAirlines, getAirline, isRetiredFlightNumber } from "../src/airlines";
+import { AIRCRAFT_MODELS, cabinConfigFor, fleetAgesFor, getAircraftModel } from "../src/aircraft";
 import { addDays, timeToMinutes } from "../src/dates";
-import type { AlternativeFlight, DepartWindow, Flight, FlightInput, FlightPhase, FlightPrefs } from "../src/types";
+import type { AlternativeFlight, CrewInfo, DepartWindow, Flight, FlightInput, FlightPhase, FlightPrefs } from "../src/types";
 
 const INPUTS: FlightInput[] = [
   // Short and medium haul, North America
@@ -89,6 +92,79 @@ const PHASES: FlightPhase[] = ["takeoff", "climb", "cruise", "descent", "landing
 /** Alternative reasons that credit the time of day (only fair more than an hour apart). */
 const TIME_OF_DAY = /at its departure time|at its time|at that time|time of day|early in the day|after sunset|afternoon heating|heat-driven|day's warmth|breezier time/;
 
+// ── Feasibility rules (docs/FEASIBILITY.md) ─────────────────────────────────
+
+/**
+ * Fields of the old pilot profiles and airframe maintenance records: none may appear anywhere in a Flight
+ * ("name" is fine on airports and airlines; the crew object itself may only hold pilots / regime / regulator).
+ */
+const IMPOSSIBLE_KEYS = new Set([
+  "captain", "firstOfficer", "pilot", "initials", "rating", "ratingCount", "totalHours", "hoursOnType", "yearsFlying",
+  "timesOnRoute", "base", "background", "badges", "lastInspectionDaysAgo", "lastCheckType", "nextCheckDueDays", "maintenanceStatus",
+]);
+
+/** Text of the old pilot profiles: backgrounds and "passengers mention" badges (the removed names.ts), home bases, hours, ratings. */
+const PILOT_PROFILE_TEXT = [
+  "Air Force veteran", "Navy veteran", "Former flight instructor", "Check pilot", "Started flying gliders", "Former regional airline captain",
+  "Flew cargo before passengers", "Aerospace engineering degree", "Mentors new first officers", "Volunteer pilot", "Former airline simulator instructor",
+  "Grew up around a family flying club", "Former military pilot", "Joined through the airline's cadet program", "Flew regional turboprops",
+  "Aeronautical engineering degree", "Joined from a regional airline", "Former corporate jet pilot", "Aviation university graduate",
+  "Flew air ambulance", "Flew survey planes", "Airline cadet program graduate", "Instructs in the simulator",
+  "Smooth landings", "Clear announcements", "Calm voice", "Keeps you informed", "Friendly welcome", "Gentle turns", "Explains the bumps",
+  "On-time arrivals", "Steady in bumpy air", "Warm goodbye at the door",
+];
+const PILOT_PROFILE_PATTERN =
+  /\b(based in|passengers? mention|passenger ratings?|\d{1,3}(,\d{3})+ (flight )?hours|\d{3,} (flight )?hours|hours on (type|the)|years flying|times on this route)\b/i;
+/** A named pilot: "Captain Owen", "Capt. Murphy", "First Officer Jung" (case-sensitive, so "the captain will" passes). */
+const NAMED_PILOT = /\b(Capt\. [A-Z]|Captain [A-Z][a-z]|First Officer [A-Z][a-z])/;
+
+/** Model facts are verifiable comparisons: no superlatives, no promises about bumps. */
+const OVERCLAIM = /\b(quietest|safest|smoothest|most advanced|smooths? out|eliminat\w*|never|in the sky)\b/i;
+/** Copy that assumes the reader is on this flight (version C shows flights the reader isn't on). */
+const YOUR_FLIGHT = /\byour (flight|departure|arrival|pilots?|plane|aircraft)\b/i;
+
+const EASA_COUNTRIES = new Set([
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT",
+  "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "IS", "LI", "NO", "CH",
+]);
+const NATIONAL_REGULATORS: Record<string, string> = {
+  CA: "Transport Canada", AU: "CASA", NZ: "CAA New Zealand", SG: "CAAS", JP: "JCAB", AE: "GCAA", IN: "DGCA",
+};
+
+/** Independent restatement of the crew rule: relief pilots by scheduled block time, the rule set by the airline's country. */
+function expectedCrew(airlineCountry: string, blockMin: number): CrewInfo {
+  const pilots: CrewInfo["pilots"] = blockMin > 12.5 * 60 ? 4 : blockMin > 8.5 * 60 ? 3 : 2;
+  if (airlineCountry === "US") return { pilots, regime: "faa", regulator: "FAA" };
+  if (airlineCountry === "GB") return { pilots, regime: "easa", regulator: "UK CAA" };
+  if (EASA_COUNTRIES.has(airlineCountry)) return { pilots, regime: "easa", regulator: "EASA" };
+  return { pilots, regime: "icao", regulator: NATIONAL_REGULATORS[airlineCountry] ?? "the national aviation authority" };
+}
+
+/** Every key anywhere in a value, with its path. */
+function keysOf(value: unknown, path: string, out: Array<[string, string]>) {
+  if (Array.isArray(value)) value.forEach((v, i) => keysOf(v, `${path}[${i}]`, out));
+  else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out.push([`${path}.${k}`, k]);
+      keysOf(v, `${path}.${k}`, out);
+    }
+  }
+}
+
+const isOneDecimal = (x: number) => Math.abs(x * 10 - Math.round(x * 10)) < 1e-9;
+
+/** "About 25 min after takeoff" / "About 1h 5m before landing": every minute count in a timing is a multiple of 5. */
+function timingsOnGrid(when: string): boolean {
+  for (const m of when.matchAll(/(\d+)h (\d+)m\b/g)) if (Number(m[2]) % 5 !== 0) return false;
+  for (const m of when.matchAll(/(\d+) min\b/g)) if (Number(m[1]) % 5 !== 0) return false;
+  return true;
+}
+
+/** Facts that belong to an airline's fleet of a model (and year), not to one flight: the same on every flight that shares them. */
+const FLEET_FACTS = new Map<string, string>();
+const SEAT_GEOMETRY = new Map<string, string>();
+const OCCUPANCY_BY_CABIN = new Map<string, Set<string>>();
+
 let failures = 0;
 let warnings = 0;
 function check(cond: boolean, message: string) {
@@ -127,16 +203,35 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
   check(/^[A-Z]{2}|[A-Z0-9]{2} \d{1,4}$/.test(flight.flightNumber), `${tag}: flight number ${flight.flightNumber}`);
   check(flight.terminal.length > 0 && flight.gate.length > 0, `${tag}: terminal/gate`);
 
-  // Aircraft
+  // Aircraft: the assigned airframe within the airline's fleet of the model; no maintenance records.
   const ac = flight.aircraft;
+  const model = getAircraftModel(ac.model);
+  check(Boolean(model), `${tag}: unknown model ${ac.model}`);
   check(ac.ageYears >= 0.8 && ac.ageYears <= 36, `${tag}: aircraft age ${ac.ageYears}`);
   check(ac.deliveredYear >= ac.modelInServiceSince, `${tag}: delivered before model entered service`);
-  const ended = getAircraftModel(ac.model)?.productionEnded;
+  const ended = model?.productionEnded;
   check(ended === undefined || ac.deliveredYear <= ended, `${tag}: ${ac.model} delivered ${ac.deliveredYear} after production ended ${ended}`);
-  check(ac.lastInspectionDaysAgo >= 3 && ac.lastInspectionDaysAgo <= 28, `${tag}: inspection days`);
-  check(ac.nextCheckDueDays >= 20 && ac.nextCheckDueDays <= 60, `${tag}: next check`);
+  const [youngest, oldest] = ac.fleetAgeRange;
+  check(youngest >= 0.8 && youngest < oldest && oldest <= 36, `${tag}: fleet age range ${youngest}–${oldest}`);
+  check(youngest <= ac.ageYears && ac.ageYears <= oldest, `${tag}: airframe age ${ac.ageYears} outside the fleet's ${youngest}–${oldest}`);
+  check(youngest <= ac.fleetAvgAgeYears && ac.fleetAvgAgeYears <= oldest, `${tag}: fleet average ${ac.fleetAvgAgeYears} outside ${youngest}–${oldest}`);
+  check([ac.ageYears, ac.fleetAvgAgeYears, youngest, oldest].every(isOneDecimal), `${tag}: ages not to one decimal`);
+  const year = Number(flight.input.date.slice(0, 4));
+  if (model) {
+    const fleet = fleetAgesFor(flight.airline.code, model, year);
+    check(fleet.avg === ac.fleetAvgAgeYears && fleet.min === youngest && fleet.max === oldest, `${tag}: fleet ages are not the airline's (fleetAgesFor)`);
+    check(ended === undefined || youngest >= year - ended - 1, `${tag}: a ${ac.model} younger than the last one built`);
+  }
+  for (const key of ["lastInspectionDaysAgo", "lastCheckType", "nextCheckDueDays", "maintenanceStatus"]) check(!(key in ac), `${tag}: maintenance field ${key}`);
   check(!/MAX/i.test(ac.model), `${tag}: 737 MAX must not appear`);
   check(ac.safetyRecord.length >= 3, `${tag}: safety record lines`);
+  for (const line of ac.safetyRecord) {
+    const m = OVERCLAIM.exec(line);
+    check(!m, `${tag}: overclaiming model fact "${line}"`);
+    const layout = /\b\d-\d(?:-\d)?\b/.exec(line);
+    check(!layout || layout[0] === ac.seatLayout, `${tag}: model fact names a ${layout?.[0]} cabin, this one is ${ac.seatLayout}`);
+  }
+  check(ac.cabinNoiseDb >= 78 && ac.cabinNoiseDb <= 86, `${tag}: cabin noise ${ac.cabinNoiseDb} dB outside measured cruise levels`);
   if (flight.distanceMi >= 2800) check(ac.bodyType === "wide", `${tag}: long route on a narrow-body (${ac.model})`);
   check(!isRetiredFlightNumber(flight.flightNumber), `${tag}: retired flight number ${flight.flightNumber}`);
 
@@ -157,18 +252,11 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
   if (dest === "LHR") check(arriveHour >= 4.5 && arriveHour < 23.5, `${tag}: lands inside the Heathrow curfew at ${flight.arriveTime}`);
   if (!["DXB", "DOH", "AUH", "IST", "SIN", "KUL", "BKK"].includes(dest)) check(!(arriveHour >= 0.75 && arriveHour < 5.5), `${tag}: dead-of-night arrival ${flight.arriveTime}`);
 
-  // Crew
-  const { captain, firstOfficer } = flight.crew;
-  check(captain.totalHours >= 8000 && captain.totalHours <= 24000, `${tag}: captain hours`);
-  check(captain.hoursOnType <= captain.totalHours && captain.hoursOnType >= 1500, `${tag}: captain hours on type`);
-  check(captain.yearsFlying >= 12 && captain.yearsFlying <= 35, `${tag}: captain years`);
-  check(captain.rating >= 4.7 && captain.rating <= 5, `${tag}: captain rating ${captain.rating}`);
-  check(firstOfficer.totalHours >= 2500 && firstOfficer.totalHours <= 9000, `${tag}: FO hours`);
-  check(firstOfficer.hoursOnType <= firstOfficer.totalHours, `${tag}: FO hours on type`);
-  check(firstOfficer.rating >= 4.6 && firstOfficer.rating <= 4.9, `${tag}: FO rating`);
-  check(captain.name !== firstOfficer.name, `${tag}: crew share a name`);
-  check(captain.badges.length >= 2 && firstOfficer.badges.length >= 2, `${tag}: badges`);
-  check(captain.initials.length === 2, `${tag}: initials ${captain.initials}`);
+  // Crew: from the rules alone (pilots by scheduled block time, the rule set by the airline's country).
+  check(JSON.stringify(Object.keys(flight.crew).sort()) === '["pilots","regime","regulator"]', `${tag}: crew has fields beyond pilots/regime/regulator`);
+  const crew = expectedCrew(flight.airline.country, flight.blockMin);
+  check(JSON.stringify(flight.crew) === JSON.stringify(crew), `${tag}: crew ${JSON.stringify(flight.crew)}, the rules say ${JSON.stringify(crew)}`);
+  check(getAirline(flight.airline.code)?.country === flight.airline.country, `${tag}: airline country`);
 
   // Turbulence
   const t = flight.turbulence;
@@ -205,7 +293,8 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
     check(w.label.startsWith(w.intensity === "moderate" ? "Moderate bumps possible" : "Light bumps likely"), `${tag}: label "${w.label}"`);
     check(w.typicalLabel.startsWith("On flights like this one,"), `${tag}: typicalLabel`);
     check(w.cause.endsWith("."), `${tag}: cause without period "${w.cause}"`);
-    if (w.intensity === "moderate") check(w.seatbeltSign, `${tag}: moderate window without seatbelt sign`);
+    // Whether the sign goes on is the crew's call on the day: only a moderate stretch is said to have it on.
+    check(w.seatbeltSign === (w.intensity === "moderate"), `${tag}: seatbelt sign ${w.seatbeltSign} for a ${w.intensity} stretch`);
     const inside = t.points.filter((p) => p.minute >= w.startMin && p.minute <= w.startMin + w.durationMin);
     const peak = Math.max(...inside.map((p) => p.level));
     check(w.intensity === "moderate" ? peak >= 1.5 : peak >= 0.5 && peak < 1.5, `${tag}: window peak ${peak} for ${w.intensity}`);
@@ -225,7 +314,8 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
   check(t.maxIntensity === expectedMax, `${tag}: maxIntensity`);
   check(t.smoothMinutesPct >= 0 && t.smoothMinutesPct <= 100, `${tag}: smoothMinutesPct`);
   check(t.history.smoothPct >= 72 && t.history.smoothPct <= 96, `${tag}: history smoothPct`);
-  check(t.history.flightsAnalyzed >= 400 && t.history.flightsAnalyzed <= 3200, `${tag}: flightsAnalyzed`);
+  // Past flights with turbulence reports: the route's daily nonstops (2 for a route nobody flies nonstop) × the month × 4 years.
+  check(t.history.flightsAnalyzed >= 180 && t.history.flightsAnalyzed <= 1740 && t.history.flightsAnalyzed % 10 === 0, `${tag}: flightsAnalyzed ${t.history.flightsAnalyzed}`);
   check(t.history.month.length >= 3 && /^[A-Z]/.test(t.history.month), `${tag}: month`);
 
   // Smoothness
@@ -248,6 +338,7 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
     if (w.condition === "light_snow") check(w.tempC <= 1, `${tag}: snow at ${w.tempC}C`);
     if (w.condition === "fog") check(w.visibilityMi <= 3, `${tag}: fog visibility`);
     check(w.impactNote.length > 10, `${tag}: impact note`);
+    check(!/\byour\b/i.test(w.impactNote), `${tag}: impact note assumes the reader's flight: "${w.impactNote}"`);
   }
 
   // Airline stats
@@ -260,8 +351,15 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
   check(a.seatWidthIn >= 17 && a.seatWidthIn <= 18.5, `${tag}: width`);
   check(a.crewRating >= 4.5 && a.crewRating <= 4.9, `${tag}: crew rating`);
   check(a.amenities.length >= 3, `${tag}: amenities`);
+  check(a.cabinNoiseDb === ac.cabinNoiseDb, `${tag}: airline and aircraft sections disagree on cabin noise`);
+  // The on-time rate on a route is one per airline ("last 12 months"), whichever of its flights.
+  const routeFact = `route|${flight.origin.code}|${flight.destination.code}|${flight.airline.code}`;
+  const seenRoute = FLEET_FACTS.get(routeFact);
+  check(seenRoute === undefined || seenRoute === String(a.onTimeRoutePct), `${tag}: ${flight.airline.code}'s on-time rate on this route differs between flights`);
+  FLEET_FACTS.set(routeFact, String(a.onTimeRoutePct));
 
-  // Seat map
+  // Seat map: the geometry is the airline's cabin for the model (the same on every flight);
+  // only which seats are unavailable, and so the picks, change per flight.
   const sm = flight.seatMap;
   const letters = sm.columnGroups.flat();
   const rowNumbers = sm.rows.map((r) => r.row);
@@ -270,29 +368,64 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
   check(sm.wingStartRow < sm.wingEndRow && rowNumbers.includes(sm.wingStartRow) && rowNumbers.includes(sm.wingEndRow), `${tag}: wing rows`);
   check(sm.rows.some((r) => r.exit), `${tag}: no exit row`);
   check(sm.rows.filter((r) => r.exit).every((r) => r.zone === "smoothest"), `${tag}: exit row not over the wing`);
+  check(sm.columnGroups.map((g) => g.length).join("-") === ac.seatLayout, `${tag}: seat map columns ${sm.columnGroups.map((g) => g.length).join("-")} vs layout ${ac.seatLayout}`);
+  if (model) {
+    const cabin = cabinConfigFor(flight.airline.code, model);
+    check(ac.seatLayout === cabin.seatLayout && ac.typicalSeats === cabin.typicalSeats && a.seatWidthIn === cabin.seatWidthIn, `${tag}: layout / seats / width are not the airline's cabin`);
+    check(JSON.stringify(rowNumbers) === JSON.stringify(cabin.rowNumbers), `${tag}: seat rows are not the airline's cabin`);
+    check(sm.wingStartRow === cabin.rowNumbers[cabin.wingFirstIndex] && sm.wingEndRow === cabin.rowNumbers[cabin.wingLastIndex], `${tag}: wing rows are not the airline's cabin`);
+    check(JSON.stringify(sm.rows.filter((r) => r.exit).map((r) => r.row)) === JSON.stringify([...cabin.exitRows].sort((x, y) => x - y)), `${tag}: exit rows are not the airline's cabin`);
+    check(sm.rows.every((r, i) => r.zone === (i < cabin.wingFirstIndex ? "smooth" : i <= cabin.wingLastIndex ? "smoothest" : "more_motion")), `${tag}: zones don't follow the wing`);
+  }
+  const cabinKey = `${flight.airline.code}|${ac.model}`;
+  const geometry = JSON.stringify([ac.seatLayout, ac.typicalSeats, sm.columnGroups, sm.rows, sm.wingStartRow, sm.wingEndRow]);
+  const seenGeometry = SEAT_GEOMETRY.get(cabinKey);
+  check(seenGeometry === undefined || seenGeometry === geometry, `${tag}: ${cabinKey} shows a different seat map than on another flight`);
+  SEAT_GEOMETRY.set(cabinKey, geometry);
+  OCCUPANCY_BY_CABIN.set(cabinKey, (OCCUPANCY_BY_CABIN.get(cabinKey) ?? new Set()).add(JSON.stringify(sm.occupied)));
   const seatCount = sm.rows.length * letters.length;
   const occ = sm.occupied.length / seatCount;
   check(occ >= 0.45 && occ <= 0.85, `${tag}: occupancy ${Math.round(occ * 100)}%`);
   check(new Set(sm.occupied).size === sm.occupied.length, `${tag}: duplicate occupied seats`);
-  check(sm.recommended.length === 3, `${tag}: recommended count`);
-  for (const id of sm.recommended) {
+  check(sm.recommended.length === 3 && new Set(sm.recommended).size === 3, `${tag}: recommended count`);
+  // Best open seats, smoothest first: over the wing while it has open seats, then the nearest others.
+  const taken = new Set(sm.occupied);
+  const openOverWing = sm.rows.filter((r) => r.zone === "smoothest").reduce((n, r) => n + letters.filter((l) => !taken.has(`${r.row}${l}`)).length, 0);
+  sm.recommended.forEach((id, i) => {
     const row = Number(id.slice(0, -1));
     const letter = id.slice(-1);
     check(rowNumbers.includes(row) && letters.includes(letter), `${tag}: recommended seat ${id} does not exist`);
-    check(!sm.occupied.includes(id), `${tag}: recommended seat ${id} is occupied`);
-    const zone = sm.rows.find((r) => r.row === row)?.zone;
-    check(zone === "smoothest", `${tag}: recommended seat ${id} not in the smoothest zone`);
-  }
-  check(sm.why.includes(String(sm.wingStartRow)), `${tag}: why does not mention the wing rows`);
+    check(!taken.has(id), `${tag}: recommended seat ${id} is unavailable`);
+    if (i < openOverWing) check(sm.rows.find((r) => r.row === row)?.zone === "smoothest", `${tag}: recommended seat ${id} off the wing while the wing has open seats`);
+  });
+  check(sm.why.includes(`${sm.wingStartRow}–${sm.wingEndRow}`), `${tag}: why does not name the wing rows`);
 
-  // Sounds
+  // Sounds: in order, typical timings on a 5-minute grid, plane-specific cues named for their type.
   check(flight.sounds.length >= 10 && flight.sounds.length <= 14, `${tag}: ${flight.sounds.length} sound cues`);
   const minutes = flight.sounds.map((c) => c.minute).filter((m): m is number => m !== null);
   check(minutes.every((m, i) => i === 0 || m >= minutes[i - 1]), `${tag}: sounds not chronological`);
   check(new Set(flight.sounds.map((c) => c.id)).size === flight.sounds.length, `${tag}: duplicate sound ids`);
   check(flight.sounds[0].moment === "boarding" && flight.sounds[flight.sounds.length - 1].moment === "landing", `${tag}: sound order`);
-  if (/^A32[01]/.test(flight.aircraft.model)) check(flight.sounds.some((c) => c.id === "taxi-ptu"), `${tag}: A320-family without the barking-dog cue`);
-  else check(!flight.sounds.some((c) => c.id === "taxi-ptu"), `${tag}: barking dog on a non-A320`);
+  const cue = (id: string) => flight.sounds.find((c) => c.id === id);
+  for (const c of flight.sounds) {
+    check(timingsOnGrid(c.when), `${tag}: ${c.id} timing "${c.when}" not rounded to 5 minutes`);
+    const offset = /(?:(\d+)h(?: (\d+)m)?|(\d+) min) (before landing|after takeoff)/.exec(c.when);
+    if (offset && c.minute !== null) {
+      const n = offset[3] !== undefined ? Number(offset[3]) : Number(offset[1]) * 60 + Number(offset[2] ?? 0);
+      check(c.minute === (offset[4] === "after takeoff" ? n : flight.airborneMin - n), `${tag}: ${c.id} says "${c.when}" but sits at minute ${c.minute}`);
+    }
+  }
+  const descentStart = cue("descent-start")?.minute ?? 0;
+  check(flight.sounds.filter((c) => c.moment === "descent" && c.id !== "descent-start").every((c) => (c.minute ?? Infinity) > descentStart), `${tag}: a descent cue before the descent starts`);
+  check(cue("cruise-bumps")?.when === "If bumps come", `${tag}: the light-bumps cue must be conditional, on every flight`);
+  check(!/may be wet/.test(cue("landing-touchdown")?.why ?? ""), `${tag}: the touchdown cue reads the arrival forecast`);
+  const a320Family = /^A32[01]/.test(ac.model);
+  check(a320Family === Boolean(cue("taxi-ptu")), `${tag}: barking-dog cue vs ${ac.model}`);
+  if (a320Family) check(cue("taxi-ptu")!.detail.startsWith("On Airbus A320-family jets"), `${tag}: the barking-dog cue doesn't name its type`);
+  const roar = cue("takeoff-roll")?.detail ?? "";
+  if (ac.bodyType === "wide") check(roar.startsWith("On wide-body jets"), `${tag}: the wide-body takeoff cue doesn't name its type`);
+  else if (ac.model === "A220-300") check(roar.startsWith("On the Airbus A220"), `${tag}: the A220 takeoff cue doesn't name its type`);
+  else check(!/^On /.test(roar), `${tag}: a type-specific takeoff cue on a ${ac.model}`);
 
   // Alternatives
   const alts = flight.alternatives;
@@ -331,6 +464,11 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
     if (/on a smaller plane/.test(alt.reason)) check(alt.bodyType === "narrow" && ac.bodyType === "wide", `${tag}: "${alt.reason}" on a ${alt.bodyType}-body`);
   }
 
+  // Nothing a real product could never know: no pilot profile or maintenance field anywhere, under any key.
+  const keys: Array<[string, string]> = [];
+  keysOf(flight, "flight", keys);
+  for (const [path, key] of keys) check(!IMPOSSIBLE_KEYS.has(key), `${tag}: impossible field at ${path}`);
+
   // Words
   const strings: Array<[string, string]> = [];
   stringsOf(flight, "flight", strings);
@@ -341,6 +479,9 @@ function checkFlight(input: FlightInput, flight: Flight, prefs?: FlightPrefs) {
     if (d) warn(`${tag}: discouraged word "${d[0]}" at ${path}: "${value}"`);
     check(!value.includes("!"), `${tag}: exclamation mark at ${path}: "${value}"`);
     check(!/undefined|NaN|\[object/.test(value), `${tag}: broken interpolation at ${path}: "${value}"`);
+    const profile = PILOT_PROFILE_TEXT.find((p) => value.includes(p)) ?? PILOT_PROFILE_PATTERN.exec(value)?.[0] ?? NAMED_PILOT.exec(value)?.[0];
+    check(!profile, `${tag}: pilot-profile text "${profile}" at ${path}: "${value}"`);
+    check(!YOUR_FLIGHT.test(value), `${tag}: "${YOUR_FLIGHT.exec(value)?.[0]}" at ${path} (the copy must read right for any flight)`);
   }
 }
 
@@ -435,6 +576,52 @@ const sinJfk = generateFlight({ origin: "SIN", destination: "JFK", date: "2026-1
 check(sinJfk >= 17.5 * 60 && sinJfk <= 19.75 * 60, `SIN→JFK block ${sinJfk} min (real ≈ 18h40)`);
 const jfkHkg = generateFlight({ origin: "JFK", destination: "HKG", date: "2027-02-06" }).blockMin;
 check(jfkHkg >= 15 * 60 && jfkHkg <= 17 * 60, `JFK→HKG block ${jfkHkg} min (real ≈ 16h00)`);
+
+// ── Fleets and cabins ───────────────────────────────────────────────────────
+
+// Every airline's cabin for every model it flies: a real seat-map geometry, fixed per airline and model.
+const LAYOUTS = new Set(["3-3", "2-3", "3-3-3", "2-4-2", "3-4-3", "2-3-2"]);
+let cabins = 0;
+for (const airline of AIRLINES.map((a) => a.code)) {
+  const profile = getAirline(airline);
+  check(Boolean(profile), `airline ${airline} missing from the catalog`);
+  if (!profile) continue;
+  const skips13 = new Set<boolean>();
+  for (const key of profile.fleet) {
+    const model = getAircraftModel(key);
+    check(Boolean(model), `${airline}: unknown model ${key}`);
+    if (!model) continue;
+    cabins++;
+    const cabin = cabinConfigFor(airline, model);
+    const tag = `${airline} ${key} cabin`;
+    check(cabin === cabinConfigFor(airline, model), `${tag}: not cached`);
+    check(LAYOUTS.has(cabin.seatLayout), `${tag}: unknown layout ${cabin.seatLayout}`);
+    check(cabin.rowNumbers.length >= 18 && cabin.rowNumbers.length <= 28, `${tag}: ${cabin.rowNumbers.length} rows`);
+    check(cabin.rowNumbers.every((r, i) => i === 0 || r > cabin.rowNumbers[i - 1]), `${tag}: rows not increasing`);
+    check(0 < cabin.wingFirstIndex && cabin.wingFirstIndex < cabin.wingLastIndex && cabin.wingLastIndex < cabin.rowNumbers.length - 1, `${tag}: wing rows`);
+    const overWing = cabin.rowNumbers.slice(cabin.wingFirstIndex, cabin.wingLastIndex + 1);
+    check(cabin.exitRows.length >= 1 && cabin.exitRows.every((r) => overWing.includes(r)), `${tag}: exit rows ${cabin.exitRows.join(",")} not over the wing`);
+    check(cabin.typicalSeats >= 100 && cabin.typicalSeats <= 450, `${tag}: ${cabin.typicalSeats} seats`);
+    check(cabin.seatWidthIn >= 17 && cabin.seatWidthIn <= 18.5, `${tag}: seat width ${cabin.seatWidthIn}`);
+    if (cabin.rowNumbers[0] < 13 && cabin.rowNumbers[cabin.rowNumbers.length - 1] > 13) skips13.add(!cabin.rowNumbers.includes(13));
+    for (const year of [2026, 2027]) {
+      const ages = fleetAgesFor(airline, model, year);
+      check(JSON.stringify(ages) === JSON.stringify(fleetAgesFor(airline, model, year)), `${tag}: fleet ages not deterministic`);
+      check(ages.min >= 0.8 && ages.min <= ages.avg && ages.avg <= ages.max && ages.max <= year - model.modelInServiceSince, `${tag} ${year}: fleet ages ${ages.min}/${ages.avg}/${ages.max}`);
+    }
+  }
+  check(skips13.size <= 1, `${airline}: row 13 skipped on some models and not others`);
+}
+// Model facts: verifiable comparisons, and cabin noise that sits where measurements do (newer designs a little quieter).
+for (const m of AIRCRAFT_MODELS) {
+  for (const line of m.safetyRecord) check(!OVERCLAIM.test(line) && !FORBIDDEN.test(line), `${m.key}: overclaiming model fact "${line}"`);
+  check(m.cabinNoiseDb >= 78 && m.cabinNoiseDb <= 86, `${m.key}: cabin noise ${m.cabinNoiseDb} dB`);
+}
+const NEWER = ["A220-300", "A320neo", "A321neo", "A330-900neo", "A350-900", "A350-1000", "787-9", "787-10"];
+const OLDER = ["737-800", "737-900ER", "757-200", "767-300ER", "777-300ER"];
+const noise = (keys: string[]) => keys.map((k) => getAircraftModel(k)!.cabinNoiseDb);
+check(Math.max(...noise(NEWER)) < Math.min(...noise(OLDER)), "a newer design is not quieter than the older ones");
+console.log(`Cabins: ${cabins} airline × model configurations`);
 
 // ── Flights ─────────────────────────────────────────────────────────────────
 
@@ -652,6 +839,10 @@ check(windowCounts[0] < flights.length / 2, "too many flights without windows");
 check(moderate >= 1, "no flight with a moderate window in the sample");
 check(airlines >= 12, "too little airline variety");
 check(models >= 6, "too little aircraft variety");
+// One seat map per airline and model; which seats are open changes from flight to flight.
+const sharedCabins = [...OCCUPANCY_BY_CABIN.values()].filter((sets) => sets.size > 1).length;
+console.log(`Seat maps: ${SEAT_GEOMETRY.size} airline × model cabins across every flight checked, each one map; ${sharedCabins} seen on several flights with different open seats`);
+check(SEAT_GEOMETRY.size >= 20 && sharedCabins >= 10, "too few cabins seen on several flights to show the per-flight seat availability");
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed, ${warnings} warning(s).`);

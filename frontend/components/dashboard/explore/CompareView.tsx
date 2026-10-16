@@ -3,7 +3,7 @@
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { daysBetween, formatDuration, formatOffset, formatShortDate, formatTime12 } from "@preflight/shared/dates";
-import { getForecastStatus } from "@preflight/shared/forecast";
+import { PREVIEW_DAYS_UNTIL, getForecastStatus } from "@preflight/shared/forecast";
 import type { Flight } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Ring } from "../trust/Ring";
@@ -88,7 +88,8 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
 
   const fa = a.flight;
   const fb = b.flight;
-  const conf = (f: Flight) => getForecastStatus(Math.max(0, daysBetween(today, f.input.date)), f.turbulence.history).confidenceLabel;
+  // The study's briefing (and so this view) is the day-before preview: its forecast tier, not the real distance's.
+  const conf = (f: Flight) => getForecastStatus(PREVIEW_DAYS_UNTIL, f.turbulence.history).confidenceLabel;
 
   return (
     <Sheet
@@ -249,7 +250,7 @@ export function CompareView({ entries, pair, onPairChange, preferredId, onPrefer
         <Fact names={[sides.a.label, sides.b.label]} label="Arrives" a={arrives(fa)} b={arrives(fb)} />
         <Fact names={[sides.a.label, sides.b.label]} label="Gate to gate" a={formatDuration(fa.blockMin)} b={formatDuration(fb.blockMin)} />
         <Fact names={[sides.a.label, sides.b.label]} label="Days away" a={daysAway(today, fa.input.date)} b={daysAway(today, fb.input.date)} />
-        <Fact names={[sides.a.label, sides.b.label]} label="Forecast confidence" a={conf(fa)} b={conf(fb)} last />
+        <Fact names={[sides.a.label, sides.b.label]} label="Day-before forecast" a={conf(fa)} b={conf(fb)} last />
       </dl>
     </Sheet>
   );

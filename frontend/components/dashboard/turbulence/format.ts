@@ -1,5 +1,6 @@
-import { formatOffset } from "@preflight/shared/dates";
-import type { BumpWindow } from "@preflight/shared/types";
+import { formatOffset, formatShortDate } from "@preflight/shared/dates";
+import { TURBULENCE_FORECAST_DAYS, availableFrom } from "@preflight/shared/forecast";
+import type { BumpWindow, FlightPhase, RouteHistory } from "@preflight/shared/types";
 
 /*
  * Small, pure wording helpers shared by the turbulence teaser, the section
@@ -35,4 +36,52 @@ export function compactMinutes(minutes: number): string {
 export function rangeLabel(startMin: number, endMin: number): string {
   if (endMin < 60) return `${startMin}–${endMin} min`;
   return `${formatOffset(startMin)}–${formatOffset(endMin)}`;
+}
+
+/* ── Before the flight-specific forecast exists (docs/FEASIBILITY.md) ──── */
+
+/** "Tue, Nov 24": the first day a turbulence forecast for a flight departing on `departureDate` exists. */
+export function turbulenceForecastFrom(departureDate: string): string {
+  try {
+    return formatShortDate(availableFrom(departureDate, TURBULENCE_FORECAST_DAYS));
+  } catch {
+    return departureDate;
+  }
+}
+
+/** "2 days before departure" */
+export const TURBULENCE_LEAD = `${TURBULENCE_FORECAST_DAYS} days before departure`;
+
+/** "Turbulence forecast from Tue, Nov 24 · 2 days before departure" (or another subject: "Smoothness score"). */
+export function turbulenceMarker(departureDate: string, subject = "Turbulence forecast"): string {
+  return `${subject} from ${turbulenceForecastFrom(departureDate)} · ${TURBULENCE_LEAD}`;
+}
+
+/** A calm round figure for a count of past flights: 1,243 → "1,200", 487 → "490". */
+export function aboutCount(n: number): string {
+  const step = n >= 1000 ? 100 : 10;
+  return (Math.max(step, Math.round(n / step) * step)).toLocaleString("en-US");
+}
+
+/** "based on about 1,200 past flights with turbulence reports" */
+export function historyBasis(history: Pick<RouteHistory, "flightsAnalyzed">): string {
+  return `based on about ${aboutCount(history.flightsAnalyzed)} past flights with turbulence reports`;
+}
+
+/** "About 89% of December flights on this route are smooth" — route history, never this flight. */
+export function typicalSmoothLine(history: Pick<RouteHistory, "smoothPct" | "month">): string {
+  return `About ${history.smoothPct}% of ${history.month} flights on this route are smooth`;
+}
+
+const PHASE_WHEN: Record<FlightPhase, string> = {
+  takeoff: "just after takeoff",
+  climb: "during the climb",
+  cruise: "at cruising altitude",
+  descent: "on the way down",
+  landing: "on the final approach",
+};
+
+/** "When bumps happen on this route, they're most often during the climb." */
+export function typicalBumpyPhaseLine(phase: FlightPhase): string {
+  return `When bumps happen on this route, they’re most often ${PHASE_WHEN[phase] ?? "at cruising altitude"}.`;
 }

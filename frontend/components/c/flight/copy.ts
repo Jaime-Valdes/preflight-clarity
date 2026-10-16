@@ -1,29 +1,10 @@
-import { addDays, formatShortDate } from "@preflight/shared/dates";
+import { formatShortDate } from "@preflight/shared/dates";
 
 /*
  * Version C: small pure helpers shared by the flight and compare pages
- * (dates the tool accepts, short labels). Safe in render — "today" is passed in.
+ * (short labels, link styles). Safe in render. Which dates the tool shows:
+ * dateStatus / clampDate in lib/c/model.ts.
  */
-
-/** The tool shows flights from today up to a year ahead (docs/VERSION_C.md). */
-export const MAX_DAYS_AHEAD = 365;
-
-export type DateStatus = "ok" | "past" | "far";
-
-/** Whether a "YYYY-MM-DD" date can be shown, given today's date. */
-export function dateStatus(date: string, today: string): DateStatus {
-  if (date < today) return "past";
-  if (date > addDays(today, MAX_DAYS_AHEAD)) return "far";
-  return "ok";
-}
-
-/** The nearest date the tool can show: today for a past date, a year ahead for one further out. */
-export function clampDate(date: string, today: string): string {
-  const status = dateStatus(date, today);
-  if (status === "past") return today;
-  if (status === "far") return addDays(today, MAX_DAYS_AHEAD);
-  return date;
-}
 
 /** "Thu, Nov 26" (falls back to the raw value for a malformed date). */
 export function shortDate(iso: string): string {

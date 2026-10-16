@@ -2,6 +2,15 @@
  * Aircraft catalog: mainstream Airbus and Boeing models with calm, factual
  * facts. The 737 MAX family and small regional jets are deliberately absent
  * (anxious flyers avoid them, and they would confound the test).
+ *
+ * Model facts are public (manufacturers, fleet databases) and phrased as
+ * verifiable comparisons, never superlatives or crash statistics. Cabin noise
+ * is approximate: measured economy-cabin levels at cruise sit around 80–85 dB(A)
+ * and vary by a few dB with the seat (e.g. Zevitas et al. 2018, 200 flights),
+ * newer designs a little quieter than older ones of their size.
+ * Each airline flies a model in its own cabin configuration (cabinConfigFor):
+ * layout, seat count and seat-map geometry are the same on every flight of
+ * that airline and model.
  */
 import type { Aircraft, BodyType } from "./types";
 import type { Rng } from "./random";
@@ -18,7 +27,6 @@ export interface AircraftModel {
   typicalSeats: number;
   modelInServiceSince: number;
   modelFleetSize: number;
-  cabinNoiseDb: number;
   cruiseAltitudeFt: number;
   cruiseSpeedMph: number;
   /** Practical maximum stage length in miles, used to keep pairings plausible. */
@@ -27,13 +35,18 @@ export interface AircraftModel {
   productionEnded?: number;
   /** Economy seat width used by the airline-comfort stats. */
   seatWidthIn: number;
+  /** Typical economy cabin noise at cruise, dB(A), approximate (see the note above). */
+  cabinNoiseDb: number;
   safetyRecord: string[];
 }
 
 const COMMON_FACTS = [
   "Inspected by the pilots and ground engineers before every flight",
-  "Monitored in real time by the airline's maintenance control center",
+  "Sends system health messages to engineers on the ground during the flight",
 ];
+
+/** Fly-by-wire normal law holds the attitude the pilots set; it doesn't remove bumps. */
+const FLY_BY_WIRE = "Fly-by-wire flight controls help keep the aircraft steady";
 
 export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   {
@@ -46,15 +59,15 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 137,
     modelInServiceSince: 2016,
     modelFleetSize: 380,
-    cabinNoiseDb: 76,
+    cabinNoiseDb: 80,
     cruiseAltitudeFt: 37000,
     cruiseSpeedMph: 530,
     rangeMi: 3400,
     seatWidthIn: 18.5,
     safetyRecord: [
-      "One of the newest airliner designs flying, in service since 2016",
-      "Modern fly-by-wire flight controls smooth out small bumps automatically",
-      "Quiet geared-turbofan engines — among the quietest cabins in the sky",
+      "A clean-sheet design that entered airline service in 2016",
+      FLY_BY_WIRE,
+      "Quieter engines and a quieter cabin than older jets of its size",
       ...COMMON_FACTS,
     ],
   },
@@ -68,15 +81,15 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 180,
     modelInServiceSince: 2016,
     modelFleetSize: 2100,
-    cabinNoiseDb: 78,
+    cabinNoiseDb: 81,
     cruiseAltitudeFt: 37000,
     cruiseSpeedMph: 520,
     rangeMi: 3500,
     seatWidthIn: 18,
     safetyRecord: [
-      "The newest version of the A320 family, the most widely flown airliner in the world",
-      "In service since 2016 with more than 100 airlines",
-      "Modern fly-by-wire flight controls smooth out small bumps automatically",
+      "The newest version of the A320 family, one of the most widely flown airliner families",
+      "In service since 2016 with dozens of airlines around the world",
+      FLY_BY_WIRE,
       ...COMMON_FACTS,
     ],
   },
@@ -90,15 +103,15 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 200,
     modelInServiceSince: 2017,
     modelFleetSize: 1600,
-    cabinNoiseDb: 78,
+    cabinNoiseDb: 81,
     cruiseAltitudeFt: 36000,
     cruiseSpeedMph: 520,
     rangeMi: 4000,
     seatWidthIn: 18,
     safetyRecord: [
       "The longest member of the A320 family, in service since 2017",
-      "Flown by more than 80 airlines on short and medium routes",
-      "Modern fly-by-wire flight controls smooth out small bumps automatically",
+      "Flown by dozens of airlines on short and medium routes",
+      FLY_BY_WIRE,
       ...COMMON_FACTS,
     ],
   },
@@ -112,7 +125,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 175,
     modelInServiceSince: 1998,
     modelFleetSize: 4400,
-    cabinNoiseDb: 82,
+    cabinNoiseDb: 84,
     cruiseAltitudeFt: 37000,
     cruiseSpeedMph: 525,
     rangeMi: 3000,
@@ -120,7 +133,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     seatWidthIn: 17,
     safetyRecord: [
       "One of the most widely flown airliners ever built, in service since 1998",
-      "Thousands in daily service with airlines on every continent",
+      "Thousands in daily service with airlines on six continents",
       "A mature, well-understood design with decades of refinement",
       ...COMMON_FACTS,
     ],
@@ -135,7 +148,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 178,
     modelInServiceSince: 2007,
     modelFleetSize: 500,
-    cabinNoiseDb: 82,
+    cabinNoiseDb: 84,
     cruiseAltitudeFt: 37000,
     cruiseSpeedMph: 525,
     rangeMi: 3200,
@@ -143,7 +156,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     seatWidthIn: 17,
     safetyRecord: [
       "The longest version of the 737 Next Generation family, in service since 2007",
-      "Shares its proven wing, engines and systems with the 737-800",
+      "Shares its wing, engines and systems with the 737-800",
       "A mature, well-understood design with decades of refinement",
       ...COMMON_FACTS,
     ],
@@ -158,16 +171,16 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 199,
     modelInServiceSince: 1983,
     modelFleetSize: 300,
-    cabinNoiseDb: 83,
+    cabinNoiseDb: 85,
     cruiseAltitudeFt: 39000,
     cruiseSpeedMph: 530,
     rangeMi: 4000,
     productionEnded: 2004,
     seatWidthIn: 17.5,
     safetyRecord: [
-      "A pilot favorite, known for its powerful engines and strong climb",
+      "Known for its powerful engines and strong climb",
       "Decades of service on transcontinental and transatlantic routes",
-      "Regularly updated with modern avionics and cabins",
+      "Its cabins and flight-deck systems have been updated over the years",
       ...COMMON_FACTS,
     ],
   },
@@ -181,15 +194,15 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 287,
     modelInServiceSince: 2018,
     modelFleetSize: 170,
-    cabinNoiseDb: 77,
+    cabinNoiseDb: 81,
     cruiseAltitudeFt: 39000,
     cruiseSpeedMph: 560,
     rangeMi: 8000,
     seatWidthIn: 18,
     safetyRecord: [
       "The newest version of the A330 family, in service since 2018",
-      "Builds on more than 25 years of A330 service with over 100 airlines",
-      "Modern fly-by-wire flight controls and new, quieter engines",
+      "Builds on more than 30 years of A330 service with airlines worldwide",
+      "Fly-by-wire flight controls, and quieter engines than earlier A330s",
       ...COMMON_FACTS,
     ],
   },
@@ -203,15 +216,15 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 325,
     modelInServiceSince: 2015,
     modelFleetSize: 560,
-    cabinNoiseDb: 75,
+    cabinNoiseDb: 81,
     cruiseAltitudeFt: 41000,
     cruiseSpeedMph: 560,
     rangeMi: 9700,
     seatWidthIn: 18,
     safetyRecord: [
       "In service since 2015 with more than 30 airlines",
-      "Its wing flexes and adjusts automatically to smooth out bumps",
-      "One of the quietest cabins flying, with a lower cabin altitude for easier breathing",
+      FLY_BY_WIRE,
+      "A lower cabin altitude than older jets, for easier breathing",
       ...COMMON_FACTS,
     ],
   },
@@ -225,15 +238,15 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 369,
     modelInServiceSince: 2018,
     modelFleetSize: 100,
-    cabinNoiseDb: 75,
+    cabinNoiseDb: 81,
     cruiseAltitudeFt: 41000,
     cruiseSpeedMph: 560,
     rangeMi: 9700,
     seatWidthIn: 18,
     safetyRecord: [
-      "The largest A350, in service since 2018 on the world's longest routes",
-      "Its wing flexes and adjusts automatically to smooth out bumps",
-      "One of the quietest cabins flying, with a lower cabin altitude for easier breathing",
+      "The largest A350, in service since 2018 on long-haul routes",
+      FLY_BY_WIRE,
+      "A lower cabin altitude than older jets, for easier breathing",
       ...COMMON_FACTS,
     ],
   },
@@ -247,7 +260,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 218,
     modelInServiceSince: 1988,
     modelFleetSize: 250,
-    cabinNoiseDb: 80,
+    cabinNoiseDb: 83,
     cruiseAltitudeFt: 37000,
     cruiseSpeedMph: 530,
     rangeMi: 6200,
@@ -255,8 +268,8 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     seatWidthIn: 18,
     safetyRecord: [
       "A long-serving wide-body on transatlantic routes since 1988",
-      "A roomy 2-3-2 cabin — most seats are a window or an aisle",
-      "Regularly updated with modern avionics and cabins",
+      "A 2-3-2 economy cabin — six of every seven seats are a window or an aisle",
+      "Its cabins and flight-deck systems have been updated over the years",
       ...COMMON_FACTS,
     ],
   },
@@ -270,15 +283,17 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 368,
     modelInServiceSince: 2004,
     modelFleetSize: 830,
-    cabinNoiseDb: 81,
+    cabinNoiseDb: 83,
     cruiseAltitudeFt: 39000,
     cruiseSpeedMph: 560,
     rangeMi: 8500,
+    // Passenger 777-300ERs stopped being built in the early 2020s (the line went on with freighters and the 777X).
+    productionEnded: 2022,
     seatWidthIn: 17,
     safetyRecord: [
-      "The world's most widely flown long-haul airliner, in service since 2004",
-      "Its size and weight make it noticeably steadier in bumpy air",
-      "Flown by more than 40 airlines across every ocean",
+      "One of the most widely flown long-haul airliners, in service since 2004",
+      "Its size and weight mean it usually feels the same bumps a little less than smaller jets",
+      "Flown by dozens of airlines across the world's oceans",
       ...COMMON_FACTS,
     ],
   },
@@ -292,15 +307,15 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 290,
     modelInServiceSince: 2014,
     modelFleetSize: 650,
-    cabinNoiseDb: 78,
+    cabinNoiseDb: 81,
     cruiseAltitudeFt: 41000,
     cruiseSpeedMph: 560,
     rangeMi: 9100,
     seatWidthIn: 17.2,
     safetyRecord: [
-      "In service since 2014 with more than 60 airlines",
-      "Gust-smoothing technology senses bumps and adjusts the wings automatically",
-      "Larger windows, cleaner air and a lower cabin altitude for easier breathing",
+      "In service since 2014 with dozens of airlines",
+      "Its flight controls are designed to sense gusts and soften the motion",
+      "Larger windows than older jets, and a lower cabin altitude for easier breathing",
       ...COMMON_FACTS,
     ],
   },
@@ -314,15 +329,15 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
     typicalSeats: 330,
     modelInServiceSince: 2018,
     modelFleetSize: 120,
-    cabinNoiseDb: 78,
+    cabinNoiseDb: 81,
     cruiseAltitudeFt: 41000,
     cruiseSpeedMph: 560,
     rangeMi: 7400,
     seatWidthIn: 17.2,
     safetyRecord: [
       "The largest Dreamliner, in service since 2018",
-      "Gust-smoothing technology senses bumps and adjusts the wings automatically",
-      "Larger windows, cleaner air and a lower cabin altitude for easier breathing",
+      "Its flight controls are designed to sense gusts and soften the motion",
+      "Larger windows than older jets, and a lower cabin altitude for easier breathing",
       ...COMMON_FACTS,
     ],
   },
@@ -395,7 +410,6 @@ export function makeTailNumber(rng: Rng, patterns: readonly string[]): string {
   return out;
 }
 
-/** Per-airframe facts for one specific plane flying this flight. */
 /**
  * An airline's fleet of one model: youngest and oldest airframe and the
  * average age (fleet databases publish these, so they are known any time).
@@ -404,9 +418,10 @@ export function makeTailNumber(rng: Rng, patterns: readonly string[]): string {
 export function fleetAgesFor(airlineCode: string, model: AircraftModel, flightYear: number): { avg: number; min: number; max: number } {
   const rng = createRng(`fleet|${airlineCode}|${model.key}|${flightYear}`);
   const modelAge = flightYear - model.modelInServiceSince;
-  // Nothing newer than the last one built; retired lines spread ~10 years behind their youngest example.
+  // Nothing newer than the last one built, nothing older than the type; lines that stopped being built
+  // keep flying airframes from most of their production run (airlines retire them at around 25–30 years).
   const youngest = model.productionEnded === undefined ? 0.8 : Math.max(0.8, flightYear - model.productionEnded);
-  const oldest = Math.max(youngest + 0.5, Math.min(model.productionEnded === undefined ? 18 : youngest + 10, modelAge - 0.2));
+  const oldest = Math.max(youngest + 0.5, Math.min(model.productionEnded === undefined ? 18 : Math.min(youngest + 18, 30), modelAge - 0.2));
   // Each airline's deliveries cover part of the model's life.
   const min = round1(rng.float(youngest, youngest + Math.min(2, (oldest - youngest) / 3)));
   const max = round1(Math.max(min + 0.5, oldest - rng.float(0, (oldest - min) * 0.4)));
@@ -414,8 +429,90 @@ export function fleetAgesFor(airlineCode: string, model: AircraftModel, flightYe
   return { avg, min, max };
 }
 
+// ── Cabin configuration (per airline and model) ─────────────────────────────
+
+/**
+ * How one airline fits out one model (its subfleet's seat map, as airline and
+ * GDS seat maps publish it). Every flight of that airline and model shows the
+ * same configuration; only which seats are unavailable changes per flight.
+ */
+export interface CabinConfig {
+  /** Economy layout, e.g. "3-3-3". */
+  seatLayout: string;
+  /** About how many seats in all cabins. */
+  typicalSeats: number;
+  /** Economy seat width, inches. */
+  seatWidthIn: number;
+  /** Economy rows on the seat map, in order (row 13 left out where the airline skips it). */
+  rowNumbers: readonly number[];
+  /** Indexes into rowNumbers of the first and last row over the wing. */
+  wingFirstIndex: number;
+  wingLastIndex: number;
+  /** Emergency-exit rows (all over the wing). */
+  exitRows: readonly number[];
+}
+
+/** Airlines that fit a model with a layout other than the usual one (economy). */
+const LAYOUT_BY_AIRLINE: Record<string, Record<string, { seatLayout: string; seatWidthIn: number }>> = {
+  // Japan Airlines: 9-abreast 777-300ERs and 8-abreast 787-9s.
+  JL: { "777-300ER": { seatLayout: "3-3-3", seatWidthIn: 18.5 }, "787-9": { seatLayout: "2-4-2", seatWidthIn: 18.5 } },
+};
+
+const seatsAbreast = (layout: string) => layout.split("-").reduce((n, g) => n + Number(g), 0);
+
+const CABINS = new Map<string, CabinConfig>();
+
+/** The airline's cabin configuration for a model. Deterministic and cached. */
+export function cabinConfigFor(airlineCode: string, model: AircraftModel): CabinConfig {
+  const key = `${airlineCode}|${model.key}`;
+  const hit = CABINS.get(key);
+  if (hit) return hit;
+
+  const rng = createRng(`cabin|${key}`);
+  const override = LAYOUT_BY_AIRLINE[airlineCode]?.[model.key];
+  const seatLayout = override?.seatLayout ?? model.seatLayout;
+  const abreast = seatsAbreast(seatLayout) / seatsAbreast(model.seatLayout);
+  const typicalSeats = Math.round(model.typicalSeats * abreast * rng.float(0.93, 1.07));
+
+  const narrow = model.bodyType === "narrow";
+  const rowCount = narrow ? rng.int(18, 26) : rng.int(20, 28);
+  const firstRow = narrow ? rng.int(7, 12) : rng.int(24, 32);
+  // Row numbering is an airline-wide habit.
+  const skip13 = createRng(`rows|${airlineCode}`).chance(0.5);
+  const rowNumbers: number[] = [];
+  for (let r = firstRow; rowNumbers.length < rowCount; r++) {
+    if (skip13 && r === 13) continue;
+    rowNumbers.push(r);
+  }
+
+  const wingFirstIndex = Math.round(rowCount * 0.35);
+  const wingLastIndex = Math.round(rowCount * 0.6);
+  // Narrow-bodies: one or two overwing exit rows; wide-bodies: a door exit at the wing, often a second further back.
+  const exitRows = narrow
+    ? [rowNumbers[wingFirstIndex + 1], ...(rng.chance(0.7) ? [rowNumbers[wingFirstIndex + 2]] : [])]
+    : [rowNumbers[wingFirstIndex], ...(rng.chance(0.5) ? [rowNumbers[wingLastIndex]] : [])];
+
+  const config: CabinConfig = {
+    seatLayout,
+    typicalSeats,
+    seatWidthIn: override?.seatWidthIn ?? model.seatWidthIn,
+    rowNumbers,
+    wingFirstIndex,
+    wingLastIndex,
+    exitRows,
+  };
+  CABINS.set(key, config);
+  return config;
+}
+
+/**
+ * Facts for the plane flying this flight: the model and the airline's cabin
+ * configuration and fleet ages (known any time), plus the assigned airframe's
+ * tail, age and delivery year (known about a day ahead — AIRFRAME_DAYS).
+ */
 export function buildAircraft(rng: Rng, model: AircraftModel, airlineCode: string, tailPatterns: readonly string[], flightYear: number): Aircraft {
   const fleet = fleetAgesFor(airlineCode, model, flightYear);
+  const cabin = cabinConfigFor(airlineCode, model);
   const ageYears = round1(rng.float(fleet.min, fleet.max));
   const deliveredYear = Math.max(model.modelInServiceSince, flightYear - Math.round(ageYears));
   return {
@@ -423,8 +520,8 @@ export function buildAircraft(rng: Rng, model: AircraftModel, airlineCode: strin
     model: model.model,
     fullName: model.fullName,
     bodyType: model.bodyType,
-    seatLayout: model.seatLayout,
-    typicalSeats: model.typicalSeats,
+    seatLayout: cabin.seatLayout,
+    typicalSeats: cabin.typicalSeats,
     tailNumber: makeTailNumber(rng, tailPatterns),
     ageYears,
     deliveredYear,

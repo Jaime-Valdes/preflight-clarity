@@ -2,6 +2,7 @@
 
 import { Armchair, CloudSun, Ear, Plane, ShieldCheck, UserRound, Wind } from "lucide-react";
 import { Component, useState, type ComponentType, type ReactNode } from "react";
+import { availabilityFor } from "@preflight/shared/forecast";
 import type { Flight, SectionContext, SectionId, SectionProps } from "@preflight/shared/types";
 import { AircraftSection, aircraftTeaser } from "@/components/dashboard/AircraftSection";
 import { AirlineSection, airlineTeaser } from "@/components/dashboard/AirlineSection";
@@ -18,7 +19,7 @@ type CSectionId = Exclude<SectionId, "compare" | "alerts">;
 
 interface CSection {
   id: CSectionId;
-  /** Neutral titles: the A/B ones say "Your pilots" / "Your aircraft". */
+  /** Neutral titles: the A/B ones say "Who flies your plane" / "Your aircraft". */
   title: string;
   icon: ReactNode;
   tone: Tone;
@@ -28,7 +29,7 @@ interface CSection {
 
 const C_SECTIONS: readonly CSection[] = [
   { id: "turbulence", title: "Turbulence forecast", icon: <Wind />, tone: "calm", teaser: turbulenceTeaser, Body: TurbulenceSection },
-  { id: "pilot", title: "Pilots", icon: <UserRound />, tone: "dusk", teaser: pilotTeaser, Body: PilotSection },
+  { id: "pilot", title: "Who flies this plane", icon: <UserRound />, tone: "dusk", teaser: pilotTeaser, Body: PilotSection },
   { id: "aircraft", title: "Aircraft", icon: <Plane />, tone: "breeze", teaser: aircraftTeaser, Body: AircraftSection },
   { id: "airline", title: "Airline safety & comfort", icon: <ShieldCheck />, tone: "calm", teaser: airlineTeaser, Body: AirlineSection },
   { id: "weather", title: "Weather", icon: <CloudSun />, tone: "breeze", teaser: weatherTeaser, Body: WeatherSection },
@@ -47,6 +48,12 @@ const SCROLL_AFTER_MS = 330;
 function initialOpen(): ReadonlySet<CSectionId> {
   const desktop = typeof window !== "undefined" && window.matchMedia?.(DESKTOP_QUERY).matches;
   return new Set<CSectionId>(desktop ? ["turbulence"] : []);
+}
+
+/** Before the flight-specific forecast exists, the section is about the route's turbulence, not a forecast. */
+function titleFor(section: CSection, ctx: SectionContext): string {
+  if (section.id === "turbulence" && !availabilityFor(ctx.daysUntil).turbulence) return "Turbulence";
+  return section.title;
 }
 
 /** A section's teaser must never take the page down. */
@@ -96,7 +103,7 @@ export function FlightSections({ flight, ctx }: FlightSectionsProps) {
       {C_SECTIONS.map((section) => (
         <div key={section.id} data-c-section={section.id} className="scroll-mt-4">
           <SectionCard
-            title={section.title}
+            title={titleFor(section, ctx)}
             icon={section.icon}
             tone={section.tone}
             teaser={safeTeaser(section, flight, ctx)}

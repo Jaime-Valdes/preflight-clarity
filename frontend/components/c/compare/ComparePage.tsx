@@ -4,11 +4,12 @@ import { Link2, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TURBULENCE_FORECAST_DAYS, WEATHER_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { useCompareList } from "@/lib/c/compare-store";
-import { MAX_COMPARE, compareHref, itemId, parseCompareParam, searchHref, type CompareItem } from "@/lib/c/model";
+import { MAX_COMPARE, clampDate, compareHref, itemId, parseCompareParam, searchHref, type CompareItem } from "@/lib/c/model";
 import { useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
-import { LINK_BUTTON, clampDate } from "../flight/copy";
+import { LINK_BUTTON } from "../flight/copy";
 import { CompareEmpty } from "./CompareEmpty";
 import { CompareSkeleton } from "./CompareSkeleton";
 import { CompareTable } from "./CompareTable";
@@ -182,8 +183,11 @@ export function ComparePage() {
 
       {comparing ? (
         <p className="mt-3 px-1 text-xs leading-relaxed text-ink-500">
-          Safety scores reflect audit results, fleet age and crew training standards. Forecasts sharpen as the date gets
-          closer. All flights, prices and forecasts are illustrative — nothing can be booked here.
+          Each flight&rsquo;s turbulence forecast starts {TURBULENCE_FORECAST_DAYS} days before departure and its weather
+          forecast {WEATHER_FORECAST_DAYS} days before; until then the table says when. Safety scores reflect IOSA audit
+          status, regulator oversight, accident record and fleet age. Airlines don&rsquo;t publish who will fly a given
+          flight, so &ldquo;Who flies it&rdquo; lists the rules every airline pilot meets. Open seats are as of today and
+          change until check-in. All flights, prices and forecasts are illustrative — nothing can be booked here.
         </p>
       ) : null}
 

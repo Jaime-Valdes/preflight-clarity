@@ -11,6 +11,8 @@ import {
   Wind,
   type LucideIcon,
 } from "lucide-react";
+import { formatShortDate } from "@preflight/shared/dates";
+import { availableFrom } from "@preflight/shared/forecast";
 import type { WeatherCondition, WeatherReport } from "@preflight/shared/types";
 import type { Tone } from "@/lib/theme";
 
@@ -104,4 +106,23 @@ export function dayOffsetLabel(offset: number): string | null {
   if (offset === 1) return "next day";
   if (offset === -1) return "day before";
   return offset > 1 ? `${offset} days later` : `${-offset} days before`;
+}
+
+/** "7 days before departure", "1 day before departure", "on the day of departure". */
+export function daysBeforeLabel(daysBefore: number): string {
+  if (daysBefore <= 0) return "on the day of departure";
+  return `${daysBefore} ${daysBefore === 1 ? "day" : "days"} before departure`;
+}
+
+/**
+ * Calm marker for something that isn't knowable yet:
+ * "Weather forecast from Thu, Nov 19 · 7 days before departure". Without a valid
+ * date it falls back to the horizon alone ("Weather forecast from 7 days before departure").
+ */
+export function availabilityMarker(what: string, departureDate: string, daysBefore: number): string {
+  try {
+    return `${what} from ${formatShortDate(availableFrom(departureDate, daysBefore))} · ${daysBeforeLabel(daysBefore)}`;
+  } catch {
+    return `${what} from ${daysBeforeLabel(daysBefore)}`;
+  }
 }

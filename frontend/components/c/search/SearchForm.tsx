@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 import { AirportField } from "@/components/flow/AirportField";
 import { searchHref, type RouteDay } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
-import { dateHint, dateNote, maxSearchDate, validateDraft, type SearchDraft } from "./query";
+import { dateHint, dateNote, maxSearchDate, validateDraft, WINDOW_TEXT, type SearchDraft } from "./query";
 
 interface SearchFormProps {
   /** Prefix for the fields' ids — unique on the page ("home", "change"…). */
@@ -33,7 +33,8 @@ const DATE_INPUT = cn(
 
 /**
  * Version C search: From and To (catalogue airports only — a picked
- * suggestion), a swap, and a native date picker (today … 12 months ahead).
+ * suggestion; typed text that matches no airport is not kept), a swap, and a
+ * native date picker (today … 330 days ahead, as far as schedules are published).
  * Stacked in narrow containers, one row in wide ones. Submitting opens
  * /c/search; hints appear after the first attempt, in calm wording.
  */
@@ -91,6 +92,7 @@ export function SearchForm({
           hint={errors.origin}
           invalid={!!errors.origin}
           quickPicks={false}
+          allowFreeText={false}
         />
 
         {/* Wide: a round swap button between the two fields. */}
@@ -114,6 +116,7 @@ export function SearchForm({
           hint={errors.destination}
           invalid={!!errors.destination}
           quickPicks={false}
+          allowFreeText={false}
           labelAction={
             <button
               type="button"
@@ -163,7 +166,7 @@ export function SearchForm({
             ) : dateOk ? (
               dateNote(draft.date, today)
             ) : (
-              "Any day in the next 12 months"
+              `Any day in ${WINDOW_TEXT}`
             )}
           </p>
         </div>

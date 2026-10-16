@@ -1,9 +1,11 @@
 /*
- * Airport catalog: ~140 real airports with IATA code, city, official name,
+ * Airport catalog: 187 real airports with IATA code, city, official name,
  * ISO country, coordinates and IANA time zone, plus a small climate table
- * used by the weather generator. Search is diacritics- and case-insensitive.
+ * used by the weather generator and approximate passenger numbers used by
+ * version C's nonstop rule. Search is diacritics- and case-insensitive.
  * `resolveAirport` never throws: anything unknown becomes a deterministic
- * synthetic airport (known: false).
+ * synthetic airport (known: false) — the study's generator still accepts it,
+ * but version C never shows flights for one (docs/FEASIBILITY.md).
  */
 import type { Airport } from "./types";
 import { hashString } from "./random";
@@ -491,6 +493,59 @@ export function climateFor(code: string): { janC: number; julC: number; rainJanP
 /** Exact IATA code lookup (case-insensitive). */
 export function getAirport(code: string): Airport | undefined {
   return BY_CODE.get(code.trim().toUpperCase());
+}
+
+/**
+ * Approximate annual passengers in millions (2024, rounded; ACI World and
+ * airport reports). Public traffic statistics a real product could read; here
+ * they only decide which nonstops are plausible (airlines.ts nonstopCarriers).
+ */
+const PASSENGERS_M: Record<string, number> = {
+  JFK: 62, LGA: 33, EWR: 49, BOS: 43, PHL: 31, DCA: 26, IAD: 27, BWI: 27, ATL: 108, CLT: 58, RDU: 15, MIA: 56, FLL: 35,
+  MCO: 57, TPA: 25, BNA: 24, ORD: 80, MDW: 22, DTW: 32, MSP: 37, STL: 16, MCI: 12, CLE: 10, PIT: 10, CVG: 9, IND: 10,
+  CMH: 10, MKE: 7, DFW: 87, DAL: 18, IAH: 46, HOU: 14, AUS: 22, SAT: 11, MSY: 15, DEN: 82, SLC: 27, PHX: 52, LAS: 58,
+  LAX: 76, SAN: 25, SFO: 52, SJC: 12, OAK: 11, SMF: 13, SEA: 52, PDX: 17, HNL: 21, OGG: 7, ANC: 5, SJU: 13,
+  BUF: 5, ROC: 2.5, SYR: 3, ALB: 3, ISP: 1.5, HPN: 2.3, BDL: 7, PVD: 4, BTV: 1.3, PWM: 2.5, MHT: 1.7, RIC: 5, ORF: 4.5,
+  CHS: 6, SAV: 4.5, JAX: 7.5, PBI: 8, RSW: 10, SRQ: 4.5, MYR: 3.3, GSP: 3, TYS: 3, SDF: 4.5, MEM: 5, BHM: 3, DSM: 3,
+  OMA: 5.5, OKC: 5, TUL: 3.7, ELP: 4, ABQ: 5.3, TUS: 3.8, RNO: 4.5, BOI: 5, GEG: 4,
+  YYZ: 47, YVR: 26, YUL: 22, YYC: 18,
+  MEX: 46, GDL: 17, CUN: 32, SJO: 7, PTY: 18, MBJ: 5, NAS: 4, PUJ: 9, BOG: 41, LIM: 25, GRU: 44, GIG: 15, EZE: 11, SCL: 26,
+  LHR: 83, LGW: 43, MAN: 30, EDI: 15, DUB: 33, CDG: 70, ORY: 33, NCE: 15, AMS: 66, BRU: 23, FRA: 61, MUC: 42, BER: 25,
+  ZRH: 31, GVA: 18, VIE: 32, PRG: 14, WAW: 21, BUD: 17, CPH: 30, ARN: 25, OSL: 29, HEL: 16, KEF: 8, MAD: 66, BCN: 55,
+  LIS: 35, FCO: 49, MXP: 29, VCE: 11, ATH: 31, IST: 80,
+  DXB: 92, AUH: 29, DOH: 52, TLV: 21, AMM: 8,
+  HND: 85, NRT: 39, KIX: 30, ICN: 71, PEK: 67, PVG: 76, HKG: 53, TPE: 45, MNL: 50, SGN: 41, BKK: 63, KUL: 57, SIN: 68,
+  CGK: 57, DPS: 24, DEL: 78, BOM: 54, BLR: 40, HYD: 27, MAA: 22, CCU: 21, AMD: 12, LHE: 6, KHI: 7, DAC: 10, CMB: 10,
+  KTM: 8, CAN: 76, SZX: 61, CTU: 45, HAN: 30, PUS: 17,
+  SYD: 41, MEL: 36, BNE: 23, PER: 16, AKL: 20,
+  JNB: 19, CPT: 11, CAI: 30, ADD: 14, NBO: 9, LOS: 9, ACC: 3, CMN: 10, RAK: 9,
+};
+
+/** Approximate annual passengers in millions (0 for an airport outside the catalog). */
+export function annualPassengersM(code: string): number {
+  return PASSENGERS_M[code.trim().toUpperCase()] ?? 0;
+}
+
+/**
+ * Airports whose international flights stop short of long-haul, as in real
+ * schedules: Dallas Love Field has no international flights; Chicago Midway and
+ * Houston Hobby only fly to Mexico, Central America and the Caribbean (the
+ * city's other airport handles the rest). Miles; absent = no limit.
+ */
+const INTERNATIONAL_LIMIT_MI: Record<string, number> = { DAL: 0, MDW: 3000, HOU: 3000 };
+
+/** Longest international nonstop an airport plausibly has, in miles (Infinity = no limit). */
+export function internationalLimitMi(code: string): number {
+  return INTERNATIONAL_LIMIT_MI[code.trim().toUpperCase()] ?? Infinity;
+}
+
+/** Great-circle distance in statute miles (the same formula as the flight generator's). */
+export function greatCircleMi(a: Pick<Airport, "lat" | "lon">, b: Pick<Airport, "lat" | "lon">): number {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLon = (b.lon - a.lon) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * 3958.8 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 function rankFor(entry: Indexed, q: string): number {

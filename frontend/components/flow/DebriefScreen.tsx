@@ -66,9 +66,10 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
           <div>
             <p className="text-[15px] font-semibold leading-snug text-ink-900">A reminder about the data</p>
             <p className="mt-1.5 text-[14px] leading-relaxed text-ink-700">
-              Everything in the briefing was illustrative: the forecast, the pilots, the aircraft, the scores and
-              the alternative flights were all generated for this study. None of it was a real forecast or real
-              information about any flight. No alerts were set up, and no seat or flight was held or booked.
+              Everything in the briefing was illustrative. It previewed how a briefing would look the day before
+              departure, for an example flight on your route. The forecast, who flies your plane, the aircraft, the
+              scores and the alternative flights were all generated for this study. None of it was a real forecast
+              or real information about any flight. No alerts were set up, and no seat or flight was held or booked.
             </p>
           </div>
         </div>
