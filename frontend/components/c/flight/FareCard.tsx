@@ -49,6 +49,8 @@ export function FareCard({ option, item, othersHref, className }: FareCardProps)
   }, [focus]);
 
   const add = () => {
+    // Full: the button stays focusable (aria-disabled) so its note is read; pressing it does nothing.
+    if (full) return;
     if (list.add(item)) {
       setAnnouncement(`Added to compare. ${count + 1} of ${MAX_COMPARE} flights picked.`);
       setFocus({ target: "remove" });
@@ -80,7 +82,7 @@ export function FareCard({ option, item, othersHref, className }: FareCardProps)
       </p>
 
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Fare</h2>
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">Fare</h2>
         <span className="text-xs text-ink-500">One-way · economy · 1 traveller</span>
       </div>
       <p className="mt-1.5 text-[32px] font-bold leading-none tracking-tight text-ink-900 tabular-nums">
@@ -110,9 +112,14 @@ export function FareCard({ option, item, othersHref, className }: FareCardProps)
             ref={addRef}
             type="button"
             onClick={add}
-            disabled={full}
+            aria-disabled={full || undefined}
             aria-describedby={full ? noteId : undefined}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-night-900 px-5 text-sm font-semibold text-white shadow-lift transition-colors duration-200 hover:bg-night-800 active:bg-night-950 disabled:cursor-not-allowed disabled:bg-ink-300 disabled:shadow-none"
+            className={cn(
+              "inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition-colors duration-200",
+              full
+                ? "cursor-not-allowed bg-canvas text-ink-500 ring-1 ring-inset ring-line"
+                : "bg-night-900 text-white shadow-lift hover:bg-night-800 active:bg-night-950",
+            )}
           >
             <Plus aria-hidden className="size-4" strokeWidth={2.5} />
             Add to compare

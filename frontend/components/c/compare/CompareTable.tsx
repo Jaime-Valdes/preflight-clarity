@@ -2,7 +2,7 @@
 
 import { Armchair, CalendarClock, CloudSun, Gauge, Plane, ShieldCheck, UserRound, Wind, X } from "lucide-react";
 import Link from "next/link";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type FocusEvent, type ReactNode } from "react";
 import { addDays, formatDuration, formatOffset, formatTime12 } from "@preflight/shared/dates";
 import type { WeatherReport } from "@preflight/shared/types";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
@@ -10,12 +10,12 @@ import { ScoreBadge } from "@/components/c/common/ScoreBadge";
 import { formatFare } from "@/lib/c/format";
 import { flightHref } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
-import { marker, type PendingItem } from "../flight/availability";
+import { marker, type PendingItem } from "@/components/c/common/availability";
 import { LINK_BASE, LINK_TONE, daysAwayLabel, dayOffsetMark, dayOffsetWords, routeText, shortDate } from "../flight/copy";
 import {
   SERIES,
   STRONGEST_BUMPS,
-  UNAVAILABLE_NOTE,
+  UNAVAILABLE_LABEL,
   crewLine,
   crewRules,
   flightTags,
@@ -28,6 +28,7 @@ import {
   smoothestZone,
   spoken,
   timelineSummary,
+  unavailableNote,
   yearsText,
   type Column,
   type FlightColumn,
@@ -50,6 +51,17 @@ const STICKY =
 const LABEL = `${STICKY} bg-surface align-top`;
 const CELL = "px-2.5 align-top min-[400px]:px-3 sm:px-4";
 const ROW_LINE = "border-t border-line/70";
+
+/**
+ * When a control inside the sideways-scrolling table gets keyboard focus, bring all of it into view: the
+ * browser leaves a partly visible one cut off at the edge, or under the sticky row labels (the scroller's
+ * scroll-padding keeps it clear of them).
+ */
+function revealFocused(event: FocusEvent<HTMLDivElement>) {
+  const target = event.target;
+  if (target === event.currentTarget || !(target instanceof HTMLElement) || !target.matches(":focus-visible")) return;
+  target.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
 
 /**
  * Version C compare page: 2–3 flights side by side — a header per flight, then
@@ -155,9 +167,10 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
       {columns.map((c) => (
         <td key={c.id} className={cn(CELL, "border-t border-line bg-canvas pb-2.5 pt-4")}>
           {isFlightColumn(c) ? (
-            <span aria-hidden className="inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold leading-tight text-ink-500">
-              <LineKey style={SERIES[slotOf(c)]!} className="shrink-0" />
-              <span className="truncate tabular-nums">{tags.get(c.id) ?? c.flight.flightNumber}</span>
+            // Wraps rather than truncating: in a narrow column the date is what tells two of the same flight apart.
+            <span aria-hidden className="inline-flex max-w-full items-start gap-1.5 text-[11px] font-semibold leading-tight text-ink-500">
+              <LineKey style={SERIES[slotOf(c)]!} className="mt-px shrink-0" />
+              <span className="min-w-0 tabular-nums [overflow-wrap:anywhere]">{tags.get(c.id) ?? c.flight.flightNumber}</span>
             </span>
           ) : null}
         </td>
@@ -168,9 +181,12 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
   return (
     // `relative`: the sr-only text in the cells is absolutely positioned; without a positioned scroller its
     // containing block lies outside, so it escapes the clip and widens the page by the hidden column.
-    <div className="@container relative overflow-x-auto overscroll-x-contain rounded-3xl bg-surface shadow-soft ring-1 ring-line/80 [scrollbar-width:thin]">
+    <div
+      onFocus={revealFocused}
+      className="@container relative overflow-x-auto overscroll-x-contain rounded-3xl bg-surface shadow-soft ring-1 ring-line/80 [--cmp-col:108px] [--cmp-label:92px] [scroll-padding-inline-start:var(--cmp-label)] [scrollbar-width:thin] min-[400px]:[--cmp-col:124px] min-[400px]:[--cmp-label:100px] sm:[--cmp-col:11rem] sm:[--cmp-label:9.5rem] lg:[--cmp-col:13rem] lg:[--cmp-label:12rem]"
+    >
       <table
-        className="w-full table-fixed border-separate border-spacing-0 text-left [--cmp-col:108px] [--cmp-label:92px] min-[400px]:[--cmp-col:124px] min-[400px]:[--cmp-label:100px] sm:[--cmp-col:11rem] sm:[--cmp-label:9.5rem] lg:[--cmp-col:13rem] lg:[--cmp-label:12rem]"
+        className="w-full table-fixed border-separate border-spacing-0 text-left"
         style={{ minWidth: `calc(var(--cmp-label) + ${n} * var(--cmp-col))` }}
       >
         <caption className="sr-only">
@@ -186,7 +202,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         <thead>
           <tr>
             <td className={cn(STICKY, "bg-surface pb-3 pt-4 align-bottom")}>
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-400 max-[399px]:tracking-normal">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-500 max-[399px]:tracking-normal">
                 {flights.length} {flights.length === 1 ? "flight" : "flights"}
               </span>
             </td>
@@ -219,7 +235,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
                 {isFlightColumn(c) ? (
                   <Value main={<Times column={c} />} />
                 ) : (
-                  <p className="text-xs leading-snug text-ink-500">{UNAVAILABLE_NOTE[c.reason]}</p>
+                  <p className="text-xs leading-snug text-ink-500">{unavailableNote(c)}</p>
                 )}
               </td>
             ))}
@@ -276,7 +292,10 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
                     <Link href={flightHref(c.item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-3 lg:flex-1")}>
                       Details<span className="sr-only"> for {nameOf(c)}</span>
                     </Link>
-                  ) : null}
+                  ) : (
+                    // Stacked on phones: keeps this Remove on the same line as the other columns' Remove.
+                    <span aria-hidden className="h-11 lg:hidden" />
+                  )}
                   <button
                     type="button"
                     data-remove-id={c.id}
@@ -487,9 +506,7 @@ function ColumnHead({ column, slot }: { column: Column; slot: number }) {
           <AirlineMark code={column.item.key.slice(0, 2)} size="sm" className="opacity-50" />
         </span>
         <span className="mt-2 block text-[13px] font-bold leading-snug text-ink-700 tabular-nums">{column.item.key}</span>
-        <span className="block text-xs leading-snug text-ink-500">
-          {column.reason === "too-far" ? "Not scheduled yet" : column.reason === "past" ? "Date has passed" : "Not on the schedule"}
-        </span>
+        <span className="block text-xs leading-snug text-ink-500">{UNAVAILABLE_LABEL[column.reason]}</span>
       </>
     );
   }
@@ -616,6 +633,7 @@ function PendingCell({ item, date, subject, className }: { item: PendingItem; da
           {m.subject} from <span className="whitespace-nowrap">{m.from}</span>
         </span>
       </span>
+      <span className="sr-only">, </span>
       <span className="mt-0.5 block text-xs leading-snug text-ink-500 sm:pl-5">{m.lead}</span>
     </span>
   );

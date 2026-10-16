@@ -22,10 +22,15 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /**
  * Short "how we know" line under the score. Only called while a flight-specific
- * forecast exists (see availabilityFor); the study's day-before preview says so.
+ * forecast exists (see availabilityFor); the study's preview names its horizon
+ * (the day before, or today for a flight today — `daysUntil` is that horizon).
  */
-function basisLine(forecast: ForecastStatus, preview: boolean): string {
-  if (preview) return `${forecast.confidenceLabel} · the day-before forecast for this flight`;
+function basisLine(forecast: ForecastStatus, preview: boolean, daysUntil: number): string {
+  if (preview) {
+    return daysUntil <= 0
+      ? `${forecast.confidenceLabel} · today’s forecast for this flight`
+      : `${forecast.confidenceLabel} · the day-before forecast for this flight`;
+  }
   return forecast.confidenceLevel >= 5
     ? `${forecast.confidenceLabel} · hourly forecasts and recent pilot reports`
     : `${forecast.confidenceLabel} · latest turbulence forecast for this flight`;
@@ -169,7 +174,7 @@ function ForecastSummary({ flight, ctx, className }: SummaryCardProps) {
       <p className="mt-4 text-[15px] leading-relaxed text-ink-700">{smoothness.summary}</p>
       <p className="mt-2.5 flex items-start gap-1.5 text-xs leading-snug text-ink-500">
         <Info aria-hidden className="mt-px size-3.5 shrink-0 text-breeze-500" />
-        <span>{basisLine(ctx.forecast, ctx.preview === true)}</span>
+        <span>{basisLine(ctx.forecast, ctx.preview === true, ctx.daysUntil)}</span>
       </p>
 
       <div className="mt-4 border-t border-line/70 pt-4">

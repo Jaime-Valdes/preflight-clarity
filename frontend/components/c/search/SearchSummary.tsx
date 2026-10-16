@@ -2,7 +2,7 @@
 
 import { ArrowLeftRight, ArrowRight, Pencil } from "lucide-react";
 import Link from "next/link";
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { formatShortDate } from "@preflight/shared/dates";
 import { Sheet } from "@/components/c/common/Sheet";
@@ -34,6 +34,13 @@ export function SearchSummary({ day, today, carry }: SearchSummaryProps) {
   const origin = getAirport(day.origin);
   const destination = getAirport(day.destination);
   const reversed: RouteDay = { origin: day.destination, destination: day.origin, date: day.date };
+
+  // Back/forward puts another search under the form: close it (it would still hold the old values).
+  useEffect(() => {
+    const close = () => setMode("closed");
+    window.addEventListener("popstate", close);
+    return () => window.removeEventListener("popstate", close);
+  }, []);
 
   function open() {
     setDraft({ origin: day.origin, destination: day.destination, date: day.date });

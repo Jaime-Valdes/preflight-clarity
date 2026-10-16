@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { getAirport, POPULAR_AIRPORT_CODES, searchAirports } from "@preflight/shared/airports";
+import { getAirport, POPULAR_AIRPORT_CODES, resolveAirport, searchAirports } from "@preflight/shared/airports";
 import type { Airport } from "@preflight/shared/types";
 import { cn } from "@/lib/cn";
 
@@ -30,9 +30,10 @@ interface AirportFieldProps {
   /** Something rendered at the right of the label row (e.g. a swap button). */
   labelAction?: ReactNode;
   /**
-   * Accept text that matches no airport (stored as typed). Default true. With false, only a
-   * picked airport is stored: unmatched text commits as "", and the list says nothing matches
-   * (flight data only exists for real airports — docs/FEASIBILITY.md).
+   * Accept text that matches no airport (offered as "Use …", stored as typed). Default true.
+   * With false, the list never offers free text and says when nothing matches (flight data
+   * only exists for real airports — docs/FEASIBILITY.md); unmatched text still stays in the
+   * field (stored as typed) so the form's validation can say it isn't in the list.
    */
   allowFreeText?: boolean;
   className?: string;
@@ -41,6 +42,7 @@ interface AirportFieldProps {
 type Option = { kind: "airport"; airport: Airport } | { kind: "text"; text: string };
 
 const MAX_RESULTS = 6;
+const NO_MATCH = "No airports match. Try a city name or airport code, or pick the nearest major airport.";
 /** Five chips fit on one row at 390px. */
 const MAX_QUICK_PICKS = 5;
 
@@ -53,8 +55,8 @@ export function airportLabel(value: string): string {
 
 /**
  * Accessible combobox over the shared airport list. Picking a suggestion
- * stores the IATA code; typing something that matches nothing stores the
- * trimmed text, unless `allowFreeText` is false (then it stores "").
+ * stores the IATA code; typed text that names a catalogue airport ("Lisbon",
+ * "BOS") commits as its code; anything else stores the trimmed text.
  */
 export function AirportField({
   id,
@@ -71,6 +73,7 @@ export function AirportField({
 }: AirportFieldProps) {
   const listId = useId();
   const hintId = useId();
+  const noMatchId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   /** Text being typed; null while not editing (the field shows the stored value's label). */
   const [draft, setDraft] = useState<string | null>(null);
@@ -106,17 +109,30 @@ export function AirportField({
     const code = getAirport(trimmed);
     const top = /^[A-Za-z]{3}$/.test(trimmed) ? searchAirports(trimmed, 1)[0] : undefined;
     const typedAsCode = trimmed === trimmed.toUpperCase();
-    const known = code && (typedAsCode || top?.code === code.code) ? code : top;
-    if (known) onChange(known.code);
-    else onChange(allowFreeText ? trimmed.slice(0, 60) : "");
+    // A full city or airport name ("Lisbon", "New York", "Heathrow") is that airport. With
+    // catalogue airports only, a lone suggestion ("Lisb") is too: it's all the list offered.
+    const named = resolveAirport(trimmed);
+    const only = allowFreeText ? [] : searchAirports(trimmed, 2);
+    const known =
+      (code && (typedAsCode || top?.code === code.code) ? code : top) ??
+      (named.known ? named : only.length === 1 ? only[0] : undefined);
+    // Unmatched text stays as typed; without free text the form's validation flags it.
+    onChange(known ? known.code : trimmed.slice(0, 60));
   }
 
+  /** Stores the pick and closes the list; focus stays on the input (the list reopens on typing or ↓). */
   function select(option: Option) {
     setDraftBoth(null);
+    setTypedBoth(false);
     setOpen(false);
     setActive(-1);
     onChange(option.kind === "airport" ? option.airport.code : option.text);
-    inputRef.current?.blur();
+  }
+
+  /** Focused but not editing (just picked): start editing so ↑/↓ can show the list again. */
+  function reopen() {
+    if (draftRef.current === null) setDraftBoth(airportLabel(value));
+    setOpen(true);
   }
 
   function setTypedBoth(next: boolean) {
@@ -152,12 +168,12 @@ export function AirportField({
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        if (!open) setOpen(true);
+        if (!open || !editing) reopen();
         setActive(options.length ? (active + 1) % options.length : -1);
         break;
       case "ArrowUp":
         e.preventDefault();
-        if (!open) setOpen(true);
+        if (!open || !editing) reopen();
         setActive(options.length ? (active - 1 + options.length) % options.length : -1);
         break;
       case "Enter": {
@@ -173,10 +189,11 @@ export function AirportField({
           const pick = options[active];
           // draftRef is null before the native blur, so onBlur won't commit the raw text.
           setDraftBoth(null);
-          setOpen(false);
-          setActive(-1);
           onChange(pick.kind === "airport" ? pick.airport.code : pick.text);
         }
+        // Close the list before focus moves on, so Tab never lands on it.
+        setOpen(false);
+        setActive(-1);
         break;
       case "Escape":
         if (open) {
@@ -208,9 +225,9 @@ export function AirportField({
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={showList}
-          aria-controls={listId}
+          aria-controls={showList ? listId : undefined}
           aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
-          aria-describedby={hint ? hintId : undefined}
+          aria-describedby={[noMatch ? noMatchId : "", hint ? hintId : ""].filter(Boolean).join(" ") || undefined}
           aria-invalid={invalid || undefined}
           autoComplete="off"
           autoCorrect="off"
@@ -230,6 +247,8 @@ export function AirportField({
             id={listId}
             role="listbox"
             aria-label="Airport suggestions"
+            // Never a Tab stop, even when the list overflows and scrolls.
+            tabIndex={-1}
             className="absolute inset-x-0 top-[calc(100%+6px)] z-30 max-h-72 overflow-y-auto rounded-2xl bg-surface p-1.5 shadow-lift ring-1 ring-line"
             onMouseDown={(e) => e.preventDefault()}
           >
@@ -280,10 +299,14 @@ export function AirportField({
           </ul>
         ) : null}
         {noMatch ? (
-          <p role="status" className="absolute inset-x-0 top-[calc(100%+6px)] z-30 rounded-2xl bg-surface px-4 py-3 text-[13px] text-ink-500 shadow-lift ring-1 ring-line">
-            No airports match. Try a city name or airport code, or pick the nearest major airport.
+          <p id={noMatchId} className="absolute inset-x-0 top-[calc(100%+6px)] z-30 rounded-2xl bg-surface px-4 py-3 text-[13px] text-ink-500 shadow-lift ring-1 ring-line">
+            {NO_MATCH}
           </p>
         ) : null}
+        {/* Always mounted, so the message is announced when its text appears. */}
+        <p role="status" className="sr-only">
+          {noMatch ? NO_MATCH : ""}
+        </p>
       </div>
       {chips.length ? (
         <div role="group" className="mt-2 flex flex-wrap gap-2" aria-label="Popular airports">

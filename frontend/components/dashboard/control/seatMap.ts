@@ -111,13 +111,19 @@ export function seatTeaserLine(map: SeatMap): string {
 
 // ── Grid geometry ───────────────────────────────────────────────────────────
 // One CSS grid: [wing strip] [seats…] [aisle] [seats…] ([aisle] [seats…]) [wing strip].
-// Seats are fluid (1fr each) so a 3-4-3 wide-body still fits at 340px; aisles
-// keep room for a two-digit row number; the wing strips host the wing shape
-// and the exit markers.
+// Seats are fluid (1fr each) down to MIN_SEAT_PX, so they stay tappable; below
+// that (a 3-4-3 wide-body at 320–340px) the map scrolls sideways inside its own
+// box (gridMinWidth). Aisles keep room for a two-digit row number; the wing
+// strips host the wing shape and the exit markers.
 
-export const WING_COL = "minmax(0.875rem, 0.55fr)";
-export const AISLE_COL = "minmax(1.375rem, 0.8fr)";
-export const SEAT_COL = "minmax(0, 1fr)";
+const WING_MIN_PX = 14;
+const AISLE_MIN_PX = 22;
+/** Smallest seat button: the map scrolls sideways inside its box rather than shrink seats below this. */
+export const MIN_SEAT_PX = 24;
+
+export const WING_COL = `minmax(${WING_MIN_PX}px, 0.55fr)`;
+export const AISLE_COL = `minmax(${AISLE_MIN_PX}px, 0.8fr)`;
+export const SEAT_COL = `minmax(${MIN_SEAT_PX}px, 1fr)`;
 
 /** Upper bound on seat size so a 3-3 narrow-body doesn't balloon on wide screens. */
 export const MAX_SEAT_PX = 36;
@@ -154,6 +160,17 @@ export function gridMaxWidth(groups: string[][]): number {
   const aisles = Math.max(0, groups.length - 1);
   const cols = gridColumnCount(groups);
   return seats * MAX_SEAT_PX + aisles * 30 + 2 * 22 + (cols - 1) * GRID_COLUMN_GAP_PX;
+}
+
+/**
+ * Width in px (including the grid's 4px side padding) below which seats would drop under
+ * MIN_SEAT_PX: the grid keeps this width and its box scrolls sideways instead.
+ */
+export function gridMinWidth(groups: string[][]): number {
+  const seats = seatCount(groups);
+  const aisles = Math.max(0, groups.length - 1);
+  const cols = gridColumnCount(groups);
+  return seats * MIN_SEAT_PX + aisles * AISLE_MIN_PX + 2 * WING_MIN_PX + (cols - 1) * GRID_COLUMN_GAP_PX + 8;
 }
 
 /** "#3c9e89" + 0.35 → "rgb(60 158 137 / 0.35)" (falls back to the input for non-hex). */

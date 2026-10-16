@@ -4,6 +4,7 @@ import { countdownLabel, formatDuration, formatLongDate, formatTime12 } from "@p
 import { availabilityFor } from "@preflight/shared/forecast";
 import type { Flight } from "@preflight/shared/types";
 import { cn } from "@/lib/cn";
+import { EXAMPLE_FLIGHT_CHIP } from "./explore/model";
 
 /** The study's eyebrow: the participant gave a route and date, never a flight (docs/FEASIBILITY.md). */
 export const EXAMPLE_FLIGHT_LABEL = "An example flight on your route";
@@ -22,14 +23,14 @@ export interface DashboardHeaderProps {
    */
   briefingDaysUntil?: number;
   /**
-   * Eyebrow above the airline. Variant A free exploration: "Your flight" / "Option 2"…;
-   * version C: e.g. "Flight details". Any label other than "Your flight" makes the countdown
-   * speak of "this flight".
+   * Eyebrow above the airline. Variant A free exploration: "Example flight" / "Option 2"…;
+   * version C: e.g. "Flight details". Any label other than the set-up flight's ("Example flight",
+   * or "Your flight") makes the countdown speak of "this flight".
    */
   label?: string;
   /**
    * The study: the flight is an example on the participant's route, so the eyebrow reads
-   * "An example flight on your route" where it would otherwise be empty or "Your flight"
+   * "An example flight on your route" where it would otherwise be empty or the set-up flight's label
    * (an explored "Option n" keeps its label). Default false.
    */
   example?: boolean;
@@ -42,10 +43,18 @@ function dayOffsetLabel(offset: number): string | null {
   return offset > 0 ? `+${offset}` : `−${Math.abs(offset)}`;
 }
 
-/** The countdown speaks of "your flight" only for the participant's own flight (an explored option is "this flight"). */
+/** The set-up flight's label (the study's example flight on the participant's route), or none. */
+function isSetUpLabel(label: string | undefined): boolean {
+  return !label || label === EXAMPLE_FLIGHT_CHIP || label === "Your flight";
+}
+
+/**
+ * The countdown speaks of "your flight" only for the set-up flight — the participant's trip date stays
+ * true ("44 days until your flight") — while an explored option is "this flight".
+ */
 function countdown(daysUntil: number, label: string | undefined): string {
   const text = countdownLabel(daysUntil);
-  if (!label || label === "Your flight") return text;
+  if (isSetUpLabel(label)) return text;
   return text.replace("Your flight", "This flight").replace("your flight", "this flight");
 }
 
@@ -84,7 +93,7 @@ export function DashboardHeader({
   const { origin, destination, aircraft } = flight;
   const offset = dayOffsetLabel(flight.arriveDayOffset);
   const known = availabilityFor(briefingDaysUntil);
-  const eyebrow = example && (!label || label === "Your flight") ? EXAMPLE_FLIGHT_LABEL : label;
+  const eyebrow = example && isSetUpLabel(label) ? EXAMPLE_FLIGHT_LABEL : label;
 
   return (
     <section

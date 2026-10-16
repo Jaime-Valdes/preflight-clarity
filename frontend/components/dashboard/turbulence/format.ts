@@ -38,6 +38,14 @@ export function rangeLabel(startMin: number, endMin: number): string {
   return `${formatOffset(startMin)}–${formatOffset(endMin)}`;
 }
 
+/**
+ * The study preview's horizon, named (docs/FEASIBILITY.md): the briefing shows the day
+ * before the flight, or the day itself for a flight today (`previewDaysUntil` → 0).
+ */
+export function previewForecastLabel(briefingDaysUntil: number): string {
+  return briefingDaysUntil <= 0 ? "Forecast for today" : "Day-before forecast";
+}
+
 /* ── Before the flight-specific forecast exists (docs/FEASIBILITY.md) ──── */
 
 /** "Tue, Nov 24": the first day a turbulence forecast for a flight departing on `departureDate` exists. */

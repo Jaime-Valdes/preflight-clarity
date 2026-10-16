@@ -1,6 +1,6 @@
 import { CalendarClock } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { marker, type PendingItem } from "./availability";
+import { marker, type PendingItem } from "@/components/c/common/availability";
 
 interface PendingNoteProps {
   item: PendingItem;
@@ -33,6 +33,7 @@ export function PendingNote({ item, date, subject, variant = "inline", className
           <span className="block font-semibold text-ink-900">
             {m.subject} from <span className="whitespace-nowrap">{m.from}</span>
           </span>
+          <span className="sr-only">, </span>
           <span className="mt-0.5 block text-xs text-ink-500">{m.lead}</span>
         </p>
       </div>

@@ -11,7 +11,7 @@ import { flightHref } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
 import { LINK_BASE, LINK_BUTTON, LINK_TONE, routeText, shortDate } from "../flight/copy";
 import { PendingNote } from "../flight/PendingNote";
-import { UNAVAILABLE_NOTE, isFlightColumn, type Column, type FlightColumn, type UnavailableColumn } from "./facts";
+import { isFlightColumn, unavailableNote, type Column, type FlightColumn, type UnavailableColumn } from "./facts";
 
 interface CompareEmptyProps {
   /** At most one flight that can be shown, plus any that no longer can. */
@@ -126,7 +126,7 @@ function UnavailableFlight({ column, onRemove }: { column: UnavailableColumn; on
         <p className="text-sm font-bold leading-snug text-ink-700 tabular-nums">
           {column.item.key} · {routeText(column.item.origin, column.item.destination)} · {shortDate(column.item.date)}
         </p>
-        <p className="mt-0.5 text-xs leading-snug text-ink-500">{UNAVAILABLE_NOTE[column.reason]}</p>
+        <p className="mt-0.5 text-xs leading-snug text-ink-500">{unavailableNote(column)}</p>
       </div>
       <RemoveButton id={column.id} label={label} onRemove={onRemove} />
     </div>

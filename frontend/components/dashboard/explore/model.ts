@@ -7,9 +7,14 @@ export interface ExploredEntry {
   flight: Flight;
 }
 
-/** "Your flight" for the first (set-up) flight, then "Option 2", "Option 3"… */
+/**
+ * The study's set-up flight is an example on the participant's route (they never say which flight
+ * they are on — docs/FEASIBILITY.md), so the first chip is "Example flight"; then "Option 2", "Option 3"…
+ */
+export const EXAMPLE_FLIGHT_CHIP = "Example flight";
+
 export function exploreLabel(index: number): string {
-  return index <= 0 ? "Your flight" : `Option ${index + 1}`;
+  return index <= 0 ? EXAMPLE_FLIGHT_CHIP : `Option ${index + 1}`;
 }
 
 /** "Nov 26" (no weekday — chips stay short). */

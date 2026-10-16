@@ -28,6 +28,8 @@ interface ResultCardProps {
    * timeline and the bump summary. Otherwise a calm marker says when they appear.
    */
   scores: boolean;
+  /** The airframe is assigned (≤ 1 day before departure): show it is, with this airframe's own age, as the flight page does. */
+  airframe: boolean;
   /** For the marker: the day the forecast comes out ("Tue, Nov 24") and how long before departure that is. */
   forecastFrom: string;
   forecastLead: string;
@@ -53,6 +55,7 @@ export function ResultCard({
   compareLocked,
   onToggleCompare,
   scores,
+  airframe,
   forecastFrom,
   forecastLead,
 }: ResultCardProps) {
@@ -144,6 +147,7 @@ export function ResultCard({
               <span className="block text-[13px] font-semibold leading-snug text-ink-700">
                 Turbulence forecast from {forecastFrom}
               </span>
+              <span className="sr-only">, </span>
               <span className="mt-0.5 block text-[11px] leading-snug text-ink-500">
                 {forecastLead} · with its smoothness score
               </span>
@@ -155,7 +159,7 @@ export function ResultCard({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
             <span className="text-[13px] font-semibold text-ink-700">
               {flight.aircraft.fullName}
-              <span className="font-normal text-ink-500"> · scheduled</span>
+              <span className="font-normal text-ink-500"> · {airframe ? "assigned" : "scheduled"}</span>
             </span>
             {flight.aircraft.bodyType === "wide" ? <Pill tone="breeze">Wide-body</Pill> : null}
           </div>
@@ -169,8 +173,17 @@ export function ResultCard({
             <li className="flex items-start gap-1.5">
               <Armchair aria-hidden className="mt-px size-3.5 shrink-0 text-ink-400" />
               <span>
-                About <span className="tabular-nums">{flight.aircraft.typicalSeats}</span> seats · fleet average{" "}
-                <span className="tabular-nums">{flight.aircraft.fleetAvgAgeYears.toFixed(1)}</span> years old
+                About <span className="tabular-nums">{flight.aircraft.typicalSeats}</span> seats ·{" "}
+                {airframe ? (
+                  <>
+                    <span className="whitespace-nowrap">{flight.aircraft.tailNumber}</span> ·{" "}
+                    <span className="tabular-nums">{flight.aircraft.ageYears.toFixed(1)}</span> years old
+                  </>
+                ) : (
+                  <>
+                    fleet average <span className="tabular-nums">{flight.aircraft.fleetAvgAgeYears.toFixed(1)}</span> years old
+                  </>
+                )}
               </span>
             </li>
           </ul>

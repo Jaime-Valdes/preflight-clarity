@@ -46,7 +46,7 @@ export function Header() {
             <li>
               <Link
                 href="/c"
-                aria-current={pathname === "/c" ? "page" : undefined}
+                aria-current={pathname === "/c" ? "page" : onFlights ? "true" : undefined}
                 className={cn(
                   NAV_LINK,
                   onFlights ? "bg-canvas text-ink-900 ring-1 ring-inset ring-line" : "text-ink-500 hover:bg-canvas hover:text-ink-900",

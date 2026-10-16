@@ -13,6 +13,7 @@ import {
   focusRowFor,
   gridColumnCount,
   gridMaxWidth,
+  gridMinWidth,
   gridTemplate,
   GRID_COLUMN_GAP_PX,
   KIND_LABEL,
@@ -30,8 +31,12 @@ const MAP_MAX_HEIGHT_PX = 420;
 
 // ── Section body ────────────────────────────────────────────────────────────
 
-export function SeatSection({ flight }: SectionProps) {
+export function SeatSection({ flight, ctx }: SectionProps) {
   const { seatMap } = flight;
+  // Seat availability is as of the moment the briefing describes: the study's preview shows the day
+  // before the flight (or the day itself for a flight today); version C shows today.
+  const dayBefore = ctx.preview === true && ctx.daysUntil >= 1;
+  const openNow = dayBefore ? "open the day before" : "open right now";
   const tracker = useTracker();
   // Version C (and an explored option in the study) is not the visitor's booked flight.
   const ownFlight = useExplore()?.showingOwnFlight ?? true;
@@ -61,7 +66,8 @@ export function SeatSection({ flight }: SectionProps) {
     const container = scrollRef.current;
     if (!container) return;
     const row = focusRowFor(seatMap);
-    if (row !== null) centerRow(container, row, false);
+    // A wide-body on a very narrow screen scrolls sideways too: bring the top pick into view.
+    if (row !== null) centerRow(container, row, false, seatMap.recommended[0]);
   }, [seatMap]);
 
   function handleSeatTap(id: string, occupied: boolean) {
@@ -74,7 +80,7 @@ export function SeatSection({ flight }: SectionProps) {
     handleSeatTap(id, false);
     const row = parseSeatId(id)?.row;
     const container = scrollRef.current;
-    if (row !== undefined && container) centerRow(container, row, !prefersReducedMotion());
+    if (row !== undefined && container) centerRow(container, row, !prefersReducedMotion(), id);
   }
 
   function handleChoose() {
@@ -109,10 +115,12 @@ export function SeatSection({ flight }: SectionProps) {
           {pick === null
             ? "Open seats in that zone are shaded on the map."
             : pickOverWing
-              ? "The best seats open right now are starred on the map."
-              : "Those are unavailable right now, so the best open seats nearby are starred on the map."}
+              ? `The best seats ${openNow} are starred on the map.`
+              : `Those are unavailable ${dayBefore ? "the day before" : "right now"}, so the best open seats nearby are starred on the map.`}
         </p>
-        <p className="mt-1 text-xs leading-snug text-ink-500">As of today — seats change until check-in.</p>
+        <p className="mt-1 text-xs leading-snug text-ink-500">
+          {dayBefore ? "As of the day before departure" : "As of today"} — seats change until check-in.
+        </p>
         <button
           type="button"
           aria-expanded={whyOpen}
@@ -159,7 +167,7 @@ export function SeatSection({ flight }: SectionProps) {
             </div>
             {otherPicks.length > 0 ? (
               <div className="mt-3">
-                <div className="text-xs text-ink-500">{othersSmoothest ? "Also smooth and open right now" : "Also open right now"}</div>
+                <div className="text-xs text-ink-500">{othersSmoothest ? `Also smooth and ${openNow}` : `Also ${openNow}`}</div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   {otherPicks.map((id) => (
                     <button
@@ -221,7 +229,7 @@ export function SeatSection({ flight }: SectionProps) {
         <p className="text-sm text-ink-500">The seat map for this aircraft isn&rsquo;t available yet.</p>
       )}
 
-      <Legend />
+      <Legend openNow={openNow} />
     </div>
   );
 }
@@ -266,7 +274,7 @@ function SeatMapGrid({ seatMap, selectedId, collapsed, scrollRef, onSeatTap }: S
       ref={scrollRef}
       role="group"
       aria-label="Seat map"
-      className="relative overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl bg-canvas/70 ring-1 ring-inset ring-line/60"
+      className="relative overflow-auto overscroll-contain rounded-2xl bg-canvas/70 ring-1 ring-inset ring-line/60"
       style={{ maxHeight: collapsed ? MAP_MAX_HEIGHT_PX : undefined, scrollbarWidth: "thin" }}
     >
       <div
@@ -277,6 +285,7 @@ function SeatMapGrid({ seatMap, selectedId, collapsed, scrollRef, onSeatTap }: S
           columnGap: GRID_COLUMN_GAP_PX,
           rowGap: 3,
           maxWidth: gridMaxWidth(groups),
+          minWidth: gridMinWidth(groups),
         }}
       >
         {/* Fuselage */}
@@ -327,6 +336,7 @@ function SeatMapGrid({ seatMap, selectedId, collapsed, scrollRef, onSeatTap }: S
                 <button
                   key={id}
                   type="button"
+                  data-seat={id}
                   disabled={isOccupied}
                   aria-label={label}
                   aria-pressed={isSelected}
@@ -427,7 +437,7 @@ function ExitMarker({ side, style }: { side: "left" | "right"; style: CSSPropert
 
 // ── Legend ──────────────────────────────────────────────────────────────────
 
-function Legend() {
+function Legend({ openNow }: { openNow: string }) {
   const zones: SeatZone[] = ["smoothest", "smooth", "more_motion"];
   return (
     <ul className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs leading-snug text-ink-700">
@@ -441,7 +451,7 @@ function Legend() {
         <Swatch style={seatStyle("smoothest", false, true, false)}>
           <Star aria-hidden className="size-2.5 text-calm-700" fill="currentColor" strokeWidth={1.5} />
         </Swatch>
-        <span>Recommended · open right now</span>
+        <span>Recommended · {openNow}</span>
       </li>
       <li className="flex items-center gap-2">
         <Swatch style={seatStyle("smooth", true, false, false)} />
@@ -467,14 +477,23 @@ function Swatch({ style, children }: { style: CSSProperties; children?: ReactNod
 
 // ── Scrolling ───────────────────────────────────────────────────────────────
 
-/** Scroll the map so `row` sits in the middle of the visible box. */
-function centerRow(container: HTMLDivElement, row: number, smooth: boolean) {
+/**
+ * Scroll the map so `row` sits in the middle of the visible box — and, when the map is wider than
+ * its box (a wide-body on a narrow screen), so seat `seatId` sits in the middle sideways.
+ */
+function centerRow(container: HTMLDivElement, row: number, smooth: boolean, seatId?: string) {
   const target = container.querySelector<HTMLElement>(`[data-row="${row}"]`);
   if (!target) return;
   const c = container.getBoundingClientRect();
   const t = target.getBoundingClientRect();
   const top = t.top - c.top + container.scrollTop - (container.clientHeight - t.height) / 2;
-  container.scrollTo({ top: Math.max(0, top), behavior: smooth ? "smooth" : "auto" });
+  let left = container.scrollLeft;
+  const seat = seatId ? container.querySelector<HTMLElement>(`[data-seat="${seatId}"]`) : null;
+  if (seat && container.scrollWidth > container.clientWidth) {
+    const s = seat.getBoundingClientRect();
+    left = s.left - c.left + container.scrollLeft - (container.clientWidth - s.width) / 2;
+  }
+  container.scrollTo({ top: Math.max(0, top), left: Math.max(0, left), behavior: smooth ? "smooth" : "auto" });
 }
 
 function prefersReducedMotion(): boolean {

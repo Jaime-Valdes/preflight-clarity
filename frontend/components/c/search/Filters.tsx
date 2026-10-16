@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { formatFare, TIME_BUCKET_LABELS, TIME_BUCKETS, type TimeBucket } from "@/lib/c/format";
 import { cn } from "@/lib/cn";
-import { toggled, type Facets, type MinScore, type ResultsView } from "./view";
+import { airlineName, toggled, type Facets, type MinScore, type ResultsView } from "./view";
 
 interface FiltersProps {
   /** Unique per page (the sidebar and the phone sheet can both exist). */
@@ -34,7 +34,7 @@ export function Filters({ idPrefix, facets, view, onChange, scoresNote, classNam
     ...facets.airlines,
     ...view.airlines
       .filter((code) => !facets.airlines.some((a) => a.code === code))
-      .map((code) => ({ code, name: code, count: 0, lowestFareUsd: 0 })),
+      .map((code) => ({ code, name: airlineName(code, facets), count: 0, lowestFareUsd: 0 })),
   ];
   // "Wide-body only" changes nothing when the day has none, or nothing else.
   const sizeMatters = view.wide || (facets.wideCount > 0 && facets.wideCount < facets.total);

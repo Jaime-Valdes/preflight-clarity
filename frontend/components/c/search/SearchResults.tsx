@@ -3,29 +3,30 @@
 import { ArrowRight, CalendarClock, CalendarDays, Compass, Info, MapPin, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useDeferredValue, useEffect, useMemo, useOptimistic, useState, useTransition, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { getForecastStatus } from "@preflight/shared/forecast";
 import { searchFlights, type FlightOption, type SearchResults as DayResults } from "@preflight/shared/search";
-import { availabilityOn, daysAhead, TURBULENCE_LEAD, turbulenceFromDate } from "@/components/c/common/availability";
+import { availabilityAt, daysToDeparture, hasLeft, marker } from "@/components/c/common/availability";
 import { Sheet } from "@/components/c/common/Sheet";
 import { keepClearOfTray } from "@/components/c/shell/CompareTray";
 import { useCompareList } from "@/lib/c/compare-store";
 import { TIME_BUCKET_LABELS } from "@/lib/c/format";
 import { itemId, searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
-import { useTodayISO } from "@/lib/hooks";
+import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { DateStrip } from "./DateStrip";
 import { Filters } from "./Filters";
 import { checkQuery, issueMessage, type QueryCheck, type SearchDraft } from "./query";
 import { ResultCard } from "./ResultCard";
-import { airportSwapNote, nearbyRoutes, routeHasNoNonstops } from "./routes";
+import { airportSwapNote, nearbyRoutes, routeHasNoNonstops, sameArea } from "./routes";
 import { SearchForm } from "./SearchForm";
 import { SearchSummary } from "./SearchSummary";
 import { ResultsSkeleton } from "./Skeletons";
 import { SortTabs } from "./SortTabs";
 import {
   activeFilterCount,
+  airlineName,
   applyView,
   buildFacets,
   defaultSortFor,
@@ -80,15 +81,35 @@ function runSearch(origin: string, destination: string, date: string): Search {
 
 const NO_OPTIONS: readonly FlightOption[] = [];
 
+/** Ids that clearing or removing a filter sends focus to (never <body>). */
+const FILTERS_TITLE_ID = "c-filters-title";
+const FILTERS_BUTTON_ID = "c-filters-button";
+const COUNT_ID = "c-results-count";
+
+/** Opens a sheet; Back/forward (a different page under it) closes it again. */
+function useSheetState(): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const close = () => setOpen(false);
+    window.addEventListener("popstate", close);
+    return () => window.removeEventListener("popstate", close);
+  }, []);
+  return [open, setOpen];
+}
+
 function Results({ day, params, today }: { day: RouteDay; params: Params; today: string }) {
   const router = useRouter();
   const compare = useCompareList();
   const [, startTransition] = useTransition();
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useSheetState();
+  const nowMs = useNowMs();
+  // Where focus goes once a filter change has rendered (the control used may be gone).
+  const focusNext = useRef<string | null>(null);
   const { origin, destination, date } = day;
   // Time-aware (docs/VERSION_C.md): flight-specific turbulence only exists from 2 days before departure.
-  const scores = availabilityOn(date, today).turbulence;
-  const forecastFrom = turbulenceFromDate(date);
+  const avail = availabilityAt(today, date);
+  const scores = avail.turbulence;
+  const { from: forecastFrom, lead: forecastLead } = marker("turbulence", date);
 
   const search = useMemo(() => runSearch(origin, destination, date), [origin, destination, date]);
   const urlView = useMemo(() => parseView(params, scores), [params, scores]);
@@ -97,32 +118,52 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   // The date strip is computed after the day's own results (first paint first).
   const stripDay = parseDayKey(useDeferredValue(dayKey(day), ""));
 
-  const options = search.ok ? search.results.options : NO_OPTIONS;
+  const dayOptions = search.ok ? search.results.options : NO_OPTIONS;
+  // Flights that have already left (today, in their origin's time) aren't offered: no fare, score, gate or
+  // Compare. Sorting, filters and the counts only see the flights still to leave.
+  const mayHaveLeft = daysToDeparture(today, date) <= 1;
+  const options = useMemo(
+    () => (mayHaveLeft ? dayOptions.filter((o) => !hasLeft(o.flight, nowMs)) : dayOptions),
+    [dayOptions, mayHaveLeft, nowMs],
+  );
+  const leftCount = dayOptions.length - options.length;
+  const dayWord = date === today ? "today" : "this day";
   const facets = useMemo(() => buildFacets(options), [options]);
   const shown = useMemo(() => applyView(options, view), [options, view]);
   const filterCount = activeFilterCount(view);
   const total = options.length;
   // No flights this day: is it the day, or does nobody fly this route nonstop at all?
   const routeEmpty = useMemo(
-    () => search.ok && total === 0 && routeHasNoNonstops({ origin, destination, date }),
-    [search.ok, total, origin, destination, date],
+    () => search.ok && dayOptions.length === 0 && routeHasNoNonstops({ origin, destination, date }),
+    [search.ok, dayOptions.length, origin, destination, date],
   );
-  const swapNote = airportSwapNote(day, options);
-  const history = options[0]?.flight.turbulence.history ?? null;
+  const swapNote = airportSwapNote(day, dayOptions);
+  const history = dayOptions[0]?.flight.turbulence.history ?? null;
 
   useEffect(() => {
     if (!search.ok) console.error(search.error);
   }, [search]);
 
-  function changeView(next: ResultsView) {
+  useEffect(() => {
+    const id = focusNext.current;
+    const target = id ? document.getElementById(id) : null;
+    if (target) {
+      focusNext.current = null;
+      target.focus();
+    }
+  });
+
+  function changeView(next: ResultsView, focusId?: string) {
+    if (focusId) focusNext.current = focusId;
     startTransition(() => {
       setOptimisticView(next);
       router.replace(resultsHref(day, next), { scroll: false });
     });
   }
 
-  const clearFilters = () => changeView(withoutFilters(view));
-  const hrefFor = (d: string) => resultsHref({ ...day, date: d }, viewForDay(view, availabilityOn(d, today).turbulence));
+  const clearFilters = (focusId?: string) => changeView(withoutFilters(view), focusId);
+  const hrefFor = (d: string) => resultsHref({ ...day, date: d }, viewForDay(view, availabilityAt(today, d).turbulence));
+  const scoresNote = `From ${forecastFrom}, when the turbulence forecast for these flights comes out (${forecastLead}).`;
 
   if (routeEmpty) {
     return (
@@ -138,14 +179,16 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 
   const countText =
     total === 0
-      ? "No nonstop flights this day"
+      ? leftCount > 0
+        ? `No more nonstop flights ${dayWord}`
+        : "No nonstop flights this day"
       : `${shown.length === total ? total : `${shown.length} of ${total}`} nonstop ${total === 1 ? "flight" : "flights"} · prices are illustrative`;
 
   return (
     <div className="flex flex-col gap-4 sm:gap-5">
       <SearchSummary day={day} today={today} carry={carryFor(view)} />
 
-      <DateStrip day={day} stripDay={stripDay} today={today} hrefFor={hrefFor} />
+      <DateStrip day={day} stripDay={stripDay} today={today} nowMs={nowMs} hrefFor={hrefFor} />
 
       <div className="lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)] lg:items-start lg:gap-6">
         <aside
@@ -153,13 +196,13 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
           className="hidden rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto lg:overscroll-contain"
         >
           <div className="mb-4 flex min-h-11 items-center justify-between gap-3">
-            <h2 id="c-filters-title" className="text-base font-bold text-ink-900">
+            <h2 id={FILTERS_TITLE_ID} tabIndex={-1} className="rounded-md text-base font-bold text-ink-900">
               Filters
             </h2>
             {filterCount > 0 ? (
               <button
                 type="button"
-                onClick={clearFilters}
+                onClick={() => clearFilters(FILTERS_TITLE_ID)}
                 className="-mr-2 h-11 rounded-full px-3 text-sm font-semibold text-breeze-700 transition-colors hover:bg-breeze-50"
               >
                 Clear all
@@ -171,7 +214,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
             facets={facets}
             view={view}
             onChange={changeView}
-            scoresNote={`From ${forecastFrom}, when the turbulence forecast for these flights comes out (${TURBULENCE_LEAD}).`}
+            scoresNote={scoresNote}
           />
         </aside>
 
@@ -182,7 +225,8 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
           {!scores && total > 0 ? (
             <ScoresLater
               forecastFrom={forecastFrom}
-              daysAway={daysAhead(date, today)}
+              daysAway={daysToDeparture(today, date)}
+              lead={forecastLead}
               history={history}
               className="mb-3"
             />
@@ -192,22 +236,29 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
             value={view.sort}
             onChange={(sort) => changeView({ ...view, sort })}
             unavailable={scores ? undefined : SCORE_SORTS}
-            note={scores ? undefined : `Smoothest from ${forecastFrom} · ${TURBULENCE_LEAD}`}
+            note={scores ? undefined : `Smoothest from ${forecastFrom} · ${forecastLead}`}
           />
 
           <div className="mt-2 flex min-h-11 items-center justify-between gap-3">
             <div className="min-w-0">
-              <p role="status" className="text-sm leading-snug text-ink-500">
+              <p id={COUNT_ID} role="status" tabIndex={-1} className="rounded-md text-sm leading-snug text-ink-500">
                 {countText}
               </p>
+              {leftCount > 0 && total > 0 ? (
+                <p className="mt-0.5 text-xs leading-snug text-ink-500">
+                  <span className="tabular-nums">{leftCount}</span> earlier {leftCount === 1 ? "flight has" : "flights have"}{" "}
+                  left {dayWord}
+                </p>
+              ) : null}
               {scores && history && total > 0 ? (
                 <p className="mt-0.5 text-xs leading-snug text-ink-500">
                   Scores from the latest turbulence forecasts ·{" "}
-                  {getForecastStatus(daysAhead(date, today), history).confidenceLabel.toLowerCase()}
+                  {getForecastStatus(daysToDeparture(today, date), history).confidenceLabel.toLowerCase()}
                 </p>
               ) : null}
             </div>
             <button
+              id={FILTERS_BUTTON_ID}
               type="button"
               onClick={() => setFiltersOpen(true)}
               aria-haspopup="dialog"
@@ -237,7 +288,14 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
           ) : null}
 
           {filterCount > 0 ? (
-            <ActiveFilters view={view} facets={facets} onChange={changeView} onClear={clearFilters} className="mt-1 lg:hidden" />
+            <ActiveFilters
+              view={view}
+              facets={facets}
+              onChange={changeView}
+              onClear={() => clearFilters(FILTERS_BUTTON_ID)}
+              lastFocusId={FILTERS_BUTTON_ID}
+              className="mt-1 lg:hidden"
+            />
           ) : null}
 
           <div className="mt-3">
@@ -246,6 +304,12 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                 icon={<Compass />}
                 title="These flights couldn’t be put together"
                 text="Something went wrong building this day’s illustrative flights. Try a nearby date or another route."
+              />
+            ) : total === 0 && leftCount > 0 ? (
+              <Notice
+                icon={<CalendarDays />}
+                title={`The last nonstop flight ${dayWord} has left`}
+                text="Pick a later date above, or change the search."
               />
             ) : total === 0 ? (
               <Notice
@@ -261,7 +325,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                 action={
                   <button
                     type="button"
-                    onClick={clearFilters}
+                    onClick={() => clearFilters(COUNT_ID)}
                     className="mt-4 inline-flex h-11 items-center rounded-full bg-night-900 px-5 text-sm font-semibold text-white shadow-lift transition-colors hover:bg-night-800"
                   >
                     Clear filters
@@ -271,7 +335,13 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
             ) : (
               <ol aria-label={`Flights, ${SORT_ORDER_TEXT[view.sort]}`} className="flex flex-col gap-3">
                 {shown.map((option) => {
-                  const item: CompareItem = { origin, destination, date, key: option.key };
+                  // The flight's own airports: a long flight "from LGA" leaves from JFK, and is one flight either way.
+                  const item: CompareItem = {
+                    origin: option.flight.origin.code,
+                    destination: option.flight.destination.code,
+                    date,
+                    key: option.key,
+                  };
                   const id = itemId(item);
                   const inCompare = compare.has(id);
                   return (
@@ -280,8 +350,9 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                         option={option}
                         item={item}
                         scores={scores}
+                        airframe={avail.airframe}
                         forecastFrom={forecastFrom}
-                        forecastLead={TURBULENCE_LEAD}
+                        forecastLead={forecastLead}
                         inCompare={inCompare}
                         compareLocked={compare.isFull && !inCompare}
                         onToggleCompare={(control) => {
@@ -315,11 +386,14 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                 )}
               </p>
               <div className="flex items-center gap-2">
+                {/* aria-disabled, not disabled: focus stays on it after clearing (a disabled button drops it to <body>). */}
                 <button
                   type="button"
-                  onClick={clearFilters}
-                  disabled={filterCount === 0}
-                  className="h-12 shrink-0 rounded-full px-4 text-sm font-semibold text-ink-700 transition-colors hover:bg-line/50 disabled:text-ink-300 disabled:hover:bg-transparent"
+                  onClick={() => {
+                    if (filterCount > 0) clearFilters();
+                  }}
+                  aria-disabled={filterCount === 0 || undefined}
+                  className="h-12 shrink-0 rounded-full px-4 text-sm font-semibold text-ink-700 transition-colors hover:bg-line/50 aria-disabled:cursor-default aria-disabled:text-ink-300 aria-disabled:hover:bg-transparent"
                 >
                   Clear all
                 </button>
@@ -339,7 +413,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
             facets={facets}
             view={view}
             onChange={changeView}
-            scoresNote={`From ${forecastFrom}, when the turbulence forecast for these flights comes out (${TURBULENCE_LEAD}).`}
+            scoresNote={scoresNote}
             className="pt-2"
           />
         </Sheet>
@@ -371,11 +445,14 @@ function Notice({ icon, title, text, action }: { icon: ReactNode; title: string;
 function ScoresLater({
   forecastFrom,
   daysAway,
+  lead,
   history,
   className,
 }: {
   forecastFrom: string;
   daysAway: number;
+  /** "2 days before departure" */
+  lead: string;
   history: FlightOption["flight"]["turbulence"]["history"] | null;
   className?: string;
 }) {
@@ -390,7 +467,7 @@ function ScoresLater({
       <div className="min-w-0">
         <p className="text-[15px] font-bold leading-snug text-ink-900">Smoothness scores from {forecastFrom}</p>
         <p className="mt-1 text-sm leading-relaxed text-ink-700">
-          This day is {daysAway} days away. The turbulence forecast for each flight comes out {TURBULENCE_LEAD}; until
+          This day is {daysAway} days away. The turbulence forecast for each flight comes out {lead}; until
           then you can compare times, fares, aircraft and airlines.
         </p>
         {history ? (
@@ -406,10 +483,14 @@ function ScoresLater({
   );
 }
 
-/** A route no airline flies nonstop: say so calmly and offer nearby routes that have flights. */
+/**
+ * A route no airline flies nonstop: say so calmly and offer nearby routes that
+ * have flights (when there are some). Two airports in one metro area get their own sentence.
+ */
 function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, string | undefined> }) {
   const { origin: from, destination: to, date } = day;
   const suggestions = useMemo(() => nearbyRoutes({ origin: from, destination: to, date }), [from, to, date]);
+  const area = useMemo(() => sameArea({ origin: from, destination: to, date }), [from, to, date]);
   const origin = getAirport(day.origin);
   const destination = getAirport(day.destination);
   const city = (code: string) => getAirport(code)?.city ?? code;
@@ -425,12 +506,22 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
         <Compass className="size-5" />
       </span>
       <h2 id="c-no-nonstops" className="mt-4 text-base font-bold text-ink-900">
-        No nonstop flights on this route
+        {area ? "No flights between these airports" : "No nonstop flights on this route"}
       </h2>
       <p className="mx-auto mt-1.5 max-w-[48ch] text-sm leading-relaxed text-ink-500">
-        No airline flies {origin?.city ?? day.origin} ({day.origin}) to {destination?.city ?? day.destination} (
-        {day.destination}) without a stop, and this tool only shows nonstop flights. Try a nearby major airport
-        {suggestions.length ? ":" : "."}
+        {area ? (
+          <>
+            {day.origin} and {day.destination} are{" "}
+            {area.city ? `both in ${area.city}` : `only about ${Math.round(area.km / 1.609)} miles apart`} — there are no
+            flights between them.
+          </>
+        ) : (
+          <>
+            No airline flies {origin?.city ?? day.origin} ({day.origin}) to {destination?.city ?? day.destination} (
+            {day.destination}) without a stop, and this tool only shows nonstop flights.
+            {suggestions.length ? " Try a nearby major airport:" : null}
+          </>
+        )}
       </p>
       {suggestions.length ? (
         <ul className="mx-auto mt-4 grid max-w-xl gap-2 text-left sm:grid-cols-2">
@@ -459,10 +550,14 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
       ) : null}
       <p className="mx-auto mt-4 flex max-w-[48ch] items-start justify-center gap-1.5 text-xs leading-relaxed text-ink-500">
         <Info aria-hidden className="mt-0.5 size-3.5 shrink-0 text-ink-400" />
-        <span>Or use “Change” above to pick another route.</span>
+        <span>{suggestions.length ? "Or use “Change” above to pick another route." : "Use “Change” above to pick another route."}</span>
       </p>
     </section>
   );
+}
+
+function chipId(key: string): string {
+  return `c-filter-chip-${key}`;
 }
 
 function ActiveFilters({
@@ -470,12 +565,16 @@ function ActiveFilters({
   facets,
   onChange,
   onClear,
+  lastFocusId,
   className,
 }: {
   view: ResultsView;
   facets: ReturnType<typeof buildFacets>;
-  onChange: (view: ResultsView) => void;
+  /** `focusId`: where focus goes once the chip is gone. */
+  onChange: (view: ResultsView, focusId: string) => void;
   onClear: () => void;
+  /** Where focus goes when the last chip goes. */
+  lastFocusId: string;
   className?: string;
 }) {
   const chips: Array<{ key: string; label: string; next: ResultsView }> = [
@@ -486,7 +585,7 @@ function ActiveFilters({
     })),
     ...view.airlines.map((code) => ({
       key: `airline-${code}`,
-      label: facets.airlines.find((a) => a.code === code)?.name ?? code,
+      label: airlineName(code, facets),
       next: { ...view, airlines: view.airlines.filter((x) => x !== code) },
     })),
     ...(view.wide ? [{ key: "wide", label: "Wide-body only", next: { ...view, wide: false } }] : []),
@@ -494,11 +593,16 @@ function ActiveFilters({
   ];
   return (
     <ul aria-label="Filters on" className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      {chips.map((chip) => (
+      {chips.map((chip, index) => (
         <li key={chip.key}>
           <button
+            id={chipId(chip.key)}
             type="button"
-            onClick={() => onChange(chip.next)}
+            onClick={() => {
+              // The chip that takes its place (or the one before it); with none left, the Filters button.
+              const next = chips[index + 1] ?? chips[index - 1];
+              onChange(chip.next, next ? chipId(next.key) : lastFocusId);
+            }}
             aria-label={`Remove filter: ${chip.label}`}
             className="relative inline-flex h-9 items-center gap-1 rounded-full bg-breeze-50 pl-3 pr-2 text-[13px] font-semibold text-breeze-700 ring-1 ring-inset ring-breeze-100 transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-breeze-100"
           >
@@ -522,7 +626,7 @@ function ActiveFilters({
 
 function InvalidSearch({ check, today, params }: { check: QueryCheck; today: string; params: Params }) {
   const [draft, setDraft] = useState<SearchDraft>(check.draft);
-  const message = issueMessage(check.issue ?? "empty", check.raw);
+  const message = issueMessage(check.issue ?? "empty", check.raw, today);
   // No day yet, so no forecast distance: only the sort is carried, and Smoothest counts as the default.
   const view = parseView(params, true);
   return (

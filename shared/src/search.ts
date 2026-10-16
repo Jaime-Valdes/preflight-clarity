@@ -9,27 +9,31 @@
  * Only routes an airline would plausibly fly nonstop get flights
  * (docs/FEASIBILITY.md: no invented nonstops). The carriers come from
  * nonstopCarriers in airlines.ts (via routeDay): a carrier from one end's home
- * market with a hub or focus city at one end, whose fleet reaches, to a far end
- * big enough for the distance (plus a short list of real routes that rule
- * misses). Everything else — a typed (made-up) airport, two airports in one
- * metro area, a small city far from any hub, a distance nobody flies nonstop
- * (JFK–SYD) — has no options on any date, and dayOverview counts 0 flights.
- * hasNonstopService says which kind a route is, without building a day.
+ * market with a hub or focus city at one end, whose fleet reaches, whose
+ * long-haul network serves the far end, to a far end big enough for the distance
+ * — plus the listed real routes, the only ones beyond 6,500 mi. Everything else
+ * — a typed (made-up) airport, two airports in one metro area, a small city far
+ * from any hub, a market no carrier's network links (Delhi–Guadalajara), a
+ * distance nobody flies nonstop (JFK–SYD) — has no options on any date, and
+ * dayOverview counts 0 flights. hasNonstopService says which kind a route is,
+ * without building a day.
  *
  * A day is built in three steps:
  *  1. A timetable per route and IATA season (seed `sched|ROUTE|SEASON`): how many
  *     flights the market gets (busy 8–14, ordinary 4–8, long-haul 2–5), which
  *     carriers fly them (nonstopCarriers; hub carriers fly several), their flight
- *     numbers, aircraft, taxi times and departure times. Like a real timetable it
- *     repeats, so DL1423 leaves at the same time every day of the season and the
+ *     numbers, aircraft, departure times and published block times (on the
+ *     5-minute grid, see scheduledBlock). Like a real timetable it repeats, so
+ *     DL1423 leaves and lands at the same times every day of the season and the
  *     same flight can be compared across days. A few frequencies skip Saturdays.
  *  2. The day (seed `sched|ROUTE|DATE`): the frequencies flying that weekday, the
  *     odd equipment swap, and each departure checked against that date's arrival
  *     rules (daylight saving moves arrivals; one that would land inside a curfew or
  *     in the dead of night moves to the nearest time that works).
  *  3. Every flight is built by fakeFlight's buildScheduledFlight from the day's
- *     shared facts: one airborne time, the A/B route history, the weather by
- *     airport, date and hour, and one bump draw per two-hour air block (airBlockOf).
+ *     shared facts: one airborne time (the day's winds, for the turbulence model;
+ *     the schedule shows the published block), the A/B route history, the weather
+ *     by airport, date and hour, and one bump draw per two-hour air block (airBlockOf).
  *
  * Fares never look at the turbulence: distance, carrier tier, weekday, departure
  * hour and a ±10% seeded jitter, whole dollars, at least $39.
@@ -176,6 +180,8 @@ interface Frequency {
   taxiBase: number;
   /** Local minutes after midnight. */
   departMin: number;
+  /** Published gate-to-gate minutes, the same every day of the season (scheduledBlock). */
+  blockMin: number;
   /** Flies on Saturdays (a few busy-market frequencies don't). */
   saturday: boolean;
 }
@@ -189,6 +195,16 @@ interface Timetable {
 /** Wide-bodies take a few minutes longer to push back and taxi. */
 function taxiFor(taxiBase: number, aircraft: string): number {
   return clamp(taxiBase + (getAircraftModel(aircraft)?.bodyType === "wide" ? 4 : 0), 15, 35);
+}
+
+/**
+ * The block time a timetable publishes for a frequency, as airlines do: one per season, on the
+ * 5-minute grid — the route's longest airborne time in its daily winds plus the frequency's taxi,
+ * rounded up. A flight's published arrival is then the same every day of the season, and the day's
+ * own winds (Flight.airborneMin) stay inside the turbulence model.
+ */
+function scheduledBlock(day: RouteDay, taxiMin: number): number {
+  return Math.ceil((day.longestAirborneMin + taxiMin) / 5) * 5;
 }
 
 /** A departure at `m` keeps clear of the others: any two, the same carrier's, and across an air-block edge. */
@@ -281,7 +297,8 @@ function buildTimetable(day: RouteDay, season: Season): Timetable {
   }));
 
   // Departures: weighted by time of day, spread apart, clear of each other, landing at sensible
-  // hours on a mid-season day with half an hour to spare either way (daily winds, other dates).
+  // hours on a mid-season day with half an hour to spare either way (each frequency's own block
+  // time, the clock changes on other dates).
   const first = market === "long" ? FIRST_LONG_DEPARTURE : FIRST_DEPARTURE;
   const grid: number[] = [];
   for (let m = first; m <= LAST_DEPARTURE; m += 5) grid.push(m);
@@ -323,6 +340,7 @@ function buildTimetable(day: RouteDay, season: Season): Timetable {
     aircraft: p.draft.aircraft,
     taxiBase: p.draft.taxiBase,
     departMin: p.departMin,
+    blockMin: scheduledBlock(plan, taxiFor(p.draft.taxiBase, p.draft.aircraft)),
     saturday: true,
   }));
 
@@ -383,7 +401,10 @@ interface Departure {
 /** The share of frequencies flown by another of the carrier's aircraft on a given day. */
 const SWAP_CHANCE = 0.08;
 
-/** The timetable's flights that operate on the day, each landing at a sensible hour that date. */
+/**
+ * The timetable's flights that operate on the day, each landing at a sensible hour that date, on the
+ * published block time (an equipment swap keeps it, as it does in real schedules).
+ */
 function departuresFor(day: RouteDay): Departure[] {
   const rng = createRng(`sched|${day.route}|${day.input.date}`);
   const table = timetableFor(day);
@@ -393,7 +414,7 @@ function departuresFor(day: RouteDay): Departure[] {
     .filter((f) => !saturday || f.saturday)
     .map((f) => {
       const swap = rng.chance(SWAP_CHANCE) ? chooseAircraftModel(rng, f.carrier.fleet, day.distanceMi, day.oceanic).key : f.aircraft;
-      return { carrier: f.carrier, flightNumber: f.flightNumber, aircraft: swap, departMin: f.departMin, blockMin: day.airborneMin + taxiFor(f.taxiBase, swap) };
+      return { carrier: f.carrier, flightNumber: f.flightNumber, aircraft: swap, departMin: f.departMin, blockMin: f.blockMin };
     });
 
   const kept: Departure[] = [];

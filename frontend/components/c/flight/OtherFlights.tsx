@@ -6,8 +6,10 @@ import { useId, useMemo, useState } from "react";
 import { formatDuration, formatTime12 } from "@preflight/shared/dates";
 import type { FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
+import { hasLeft } from "@/components/c/common/availability";
 import { ScoreBadge } from "@/components/c/common/ScoreBadge";
 import { Card } from "@/components/ui/Card";
+import { useNowMs } from "@/lib/hooks";
 import { useCompareList, type CompareList } from "@/lib/c/compare-store";
 import { formatFare } from "@/lib/c/format";
 import { MAX_COMPARE, flightHref, itemId, searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
@@ -46,15 +48,21 @@ function byDeparture(a: FlightOption, b: FlightOption): number {
  * then a link to all of them), each with Details and Compare. Smoothest first
  * with their scores once the day's turbulence forecasts exist; before that, by
  * departure time without scores, and a marker says when the forecasts start.
+ * Flights that have already left are not offered.
  */
 export function OtherFlights({ day, options, currentKey, turbulence, id, className }: OtherFlightsProps) {
   const list = useCompareList();
   const headingId = useId();
   const noteId = useId();
   const [announcement, setAnnouncement] = useState("");
+  const nowMs = useNowMs();
+  const leftCount = useMemo(() => options.filter((o) => hasLeft(o.flight, nowMs)).length, [options, nowMs]);
   const others = useMemo(
-    () => options.filter((o) => o.key !== currentKey).sort(turbulence ? smoothestFirst : byDeparture),
-    [options, currentKey, turbulence],
+    () =>
+      options
+        .filter((o) => o.key !== currentKey && !hasLeft(o.flight, nowMs))
+        .sort(turbulence ? smoothestFirst : byDeparture),
+    [options, currentKey, turbulence, nowMs],
   );
   const shown = others.slice(0, SHOWN);
 
@@ -87,7 +95,11 @@ export function OtherFlights({ day, options, currentKey, turbulence, id, classNa
 
       {shown.length === 0 ? (
         <Card className="mt-3">
-          <p className="text-sm leading-relaxed text-ink-700">This is the only nonstop flight on this route that day.</p>
+          <p className="text-sm leading-relaxed text-ink-700">
+            {leftCount > 0
+              ? "No other nonstop flight on this route is still to leave that day."
+              : "This is the only nonstop flight on this route that day."}
+          </p>
         </Card>
       ) : (
         <ul className="mt-3 flex flex-col gap-2.5">
@@ -106,7 +118,7 @@ export function OtherFlights({ day, options, currentKey, turbulence, id, classNa
       ) : null}
 
       <Link href={searchHref(day)} className={cn(LINK_BUTTON.secondary, "mt-4 w-full sm:w-auto")}>
-        See all {options.length} flights on {monthDay(day.date)}
+        {leftCount > 0 ? `See all flights on ${monthDay(day.date)}` : `See all ${options.length} flights on ${monthDay(day.date)}`}
         <ArrowRight aria-hidden className="size-4" />
       </Link>
 
@@ -129,7 +141,8 @@ interface OtherFlightRowProps {
 
 function OtherFlightRow({ option, day, list, noteId, showScore, onToggle }: OtherFlightRowProps) {
   const f = option.flight;
-  const item: CompareItem = { origin: day.origin, destination: day.destination, date: day.date, key: option.key };
+  // The flight's own airports (a search from LGA can list JFK's long-haul flights): one flight, one compare item.
+  const item: CompareItem = { origin: f.origin.code, destination: f.destination.code, date: day.date, key: option.key };
   const picked = list.has(itemId(item));
   const label = `${f.flightNumber}, ${formatTime12(f.departTime)}`;
   const offset = dayOffsetMark(f.arriveDayOffset);

@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TURBULENCE_FORECAST_DAYS, WEATHER_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { useCompareList } from "@/lib/c/compare-store";
 import { MAX_COMPARE, clampDate, compareHref, itemId, parseCompareParam, searchHref, type CompareItem } from "@/lib/c/model";
-import { useTodayISO } from "@/lib/hooks";
+import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { LINK_BUTTON } from "../flight/copy";
 import { CompareEmpty } from "./CompareEmpty";
@@ -39,6 +39,8 @@ export function ComparePage() {
   const params = useSearchParams();
   const router = useRouter();
   const today = useTodayISO();
+  // Flights that left earlier today show as such, not as upcoming (updates every minute).
+  const nowMs = useNowMs();
   const list = useCompareList();
   const url = useMemo(() => {
     const raw = params.get("f");
@@ -53,7 +55,7 @@ export function ComparePage() {
 
   const items = url.fromUrl ? url.items : list.items;
   const visible = useMemo(() => items.filter((i) => !hiddenIds.has(itemId(i))), [items, hiddenIds]);
-  const columns = useMemo(() => (today ? resolveColumns(visible, today) : []), [visible, today]);
+  const columns = useMemo(() => (today ? resolveColumns(visible, today, nowMs) : []), [visible, today, nowMs]);
   const flights = useMemo(() => columns.filter(isFlightColumn), [columns]);
   const names = useMemo(() => flightNames(flights), [flights]);
 
@@ -93,7 +95,8 @@ export function ComparePage() {
     list.remove(id);
     if (url.fromUrl) {
       setPending((prev) => ({ raw: url.raw, ids: new Set([...(prev.raw === url.raw ? prev.ids : []), id]) }));
-      router.replace(compareHref(rest), { scroll: false });
+      // An emptied link stays a link ("?f="): without `f` the page would switch to the visitor's own list.
+      router.replace(rest.length ? compareHref(rest) : "/c/compare?f=", { scroll: false });
     }
     const name = spoken(isFlightColumn(removed) ? (names.get(id) ?? removed.flight.flightNumber) : removed.item.key);
     const left = rest.length;
@@ -115,11 +118,12 @@ export function ComparePage() {
     setFocusRequest({ id: null });
   };
 
-  if (!today) return <CompareSkeleton />;
+  if (!today || nowMs === null) return <CompareSkeleton />;
 
   const comparing = flights.length >= 2;
   const addHref = addHrefFor(visible, today);
-  const canAdd = visible.length < MAX_COMPARE;
+  // A flight whose date has passed doesn't take up one of the places.
+  const canAdd = visible.filter((i) => i.date >= today).length < MAX_COMPARE;
 
   return (
     <div>

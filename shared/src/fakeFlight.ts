@@ -451,8 +451,11 @@ function typicalAirborne(ctx: RouteContext): number {
   return base * wind;
 }
 
+/** The day's winds lengthen or shorten the typical airborne time by up to 2%. */
+const DAY_WINDS: readonly [number, number] = [0.98, 1.02];
+
 function airborneFor(rng: Rng, ctx: RouteContext): number {
-  return Math.max(30, Math.round(typicalAirborne(ctx) * rng.float(0.98, 1.02)));
+  return Math.max(30, Math.round(typicalAirborne(ctx) * rng.float(DAY_WINDS[0], DAY_WINDS[1])));
 }
 
 /** Long eastbound routes are flown overnight. A route fact, so the schedule and the route history agree. */
@@ -2252,12 +2255,18 @@ export interface RouteDay {
   overnight: boolean;
   /** Airborne minutes in the route's typical winds (each day's own time is within ±2%). */
   typicalAirborneMin: number;
+  /**
+   * The longest airborne time the day's winds give on the route (the top of that ±2%), the same on
+   * every date: published block times are planned on it, so no flight is scheduled to land before it can.
+   */
+  longestAirborneMin: number;
   /** The day's airborne time: the same for every flight that day, and for generateFlight's reference flight on the route as flown. */
   airborneMin: number;
   /**
    * The carriers that would plausibly fly the route nonstop (nonstopCarriers): empty when nobody
    * would — a typed (made-up) airport, a hop within one metro area, a market too small for the
-   * distance, or beyond every catalogued aircraft — and version C then shows no flights.
+   * distance or outside every carrier's network, or an ultra-long pair no airline flies — and
+   * version C then shows no flights.
    */
   carriers: readonly RouteCarrier[];
   /**
@@ -2307,6 +2316,7 @@ export function routeDay(input: FlightInput): RouteDay {
     eastbound: ctx.eastbound,
     overnight: overnightRoute(ctx),
     typicalAirborneMin: Math.round(typicalAirborne(ctx)),
+    longestAirborneMin: Math.max(30, Math.round(typicalAirborne(ctx) * DAY_WINDS[1])),
     // The day's winds: the first draw of the route's reference timing stream (see buildTiming).
     airborneMin: airborneFor(createRng(`${route}|${norm.date}`).fork("timing"), ctx),
     carriers: nonstopCarriers(ctx.origin, ctx.destination, ctx.narrowOnly).map(([airline, weight]) => ({
@@ -2341,7 +2351,7 @@ export interface ScheduledFlightSpec {
   departTime: string;
   /** Model key from the carrier's fleet (RouteCarrier.fleet). */
   aircraft: string;
-  /** Gate to gate: the day's airborne time plus 15–35 min of taxi. */
+  /** Gate to gate as published (arrival, crew): at least the day's airborne time plus 15 min of taxi. */
   blockMin: number;
   /**
    * The air block. Flights with the same `airKey` share one bump draw, made for a departure at

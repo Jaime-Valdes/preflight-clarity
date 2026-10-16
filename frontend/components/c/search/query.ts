@@ -140,8 +140,13 @@ export function checkQuery(params: Params, today: string): QueryCheck {
   };
 }
 
+/** "Airlines publish schedules about 330 days ahead, so flights can be explored until Sat, Sep 11." (the flight page says the same) */
+export function tooFarText(today: string): string {
+  return `Airlines publish schedules about ${MAX_DAYS_AHEAD} days ahead, so flights can be explored until ${formatShortDate(maxSearchDate(today))}.`;
+}
+
 /** A calm title and sentence for a search link that can't be shown. */
-export function issueMessage(issue: QueryIssue, raw: QueryCheck["raw"]): { title: string; text: string } {
+export function issueMessage(issue: QueryIssue, raw: QueryCheck["raw"], today: string): { title: string; text: string } {
   switch (issue) {
     case "empty":
       return {
@@ -179,9 +184,6 @@ export function issueMessage(issue: QueryIssue, raw: QueryCheck["raw"]): { title
         text: "Flights are shown from today up to about 11 months ahead. Pick another date.",
       };
     case "date-far":
-      return {
-        title: "That date is a little far ahead",
-        text: "Airlines publish schedules and fares about 11 months ahead, so flights are shown up to then. Pick an earlier date.",
-      };
+      return { title: "That date is too far ahead", text: `${tooFarText(today)} Pick an earlier date.` };
   }
 }

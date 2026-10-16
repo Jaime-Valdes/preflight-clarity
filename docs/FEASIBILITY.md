@@ -53,16 +53,22 @@ the gate is available; the gate shows "posted on the day"). Version C uses the r
 - **Made-up airports**: the study turned unrecognised text into synthetic airports. The study now
   accepts catalogue airports only (pick a suggestion; hint "Can't find it? Pick the nearest major
   airport").
-- **Nonstops nobody flies** (version C searches every catalogue pair): a route only gets nonstop
-  flights when it is plausible (a carrier with a hub/focus city at one end flies that distance);
-  otherwise a calm "No nonstop flights on this route" state with a suggestion to try a nearby hub.
+- **Nonstops nobody flies** (version C searches every catalogue pair): beyond 6,500 mi only a curated
+  list of real routes flies, each with its real carriers (`LISTED_NONSTOPS` in `shared/src/airlines.ts`);
+  below that, a route needs a carrier with a hub at one end whose long-haul network serves the far end
+  (`longHaulMarkets`, `gatewayHubs`, `hubReachMi`) and a far end big enough for the distance. Otherwise
+  a calm "No nonstop flights on this route" state suggests nearby routes. A real product would read
+  published schedules (OAG/Cirium) instead of this rule.
 
 ## Feasible, reworded (the copy overstated precision or certainty)
 
 - Confidence tiers and notes as in the table (no more "High confidence" days out; the old 10/30-day
   forecast/outlook tiers are gone).
 - Seat map: "Taken" → "Unavailable"; "free" → "open right now" (+ "as of today — seats change until
-  check-in").
+  check-in") in version C and for same-day study flights; the study's day-before preview says "open the
+  day before" / "as of the day before departure".
+- Horizon labels in the study follow the preview: "Day-before forecast", or "Forecast for today" for a
+  flight today.
 - Fare deltas: "vs. your fare" → "vs. this flight's fare" (we never know what anyone paid).
 - Aircraft: "Scheduled aircraft" wherever the airframe isn't assigned yet; cabin noise as a relative
   band ("Quieter than most airliners") with an approximate range, not one exact dB number.

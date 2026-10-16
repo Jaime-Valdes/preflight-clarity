@@ -61,7 +61,7 @@ function HomeSearchReady({ today }: { today: string }) {
               <li key={`${from}-${to}`} className="min-w-0">
                 <Link
                   href={searchHref({ origin: from, destination: to, date })}
-                  className="flex min-h-14 flex-col justify-center rounded-2xl bg-white/[0.08] px-3.5 py-2 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/[0.16]"
+                  className="flex h-full min-h-14 flex-col justify-center rounded-2xl bg-white/[0.08] px-3.5 py-2 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/[0.16] focus-visible:outline-white"
                 >
                   <span className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-white">
                     {from}
@@ -69,7 +69,7 @@ function HomeSearchReady({ today }: { today: string }) {
                     <span className="sr-only"> to </span>
                     {to}
                   </span>
-                  <span className="mt-0.5 truncate text-xs text-white/65">
+                  <span className="mt-0.5 text-xs leading-snug text-white/65">
                     {origin.city} – {destination.city}
                   </span>
                 </Link>

@@ -2,7 +2,7 @@
 
 import { ArrowRight, ArrowUpDown, CalendarDays } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { getAirport } from "@preflight/shared/airports";
+import { getAirport, resolveAirport } from "@preflight/shared/airports";
 import { addDays, daysBetween, formatLongDate, isISODate } from "@preflight/shared/dates";
 import { SCHEDULE_DAYS } from "@preflight/shared/forecast";
 import type { FlightInput, Timeframe } from "@preflight/shared/types";
@@ -20,12 +20,15 @@ export const MAX_DAYS_AHEAD = SCHEDULE_DAYS;
 export const AIRPORT_HELP = "Can’t find it? Pick the nearest major airport.";
 
 /**
- * The catalogue code for a pre-survey route answer, or "" when it isn't one.
- * The pre-survey accepts free text (it is a survey answer); the flight setup
- * only takes airports that have flight data.
+ * The catalogue code for a pre-survey route answer ("JFK", or a typed city
+ * such as "Lisbon" → LIS), or "" when it names no catalogue airport. The
+ * pre-survey accepts free text (it is a survey answer); the flight setup only
+ * takes airports that have flight data.
  */
 export function catalogueCode(value: string): string {
-  return value ? (getAirport(value)?.code ?? "") : "";
+  if (!value.trim()) return "";
+  const airport = resolveAirport(value);
+  return airport.known ? airport.code : "";
 }
 
 /** Default departure offset (days) from the pre-survey timeframe. */

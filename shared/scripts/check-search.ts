@@ -8,14 +8,15 @@
  * docs/FEASIBILITY.md), schedule plausibility and counts by market, unique keys /
  * numbers / ids, full dashboard flights with the feasibility rules (crew from the
  * rules, fleet ages, one seat map per airline and model, no pilot profiles), shared
- * facts (airborne time, route history, weather by hour, bumps by air block), fares,
- * determinism, caching, A/B safety and the speed budget. Exits non-zero on any
+ * facts (airborne time, route history, weather by hour, bumps by air block), published
+ * block times (one per flight number and season), fares, determinism, caching, A/B
+ * safety and the speed budget. Exits non-zero on any
  * failure; prints the numbers the UI cares about.
  */
 import { createHash } from "node:crypto";
 import { dayOverview, findOption, hasNonstopService, optionKey, searchFlights, type SearchResults } from "../src/search";
 import { departWindowOf, generateFlight, normalizeInput, routeDay, type RouteDay } from "../src/fakeFlight";
-import { LISTED_NONSTOPS, getAirline, isRetiredFlightNumber } from "../src/airlines";
+import { AIRLINES, LISTED_NONSTOPS, ULTRA_LONG_MI, ZONES, getAirline, isRetiredFlightNumber } from "../src/airlines";
 import { cabinConfigFor, getAircraftModel } from "../src/aircraft";
 import { AIRPORTS, getAirport, greatCircleMi } from "../src/airports";
 import { addDays, timeToMinutes, weekdayIndex } from "../src/dates";
@@ -73,9 +74,13 @@ function pearson(xs: readonly number[], ys: readonly number[]): number {
 //    timings on a 5-minute grid with type-level wording, neutral weather notes, the seatbelt sign
 //    only for moderate stretches, one on-time figure per airline and route, verifiable model
 //    facts, and route histories that count about as many past flights as the route's daily
-//    nonstops allow.
+//    nonstops allow (0e5088d2b8429659271b573de4b7312d6ea5dc5d7f142e3c05ae6ff84a798257).
+//  - 2026-10-16, QA (no invented nonstops): the nonstop rule only lets listed real routes fly beyond
+//    ULTRA_LONG_MI and sends long-haul flights only where each carrier's network goes, so the route
+//    history counts past flights from fewer daily nonstops on some long-haul routes (JFK–HKG ~410 →
+//    ~240). Only `turbulence.history.flightsAnalyzed` changes; every other A/B field is identical.
 
-const AB_SNAPSHOT = "0e5088d2b8429659271b573de4b7312d6ea5dc5d7f142e3c05ae6ff84a798257";
+const AB_SNAPSHOT = "62ae1fb9b4b4de693d91118c21698e04bf467249638f14aabfcaaf7943219a21";
 const SNAPSHOT_ROUTES: Array<[string, string]> = [
   ["JFK", "LAX"], ["LAX", "JFK"], ["JFK", "BOS"], ["LGA", "ORD"], ["LGA", "BOS"], ["EWR", "MCO"], ["SFO", "DEN"],
   ["DEN", "ATL"], ["SEA", "HNL"], ["DFW", "PHX"], ["MIA", "SJU"], ["BOS", "SFO"], ["YYZ", "YVR"], ["ORD", "MEX"],
@@ -190,7 +195,8 @@ const C_HOME_ROUTES: Array<[string, string]> = [
 
 /**
  * Pairs nobody flies nonstop: one metro area or a short drive, small cities far from any hub, distances
- * no airline flies nonstop, typed (made-up) airports, the same airport twice.
+ * no airline flies nonstop, long-haul markets outside every carrier's network, typed (made-up) airports,
+ * the same airport twice.
  */
 const UNSERVED: Array<[string, string]> = [
   ["JFK", "LGA"], ["JFK", "EWR"], ["SFO", "OAK"], ["SFO", "SJC"], ["DCA", "IAD"], ["ORD", "MDW"], ["DFW", "DAL"], ["IAH", "HOU"],
@@ -198,8 +204,25 @@ const UNSERVED: Array<[string, string]> = [
   ["BTV", "DPS"], ["ROC", "KTM"], ["TUS", "BOI"], ["BUF", "ROC"], ["OMA", "DSM"], ["GEG", "BOI"], ["LAX", "BTV"], ["SEA", "PWM"],
   ["MIA", "GEG"], ["HNL", "BTV"], ["LHR", "BOI"], ["JFK", "KTM"], ["SIN", "ATL"], ["SYD", "MIA"],
   ["JFK", "SYD"], ["LHR", "SYD"], ["LHR", "AKL"], ["JFK", "MEL"], ["MNL", "EZE"],
+  // Ultra-long pairs the old hub-and-size rule invented (QA 2026-10-16), and long-haul markets a carrier's network doesn't reach.
+  ["DEL", "GDL"], ["ADD", "MEX"], ["CGK", "SLC"], ["BKK", "CLT"], ["DXB", "GDL"], ["KUL", "YUL"], ["DCA", "SGN"], ["BOG", "MEL"], ["MAD", "PER"],
+  ["SFO", "ADD"], ["IST", "MEL"], ["LAX", "BLR"], ["BER", "LIM"], ["BOS", "PEK"], ["ADD", "MIA"], ["CAN", "YYZ"], ["LIS", "HKG"], ["GDL", "NRT"],
+  ["RAK", "LAX"], ["NBO", "ICN"], ["CPH", "CGK"], ["GDL", "MAD"], ["CAI", "GRU"], ["MNL", "DEL"], ["SFO", "GRU"], ["SEA", "LIM"], ["LGW", "DEL"],
+  ["ZRH", "BNA"], ["ICN", "DEN"], ["MXP", "YYC"],
   ["Fargo", "Orlando"], ["Timbuktu", "Shangri-La"], ["JFK", "JFK"],
 ];
+
+/** Real long-haul nonstops the hub, network and size rules must keep, with carriers that must be among those flying them. */
+const REAL_LONG_HAUL: Readonly<Record<string, readonly string[]>> = {
+  "JFK-LHR": ["DL", "AA", "BA", "VS"], "BOS-DUB": ["EI", "DL"], "SFO-NRT": ["UA", "NH", "JL"], "SFO-HND": ["UA", "NH", "JL"], "ORD-HND": ["UA", "NH", "JL"],
+  "LAX-HND": ["DL", "AA", "NH", "JL"], "DFW-HND": ["AA", "JL"], "SEA-ICN": ["DL", "KE"], "ICN-SFO": ["KE", "UA"], "SEA-TPE": ["DL", "BR"], "YVR-HKG": ["AC", "CX"],
+  "HKG-SEA": ["CX"], "DOH-YUL": ["QR"], "IST-IAH": ["TK"], "LIM-CDG": ["AF"], "FRA-SIN": ["LH", "SQ"], "HKG-LHR": ["CX", "BA"], "BKK-LHR": ["TG", "BA"],
+  "SGN-CDG": ["VN", "AF"], "PEK-LAX": ["CA"], "TPE-AMS": ["BR"], "KUL-SYD": ["MH"], "CGK-HND": ["GA"], "SYD-HND": ["QF", "NH", "JL"], "AKL-NRT": ["NZ"],
+  "MNL-HNL": ["PR"], "HEL-NRT": ["AY"], "WAW-ICN": ["LO"], "VIE-NRT": ["OS"], "FCO-HND": ["AZ"], "ZRH-BKK": ["LX"], "CPH-HND": ["SK"], "DEL-NRT": ["NH", "JL"],
+  "LHR-DEL": ["BA", "VS"], "DXB-LHR": ["EK", "BA"], "TLV-JFK": ["LY"], "CMN-JFK": ["AT"], "CAI-JFK": ["MS"], "ADD-GRU": ["ET"], "GRU-JNB": ["LA", "SA"],
+  "LIS-GRU": ["TP", "LA"], "MAD-MIA": ["IB", "AA"], "MEX-MAD": ["AM", "IB"], "BOG-MAD": ["AV", "IB"], "MIA-GRU": ["AA", "LA"], "ATL-GRU": ["DL"],
+  "EWR-GRU": ["UA"], "YYZ-GRU": ["AC"], "IAH-LIM": ["UA"], "JFK-EZE": ["AR"],
+};
 
 const ROUTES: Array<[string, string]> = [
   // Busy markets
@@ -522,7 +545,13 @@ function checkDay(q: FlightInput, res: SearchResults): void {
   const flown = { origin: day.route.split("|")[0], destination: day.route.split("|")[1], date: norm.date };
   const reference = generateFlight(flown);
   check(flights.every((f) => f.airborneMin === reference.airborneMin), `${tag}: airborne times differ (reference ${reference.airborneMin})`);
-  check(flights.every((f) => f.blockMin - f.airborneMin >= 15 && f.blockMin - f.airborneMin <= 35), `${tag}: taxi time`);
+  // Published block times: on the 5-minute grid, never shorter than the day's flight plus taxi, padded at most
+  // by the spread of the daily winds (±2%) and the rounding.
+  for (const f of flights) {
+    const pad = f.blockMin - f.airborneMin;
+    check(f.blockMin % 5 === 0 && timeToMinutes(f.arriveTime) % 5 === 0, `${tag}: ${f.flightNumber} block ${f.blockMin} / arrival ${f.arriveTime} off the 5-minute grid`);
+    check(pad >= 15 && pad <= 40 + 0.042 * f.airborneMin, `${tag}: ${f.flightNumber} block ${f.blockMin} for ${f.airborneMin} min in the air`);
+  }
   const blocks = flights.map((f) => f.blockMin);
   check(Math.max(...blocks) - Math.min(...blocks) <= 12, `${tag}: block times ${Math.min(...blocks)}–${Math.max(...blocks)}`);
   check(flights.every((f) => f.origin.code === day.origin.code && f.destination.code === day.destination.code), `${tag}: endpoints`);
@@ -656,11 +685,27 @@ for (const [origin, destination] of [["JFK", "LAX"], ["LGA", "BOS"], ["JFK", "LH
       repeatTotal++;
       const same = other.find((x) => x.key === o.key);
       if (same) repeatKeys++;
-      if (same && same.flight.departTime === o.flight.departTime) repeatTimes++;
+      if (same && same.flight.departTime === o.flight.departTime) {
+        repeatTimes++;
+        // No clock changes that week: the same departure lands at the same published time, whatever the day's winds.
+        check(same.flight.arriveTime === o.flight.arriveTime && same.flight.blockMin === o.flight.blockMin, `${origin}-${destination}: ${o.key} lands at ${o.flight.arriveTime} on Monday but ${same.flight.arriveTime} ${d} day(s) later`);
+      }
     }
   }
 }
 check(repeatKeys / repeatTotal >= 0.95 && repeatTimes / repeatTotal >= 0.9, `weekday timetable: ${pct(repeatKeys, repeatTotal)} of flights repeat, ${pct(repeatTimes, repeatTotal)} at the same time`);
+// One published block time per flight number and season (winter 2026–27 here: before, across and after the US clock change).
+let seasonKeys = 0;
+for (const [origin, destination] of [["JFK", "LAX"], ["JFK", "LHR"], ["SFO", "NRT"], ["SIN", "JFK"], ["DFW", "SYD"], ["DEL", "BOM"]]) {
+  const blocks = new Map<string, Set<number>>();
+  for (const date of ["2026-10-26", "2026-11-02", "2026-11-09", "2026-11-26", "2026-12-24", "2027-01-12", "2027-02-14", "2027-03-14", "2027-03-27"]) {
+    for (const o of searchFlights({ origin, destination, date }).options) blocks.set(o.key, (blocks.get(o.key) ?? new Set()).add(o.flight.blockMin));
+  }
+  for (const [key, set] of blocks) {
+    seasonKeys++;
+    check(set.size === 1, `${origin}-${destination}: ${key} has ${set.size} block times in one season (${[...set].join(", ")} min)`);
+  }
+}
 check(searchFlights({ origin: "JFK", destination: "LAX", date: "2027-02-13" }).options.length < searchFlights({ origin: "JFK", destination: "LAX", date: "2027-02-12" }).options.length, "busy market: no fewer flights on Saturday");
 
 // ── Departure windows: the route history's "best departure window" stays true ─
@@ -854,11 +899,41 @@ for (const [o, d] of UNSERVED) {
     check(findOption(q, "DL1") === null, `${o}-${d} ${date}: findOption on a route without nonstops`);
   }
 }
-// The few real routes the size rule misses come with exactly the carriers that fly them.
+// The real routes the rule can't derive come with exactly the carriers that fly them.
 for (const [route, codes] of Object.entries(LISTED_NONSTOPS)) {
   const [a, b] = route.split("-");
+  check(Boolean(getAirport(a) && getAirport(b)) && codes.every((c) => getAirline(c)) && !LISTED_NONSTOPS[`${b}-${a}`], `${route}: unknown airport or airline, or listed both ways`);
   const carriers = routeDay({ origin: a, destination: b, date: "2026-12-01" }).carriers.map((c) => c.airline.code);
   check(codes.every((c) => carriers.includes(c)), `${route}: listed ${codes.join(", ")}, flown by ${carriers.join(", ") || "nobody"}`);
+}
+// Beyond ULTRA_LONG_MI only the listed routes are flown, and only by their listed carriers.
+let ultraServed = 0;
+for (const pair of servedList) {
+  const [a, b] = pair.split("-");
+  if (["LGA", "DCA"].includes(a) || ["LGA", "DCA"].includes(b)) continue; // flown from JFK / Dulles: checked as those routes
+  const mi = greatCircleMi(getAirport(a)!, getAirport(b)!);
+  if (mi <= ULTRA_LONG_MI) continue;
+  ultraServed++;
+  const listed = LISTED_NONSTOPS[pair] ?? LISTED_NONSTOPS[`${b}-${a}`] ?? [];
+  const carriers = routeDay({ origin: a, destination: b, date: "2026-12-01" }).carriers.map((c) => c.airline.code);
+  check(listed.length > 0 && carriers.every((c) => listed.includes(c)), `${pair}: ${carriers.join(", ")} fly ${Math.round(mi)} mi nonstop, but beyond ULTRA_LONG_MI only listed routes are flown`);
+}
+// Real long-haul routes keep the carriers that fly them (the network data in airlines.ts).
+for (const [route, codes] of Object.entries(REAL_LONG_HAUL)) {
+  const [a, b] = route.split("-");
+  const carriers = routeDay({ origin: a, destination: b, date: "2026-12-01" }).carriers.map((c) => c.airline.code);
+  check(codes.every((c) => carriers.includes(c)), `${route}: ${codes.filter((c) => !carriers.includes(c)).join(", ")} no longer fly it (flown by ${carriers.join(", ") || "nobody"})`);
+}
+// The network data names real zones, countries, airports and hubs.
+const COUNTRIES = new Set(AIRPORTS.map((a) => a.country));
+for (const airline of AIRLINES) {
+  for (const m of airline.longHaulMarkets ?? []) {
+    check((ZONES as readonly string[]).includes(m) || (m.length === 2 && COUNTRIES.has(m)) || (m.length === 3 && Boolean(getAirport(m))), `${airline.code}: unknown long-haul market "${m}"`);
+  }
+  for (const [zone, hubs] of Object.entries(airline.gatewayHubs ?? {})) {
+    check((ZONES as readonly string[]).includes(zone) && (hubs ?? []).every((h) => airline.hubs.includes(h)), `${airline.code}: gateway hubs for ${zone} must be its own hubs`);
+  }
+  for (const hub of Object.keys(airline.hubReachMi ?? {})) check(airline.hubs.includes(hub), `${airline.code}: a reach for ${hub}, which isn't one of its hubs`);
 }
 // Who flies a route never depends on the date.
 for (const [o, d] of [["JFK", "LAX"], ["LHR", "ACC"], ["BOI", "SEA"], ["SFO", "NRT"], ["LGA", "DEN"], ["HKG", "TPE"]]) {
@@ -914,11 +989,11 @@ console.log(`Fares vs the day's mean · value carriers ${valueRel.toFixed(2)} ·
 console.log(`Fare–score correlation · within a day r = ${rWithin.toFixed(3)} · across a route's days (date strip) r = ${rStrip.toFixed(3)} · raw over all routes r = ${rRaw.toFixed(3)} (distance drives both)`);
 console.log(`Seat maps · one map per airline and model (${SEAT_GEOMETRY.size} cabins seen) · ${seatFallbacks} of ${flightsChecked} flights have under 3 open seats over the wing, so a pick sits just off it`);
 console.log(
-  `Nonstop service · ${pct(servedPairs, totalPairs)} of ${totalPairs.toLocaleString("en-US")} ordered catalogue pairs (${servedPairs.toLocaleString("en-US")}) in ${Math.round(serviceMs)} ms · symmetric · fewest partners ${fewest.map((a) => `${a.code} ${partners.get(a.code) ?? 0}`).join(", ")} · ${servedDaysChecked} sampled days on served routes, ${emptyServedDays} empty`,
+  `Nonstop service · ${pct(servedPairs, totalPairs)} of ${totalPairs.toLocaleString("en-US")} ordered catalogue pairs (${servedPairs.toLocaleString("en-US")}) in ${Math.round(serviceMs)} ms · symmetric · fewest partners ${fewest.map((a) => `${a.code} ${partners.get(a.code) ?? 0}`).join(", ")} · ${ultraServed} pairs beyond ${ULTRA_LONG_MI.toLocaleString("en-US")} mi, all listed · ${servedDaysChecked} sampled days on served routes, ${emptyServedDays} empty`,
 );
 console.log(`  served, e.g. ${servedExamples.join(", ")}`);
 console.log(`  not served, e.g. ${unservedExamples.join(", ")}`);
-console.log(`Timetable · ${pct(repeatKeys, repeatTotal)} of a Monday's flights fly Tue–Fri too, ${pct(repeatTimes, repeatTotal)} at the same time`);
+console.log(`Timetable · ${pct(repeatKeys, repeatTotal)} of a Monday's flights fly Tue–Fri too, ${pct(repeatTimes, repeatTotal)} at the same time, landing at the same published time · ${seasonKeys} flight numbers keep one block time across a season`);
 console.log(`Speed · first search of this run ${firstCallMs.toFixed(1)} ms (after the A/B flights warmed up the JIT; a fresh browser tab adds ~10 ms of time-zone data and JIT warm-up once) · cold day median ${quantile(coldDayMs, 0.5).toFixed(1)} ms, p90 ${quantile(coldDayMs, 0.9).toFixed(1)} ms, max ${Math.max(...coldDayMs).toFixed(1)} ms · cold 7-day overview ${Math.round(mean(coldWeekMs))} ms (max ${Math.round(Math.max(...coldWeekMs))}) · cache hit ${hitUs.toFixed(1)} µs`);
 
 if (failures > 0) {

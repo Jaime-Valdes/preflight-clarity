@@ -8,7 +8,7 @@ import { CHART, COLORS, INTENSITY, PHASE_LABEL, intensityForLevel } from "@/lib/
 import { compactMinutes } from "../turbulence/format";
 
 export interface CompareSeries {
-  /** "Your flight", "Option 2"… */
+  /** "Example flight", "Option 2"… */
   label: string;
   points: TurbulencePoint[];
   /** Expected intensity per phase — the chart's text alternative. */
@@ -30,7 +30,7 @@ const Y_MAX = 2.3;
 const LEVEL_LABEL: Record<number, string> = { 0: "Smooth", 1: "Light", 2: "Moderate" };
 const TICK_STEPS = [15, 30, 60, 90, 120, 180, 240, 300, 360, 480];
 
-/** "Your flight: Takeoff smooth, Climb light bumps, …" */
+/** "Example flight: Takeoff smooth, Climb light bumps, …" */
 function describe(s: CompareSeries): string {
   return `${s.label}: ${s.phases.map((p) => `${PHASE_LABEL[p.phase]} ${INTENSITY[p.intensity].label.toLowerCase()}`).join(", ")}.`;
 }

@@ -208,7 +208,7 @@ export function WhatIfSheet({ current, today, onSubmit, onClose }: WhatIfSheetPr
   return (
     <Sheet
       title="Try a different flight"
-      description="Each choice builds another illustrative flight to look through. Your flight stays at the top."
+      description="Each choice builds another illustrative flight to look through. The example flight stays at the top."
       onClose={onClose}
       footer={
         <>

@@ -28,7 +28,7 @@ import { useExplore, useFlightState } from "./explore/context";
 export function CompareSection({ flight, ctx }: SectionProps) {
   const tracker = useTracker();
   const explore = useExplore();
-  /** Variant B, or variant A showing the set-up flight: "your flight". An explored option is "this flight". */
+  /** Variant B, or variant A showing the set-up flight: the study's example flight. An explored option is "this flight". */
   const ownFlight = explore?.showingOwnFlight ?? true;
   // Kept per explored flight, so switching away and back doesn't reset them.
   const [expanded, setExpanded] = useFlightState<string[]>("compare.expanded", []);
@@ -55,7 +55,7 @@ export function CompareSection({ flight, ctx }: SectionProps) {
         {scored ? (
           <>
             Other flights between {flight.origin.city} and {flight.destination.city}, scored on the same scale as{" "}
-            {ownFlight ? "yours" : "this one"} and ranked smoothest first.
+            {ownFlight ? "the example flight" : "this one"} and ranked smoothest first.
           </>
         ) : (
           <>
@@ -65,7 +65,7 @@ export function CompareSection({ flight, ctx }: SectionProps) {
         )}
       </p>
 
-      <ReferenceRow flight={flight} label={ownFlight ? "Your flight" : "This flight"} scored={scored} />
+      <ReferenceRow flight={flight} label={ownFlight ? "Example flight" : "This flight"} scored={scored} />
 
       {alternatives.length > 0 ? (
         <div className="space-y-3">
@@ -99,7 +99,7 @@ export function CompareSection({ flight, ctx }: SectionProps) {
   );
 }
 
-/** One calm line for the collapsed header. `ownFlight` false on an explored option ("this one", not "yours"). */
+/** One calm line for the collapsed header. `ownFlight` false on an explored option ("this one", not "the example flight"). */
 export function compareTeaser(flight: Flight, ctx: SectionContext, ownFlight = true): string {
   return compareTeaserLine(flight, ctx.daysUntil, ownFlight);
 }
@@ -113,7 +113,7 @@ function forecastNote(ctx: SectionContext): string {
     : "Scores use the latest turbulence forecasts and update every hour.";
 }
 
-// ── Your flight ─────────────────────────────────────────────────────────────
+// ── The example flight ──────────────────────────────────────────────────────
 
 function ReferenceRow({ flight, label, scored }: { flight: Flight; label: string; scored: boolean }) {
   return (
@@ -248,7 +248,7 @@ function AlternativeCard({ flight, alt, open, isHeld, onToggle, onHold, onOpen, 
               <span className="tabular-nums">{alt.smoothnessScore} of 100</span> · {scoreLabel(alt.smoothnessScore)}
             </Detail>
           ) : null}
-          <Detail label={ownFlight ? "vs. your flight" : "vs. this flight"}>
+          <Detail label={ownFlight ? "vs. example flight" : "vs. this flight"}>
             {scored ? (
               <>
                 <span className="tabular-nums">{deltaLabel(delta)}</span> ·{" "}
@@ -348,7 +348,7 @@ function AircraftLine({ name, bodyType }: { name: string; bodyType: AlternativeF
   );
 }
 
-/** Score tile with a small caption under it ("Smoothness" for your flight, the delta for alternatives). */
+/** Score tile with a small caption under it ("Smoothness" for the example flight, the delta for alternatives). */
 function ScoreBadge({ score, caption }: { score: number; caption: ReactNode }) {
   const t = TONE_CLASSES[scoreTone(score)];
   return (

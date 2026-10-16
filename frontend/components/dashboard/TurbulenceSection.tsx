@@ -12,6 +12,7 @@ import { ForecastMarker } from "./turbulence/ForecastMarker";
 import { TurbulenceChart } from "./turbulence/TurbulenceChart";
 import {
   historyBasis,
+  previewForecastLabel,
   rangeLabel,
   turbulenceForecastFrom,
   typicalBumpyPhaseLine,
@@ -64,7 +65,7 @@ export function TurbulenceSection({ flight, ctx }: SectionProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <ConfidenceTile forecast={ctx.forecast} preview={ctx.preview === true} />
+      <ConfidenceTile forecast={ctx.forecast} preview={ctx.preview ? previewForecastLabel(ctx.daysUntil) : null} />
 
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
@@ -119,11 +120,11 @@ function ConfidenceMeter({ level }: { level: number }) {
   );
 }
 
-function ConfidenceTile({ forecast, preview }: { forecast: ForecastStatus; preview: boolean }) {
+/** `preview`: the study's horizon label ("Day-before forecast", or "Forecast for today" for a flight today); null in version C. */
+function ConfidenceTile({ forecast, preview }: { forecast: ForecastStatus; preview: string | null }) {
   return (
     <div className="rounded-2xl bg-canvas/70 p-3.5 ring-1 ring-inset ring-line/70">
-      {/* The study shows the briefing as it will look the day before the flight. */}
-      {preview ? <Eyebrow className="mb-2">Day-before forecast</Eyebrow> : null}
+      {preview ? <Eyebrow className="mb-2">{preview}</Eyebrow> : null}
       <div className="flex items-center gap-3">
         <ConfidenceMeter level={forecast.confidenceLevel} />
         <div className="min-w-0">

@@ -1,4 +1,4 @@
-import { formatOffset } from "@preflight/shared/dates";
+import { formatOffset, formatTime12 } from "@preflight/shared/dates";
 import { availabilityFor, getForecastStatus, type Availability } from "@preflight/shared/forecast";
 import { findOption, type FlightOption } from "@preflight/shared/search";
 import type { CrewInfo, Flight, ForecastMode, ForecastStatus, Intensity } from "@preflight/shared/types";
@@ -6,7 +6,7 @@ import { KIND_LABEL, describeSeat } from "@/components/dashboard/control/seatMap
 import { windowMoment } from "@/components/dashboard/turbulence/format";
 import { MAX_DAYS_AHEAD, dateStatus, itemId, type CompareItem } from "@/lib/c/model";
 import { COLORS, INTENSITY } from "@/lib/theme";
-import { daysBefore } from "../flight/availability";
+import { daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { monthDay, routeText } from "../flight/copy";
 
 /*
@@ -34,8 +34,13 @@ export interface UnavailableColumn {
   kind: "unavailable";
   id: string;
   item: CompareItem;
-  /** Not in that day's schedule, or a date the tool no longer (or doesn't yet) shows. */
-  reason: "missing" | "past" | "too-far";
+  /**
+   * Not in that day's schedule, a date the tool no longer (or doesn't yet) shows, or a flight that has
+   * already left today: nothing it had before departure (forecast, gate, fare) is shown any more.
+   */
+  reason: "missing" | "past" | "too-far" | "departed";
+  /** A flight that has left: where from (IATA code) and when, local "HH:MM". */
+  left?: { from: string; time: string };
 }
 
 export type Column = FlightColumn | UnavailableColumn;
@@ -44,8 +49,11 @@ export function isFlightColumn(column: Column): column is FlightColumn {
   return column.kind === "flight";
 }
 
-/** Regenerates each picked flight (deterministic, cached by the generator). */
-export function resolveColumns(items: readonly CompareItem[], today: string): Column[] {
+/**
+ * Regenerates each picked flight (deterministic, cached by the generator). `nowMs` (useNowMs) marks the
+ * flights that have already left.
+ */
+export function resolveColumns(items: readonly CompareItem[], today: string, nowMs: number | null): Column[] {
   return items.map((item): Column => {
     const id = itemId(item);
     const status = dateStatus(item.date, today);
@@ -57,7 +65,11 @@ export function resolveColumns(items: readonly CompareItem[], today: string): Co
       option = null;
     }
     if (!option) return { kind: "unavailable", id, item, reason: "missing" };
-    const daysUntil = daysBefore(today, item.date);
+    if (hasLeft(option.flight, nowMs)) {
+      const left = { from: option.flight.origin.code, time: option.flight.departTime };
+      return { kind: "unavailable", id, item, reason: "departed", left };
+    }
+    const daysUntil = daysToDeparture(today, item.date);
     return {
       kind: "flight",
       id,
@@ -71,10 +83,26 @@ export function resolveColumns(items: readonly CompareItem[], today: string): Co
   });
 }
 
-export const UNAVAILABLE_NOTE: Record<UnavailableColumn["reason"], string> = {
+const UNAVAILABLE_NOTE: Record<Exclude<UnavailableColumn["reason"], "departed">, string> = {
   missing: "This flight is no longer on the schedule.",
   past: "This flight’s date has passed.",
   "too-far": `Schedules are published about ${MAX_DAYS_AHEAD} days ahead; this date is further out.`,
+};
+
+/** Why a picked flight can't be compared: "This flight left JFK at 7:10 AM." … */
+export function unavailableNote(column: UnavailableColumn): string {
+  if (column.reason === "departed") {
+    return column.left ? `This flight left ${column.left.from} at ${formatTime12(column.left.time)}.` : "This flight has left.";
+  }
+  return UNAVAILABLE_NOTE[column.reason];
+}
+
+/** The short status under an unavailable column's flight number. */
+export const UNAVAILABLE_LABEL: Record<UnavailableColumn["reason"], string> = {
+  missing: "Not on the schedule",
+  past: "Date has passed",
+  "too-far": "Not scheduled yet",
+  departed: "Has left",
 };
 
 // ── Markers ─────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
-import { daysBefore } from "./availability";
+import { daysToDeparture } from "@/components/c/common/availability";
 import { monthDay, routeText } from "./copy";
 import { FareCard } from "./FareCard";
 import { FlightSections } from "./FlightSections";
@@ -39,9 +39,10 @@ function noop(): void {}
  */
 export function FlightDetail({ day, option, options, today }: FlightDetailProps) {
   const { flight } = option;
-  const item: CompareItem = { origin: day.origin, destination: day.destination, date: day.date, key: option.key };
+  // The flight's own airports: a search from LGA can list JFK's long-haul flights, and one flight is one compare item.
+  const item: CompareItem = { origin: flight.origin.code, destination: flight.destination.code, date: day.date, key: option.key };
   // The real distance from today: the sections show only what exists by then (docs/FEASIBILITY.md).
-  const daysUntil = daysBefore(today, flight.input.date);
+  const daysUntil = daysToDeparture(today, flight.input.date);
   const history = flight.turbulence.history;
   const ctx = useMemo<SectionContext>(
     () => ({ daysUntil, forecast: getForecastStatus(daysUntil, history), variant: "A", preview: false }),

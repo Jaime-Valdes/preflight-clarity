@@ -1,5 +1,5 @@
 import { PendingNote } from "../flight/PendingNote";
-import { marker } from "../flight/availability";
+import { marker } from "@/components/c/common/availability";
 import type { SeriesStyle } from "./facts";
 import { LineKey } from "./TimelineChart";
 

@@ -17,20 +17,26 @@ interface CompareToggleProps {
 /**
  * Version C: "Compare" toggle for a flight in a list. The label stays the same
  * (aria-pressed carries the state); a small check box shows it visually.
+ * Disabled with aria-disabled, like the results cards: it stays in the Tab
+ * order so the note it points to (describedBy) is read.
  */
 export function CompareToggle({ pressed, disabled = false, flightLabel, describedBy, onToggle, className }: CompareToggleProps) {
   return (
     <button
       type="button"
       aria-pressed={pressed}
-      disabled={disabled}
+      aria-disabled={disabled || undefined}
       aria-describedby={describedBy}
-      onClick={onToggle}
+      onClick={() => {
+        if (!disabled) onToggle();
+      }}
       className={cn(
-        "inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold ring-1 ring-inset transition-colors duration-200 disabled:cursor-not-allowed",
-        pressed
-          ? "bg-calm-50 text-calm-700 ring-calm-200 hover:bg-calm-100"
-          : "bg-surface text-ink-900 ring-line-strong hover:bg-canvas disabled:text-ink-300 disabled:ring-line disabled:hover:bg-surface",
+        "inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold ring-1 ring-inset transition-colors duration-200",
+        disabled
+          ? "cursor-not-allowed bg-canvas text-ink-500 ring-line"
+          : pressed
+            ? "bg-calm-50 text-calm-700 ring-calm-200 hover:bg-calm-100"
+            : "bg-surface text-ink-900 ring-line-strong hover:bg-canvas",
         className,
       )}
     >

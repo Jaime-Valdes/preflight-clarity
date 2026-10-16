@@ -1,17 +1,31 @@
 "use client";
 
-import { CalendarDays, Search } from "lucide-react";
+import { CalendarDays, PlaneTakeoff, Search } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
 import { getAirport } from "@preflight/shared/airports";
+import { addDays, formatTime12 } from "@preflight/shared/dates";
 import { findOption, searchFlights, type FlightOption } from "@preflight/shared/search";
-import { useTodayISO } from "@/lib/hooks";
-import { MAX_DAYS_AHEAD, clampDate, dateStatus, flightKey, itemId, parseRouteDay, searchHref, type RouteDay } from "@/lib/c/model";
+import { availabilityAt, hasLeft } from "@/components/c/common/availability";
+import { useNowMs, useTodayISO } from "@/lib/hooks";
+import {
+  MAX_DAYS_AHEAD,
+  clampDate,
+  dateStatus,
+  flightHref,
+  flightKey,
+  itemId,
+  parseRouteDay,
+  searchHref,
+  type CompareItem,
+  type RouteDay,
+} from "@/lib/c/model";
 import { LINK_BUTTON, shortDate } from "./copy";
 import { FlightDetail } from "./FlightDetail";
 import { FlightSkeleton } from "./FlightSkeleton";
 import { Notice } from "./Notice";
+import { OtherFlights } from "./OtherFlights";
 
 type View =
   | { kind: "loading" }
@@ -19,14 +33,24 @@ type View =
   | { kind: "date"; day: RouteDay; status: "past" | "too-far"; nearest: string }
   /** No flight in the link, or one that doesn't fly that day (`noFlights`: no nonstops on the route at all), or the day failed to build. */
   | { kind: "missing"; day: RouteDay; flightText: string; reason: "no-key" | "not-that-day" | "failed"; noFlights: boolean }
-  | { kind: "found"; id: string; day: RouteDay; option: FlightOption; options: readonly FlightOption[]; today: string };
+  | { kind: "found"; id: string; day: RouteDay; option: FlightOption; options: readonly FlightOption[]; today: string }
+  /** The flight has already left (earlier today): no forecast, gate or fare any more. `next`: the same flight the next day, if it flies. */
+  | {
+      kind: "departed";
+      id: string;
+      day: RouteDay;
+      option: FlightOption;
+      options: readonly FlightOption[];
+      today: string;
+      next: CompareItem | null;
+    };
 
 /**
  * What the query string leads to. Pure; generates the day's results
  * (deterministic and cached by the generator) only for a date the tool shows.
  */
-function resolve(params: { get(name: string): string | null }, today: string | null): View {
-  if (!today) return { kind: "loading" };
+function resolve(params: { get(name: string): string | null }, today: string | null, nowMs: number | null): View {
+  if (!today || nowMs === null) return { kind: "loading" };
   const day = parseRouteDay(params);
   if (!day) return { kind: "invalid" };
   const status = dateStatus(day.date, today);
@@ -41,9 +65,23 @@ function resolve(params: { get(name: string): string | null }, today: string | n
     const option = findOption(query, key);
     const options = searchFlights(query).options;
     if (!option) return { kind: "missing", day, flightText, reason: "not-that-day", noFlights: options.length === 0 };
-    return { kind: "found", id: itemId({ ...day, key: option.key }), day, option, options, today };
+    const id = itemId({ ...day, key: option.key });
+    if (hasLeft(option.flight, nowMs)) return { kind: "departed", id, day, option, options, today, next: nextDay(option, today) };
+    return { kind: "found", id, day, option, options, today };
   } catch {
     return { kind: "missing", day, flightText, reason: "failed", noFlights: false };
+  }
+}
+
+/** The same flight number the day after, when it flies then and that date can be shown. */
+function nextDay(option: FlightOption, today: string): CompareItem | null {
+  const { flight } = option;
+  const item = { origin: flight.origin.code, destination: flight.destination.code, date: addDays(flight.input.date, 1), key: option.key };
+  if (dateStatus(item.date, today) !== "ok") return null;
+  try {
+    return findOption({ origin: item.origin, destination: item.destination, date: item.date }, item.key) ? item : null;
+  } catch {
+    return null;
   }
 }
 
@@ -62,8 +100,10 @@ function airportLabel(code: string): string {
 export function FlightPage() {
   const params = useSearchParams();
   const today = useTodayISO();
-  const view = useMemo(() => resolve(params, today), [params, today]);
-  const shownId = view.kind === "found" ? view.id : null;
+  // A flight that left earlier today is shown as such (checked again every minute).
+  const nowMs = useNowMs();
+  const view = useMemo(() => resolve(params, today, nowMs), [params, today, nowMs]);
+  const shownId = view.kind === "found" || view.kind === "departed" ? view.id : null;
 
   // Opening another flight from this page (Details) replaces everything under the pointer:
   // keyboard and screen-reader focus moves to the top of the new flight. Not on the first one.
@@ -99,7 +139,65 @@ export function FlightPage() {
       return <NotOnSchedule day={view.day} flightText={view.flightText} reason={view.reason} noFlights={view.noFlights} />;
     case "found":
       return <FlightDetail key={view.id} day={view.day} option={view.option} options={view.options} today={view.today} />;
+    case "departed":
+      return <Departed day={view.day} option={view.option} options={view.options} today={view.today} next={view.next} />;
   }
+}
+
+interface DepartedProps {
+  day: RouteDay;
+  option: FlightOption;
+  options: readonly FlightOption[];
+  today: string;
+  next: CompareItem | null;
+}
+
+/**
+ * A flight that has already left: a calm note in place of its forecast, gate,
+ * fare and "Add to compare" (none of which exist after departure), and the
+ * day's flights that are still to leave.
+ */
+function Departed({ day, option, options, today, next }: DepartedProps) {
+  const f = option.flight;
+  const tomorrow = addDays(day.date, 1);
+  const turbulence = availabilityAt(today, day.date).turbulence;
+  return (
+    <div data-flight-top tabIndex={-1} className="outline-none">
+      <Notice
+        title="This flight has left"
+        icon={<PlaneTakeoff />}
+        actions={
+          <>
+            {next ? (
+              <Link href={flightHref(next)} className={LINK_BUTTON.primary}>
+                {f.flightNumber} on {shortDate(next.date)}
+              </Link>
+            ) : dateStatus(tomorrow, today) === "ok" ? (
+              <Link href={searchHref({ ...day, date: tomorrow })} className={LINK_BUTTON.primary}>
+                See flights on {shortDate(tomorrow)}
+              </Link>
+            ) : null}
+            <Link href="/c" className={LINK_BUTTON.secondary}>
+              New search
+            </Link>
+          </>
+        }
+      >
+        <p>
+          {f.airline.name} {f.flightNumber} left {airportLabel(f.origin.code)} at {formatTime12(f.departTime)} on{" "}
+          {shortDate(day.date)}. Forecasts, gates and fares are shown only until a flight leaves.
+        </p>
+      </Notice>
+      <OtherFlights
+        id="other-flights"
+        day={day}
+        options={options}
+        currentKey={option.key}
+        turbulence={turbulence}
+        className="mx-auto w-full max-w-[600px] min-w-0"
+      />
+    </div>
+  );
 }
 
 function DateNotice({ day, status, nearest }: { day: RouteDay; status: "past" | "too-far"; nearest: string }) {

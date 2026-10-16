@@ -3,13 +3,14 @@
 import { X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { formatShortDate, formatTime12 } from "@preflight/shared/dates";
 import { findOption, type FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { useCompareList } from "@/lib/c/compare-store";
 import { MAX_COMPARE, compareHref, flightHref, itemId, type CompareItem } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
+import { useTodayISO } from "@/lib/hooks";
 
 const TRAY_ID = "c-compare-tray";
 
@@ -66,7 +67,14 @@ function refocus(index: number) {
 export function CompareTray() {
   const pathname = usePathname();
   const compare = useCompareList();
-  const { items } = compare;
+  const today = useTodayISO();
+  const { prune } = compare;
+  // Flights whose date has passed leave the list (they can't be shown or compared, and mustn't fill it).
+  useEffect(() => {
+    if (today) prune(today);
+  }, [today, prune]);
+  // Until the effect has run, they are neither shown nor counted.
+  const items = useMemo(() => (today ? compare.items.filter((i) => i.date >= today) : compare.items), [compare.items, today]);
   const entries = useMemo(() => items.map((item) => ({ item, id: itemId(item), option: lookUp(item) })), [items]);
 
   if (pathname === "/c/compare" || items.length === 0) return null;
@@ -85,7 +93,7 @@ export function CompareTray() {
       <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-2 px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] sm:px-6 lg:flex-row lg:items-center lg:gap-4 lg:px-8 lg:py-3">
         <ul
           className={cn(
-            "relative -mx-4 flex min-w-0 flex-1 snap-x gap-2 overflow-x-auto overscroll-x-contain px-4 py-0.5 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0",
+            "relative -mx-4 flex min-w-0 flex-1 snap-x scroll-px-4 gap-2 overflow-x-auto overscroll-x-contain px-4 py-0.5 sm:-mx-6 sm:scroll-px-6 sm:px-6 lg:mx-0 lg:scroll-px-0 lg:px-0",
             "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
           )}
         >
@@ -121,7 +129,7 @@ export function CompareTray() {
                     refocus(index);
                   }}
                   aria-label={`Remove ${flightNumber} on ${date} from compare`}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full text-ink-400 transition-colors hover:bg-line/50 hover:text-ink-900"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-full text-ink-500 transition-colors hover:bg-line/50 hover:text-ink-900"
                 >
                   <X aria-hidden className="size-4" />
                 </button>

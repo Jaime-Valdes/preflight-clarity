@@ -23,7 +23,8 @@ export function RoleCard({ facts }: { facts: RoleFacts }) {
           <Icon className="size-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-bold leading-snug text-ink-900">{facts.title}</div>
+          {/* Same level as the BlockLabel ("Every pilot on board") after the cards. */}
+          <h3 className="text-[15px] font-bold leading-snug text-ink-900">{facts.title}</h3>
           <div className="mt-0.5 text-xs leading-snug text-ink-500">{facts.duty}</div>
         </div>
       </div>

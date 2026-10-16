@@ -18,7 +18,8 @@ interface SortTabsProps {
  * Sort order as a row of pills — native radio buttons underneath, so arrow
  * keys move between them and screen readers hear "1 of 4". Scrolls sideways
  * inside itself when the screen is narrow (never the page). A sort that
- * can't be used yet stays in its place, disabled, with the note saying when.
+ * can't be used yet stays in its place, disabled, with the note saying when
+ * (the row then wraps, so it stays in view).
  */
 export function SortTabs({ value, onChange, unavailable = [], note, className }: SortTabsProps) {
   const name = useId();
@@ -36,14 +37,18 @@ export function SortTabs({ value, onChange, unavailable = [], note, className }:
     else if (scroller.scrollLeft < right) scroller.scrollTo({ left: right });
   }, [value]);
 
+  // With a sort that can't be used yet, the pills wrap instead of scrolling: the disabled one (first) and
+  // the chosen one (last) can't both fit a phone's width, and the note under the row is about the first.
+  const wrap = unavailable.length > 0;
+
   return (
     <fieldset className={cn("min-w-0", className)} aria-describedby={note ? noteId : undefined}>
       <legend className="sr-only">Sort flights</legend>
       <div
         ref={scrollerRef}
         className={cn(
-          "relative -mx-4 flex gap-1.5 overflow-x-auto overscroll-x-contain px-4 py-1 sm:mx-0 sm:px-0",
-          "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          "relative -mx-4 flex gap-1.5 px-4 py-1 sm:mx-0 sm:px-0",
+          wrap ? "flex-wrap" : "overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         )}
       >
         {SORT_KEYS.map((key) => {

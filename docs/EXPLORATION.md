@@ -23,7 +23,7 @@ switching; "I'd prefer this one" is recorded, never acted on.
 
 1. **Flight strip** at the top of the dashboard (below the preview banner, above the header): one chip
    per explored flight — `LAX → JFK · Oct 31 · 87` — the active chip highlighted, the first one
-   labelled "Your flight". Tapping switches the whole dashboard to that flight (header, summary,
+   labelled "Example flight" (the study never asks which flight the participant is on — docs/FEASIBILITY.md). Tapping switches the whole dashboard to that flight (header, summary,
    sections). Each flight keeps its own open/closed sections (also across a reload) and what its
    sections hold (held options and expanded rows, the chosen seat, the alert options). Switching
    scrolls to the top.
@@ -213,7 +213,7 @@ checkpoint gets its close logged (detail `"reload"`); the sheet itself starts cl
 - `AlertsSection.tsx`: on an option (`showingOwnFlight === false`) the switch is disabled in its
   current state with "Alerts are set on your own flight.", so every `alert_toggle` is about the
   participant's own flight.
-- `DashboardHeader.tsx`: a small "Your flight" / "Option 2" label.
+- `DashboardHeader.tsx`: a small "Example flight" / "Option 2" label.
 - Resume after reload: the flow passes `initialMetrics`; the dashboard rebuilds the strip from
   `initialMetrics.exploration.flights`, reactivates `endedOnFlightId`/the last active id and
   restores every flight's open sections (`tracker.openSectionsByFlight()`). Held options and the

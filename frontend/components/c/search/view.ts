@@ -1,3 +1,4 @@
+import { getAirline } from "@preflight/shared/airlines";
 import type { FlightOption } from "@preflight/shared/search";
 import { DEFAULT_SORT, SORT_KEYS, searchHref, type RouteDay, type SortKey } from "@/lib/c/model";
 import { TIME_BUCKETS, timeBucket, type TimeBucket } from "@/lib/c/format";
@@ -198,4 +199,9 @@ export function buildFacets(options: readonly FlightOption[]): Facets {
     wideCount,
     atLeast,
   };
+}
+
+/** An airline's name for a filter row or chip — also for one that has no flights this day (never a bare code if known). */
+export function airlineName(code: string, facets: Pick<Facets, "airlines">): string {
+  return facets.airlines.find((a) => a.code === code)?.name ?? getAirline(code)?.name ?? code;
 }

@@ -20,7 +20,7 @@ const CHIP =
   "relative inline-flex h-11 shrink-0 snap-start items-center rounded-full transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-breeze-500";
 
 /**
- * One chip per explored flight ("Your flight", "Option 2"…), then "+ Another
+ * One chip per explored flight ("Example flight", "Option 2"…), then "+ Another
  * flight" and, with two or more flights, "Compare". The flight chips scroll
  * sideways inside themselves (never the page), with soft fades at the edges;
  * the two actions stay put after them, shrinking to icons when space is short.

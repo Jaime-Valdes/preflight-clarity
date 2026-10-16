@@ -35,7 +35,8 @@ marker replaces it — never a made-up value:
 | Dates | ≤ 330 days (`SCHEDULE_DAYS`) | Date pickers and the date strip stop there (`dateStatus` / `clampDate` in `frontend/lib/c/model.ts`). |
 
 Routes no airline would plausibly fly nonstop show "No nonstop flights on this route" instead of
-invented flights.
+invented flights (beyond 6,500 mi only real listed routes fly — see docs/FEASIBILITY.md). Flights that
+already left today show as departed, with no forecast, gate, fare or Compare.
 
 ## Pages
 
@@ -136,10 +137,13 @@ As implemented (`shared/src/search.ts` + `routeDay` / `buildScheduledFlight` in 
    wide-body are left out where the route needs one); flight numbers unique per day, never retired,
    even eastbound / odd westbound; departures 05:30–23:30 local (long-haul from 06:00) on a 5-minute
    grid, ≥ 15 min apart, same carrier ≥ 45 min, ≥ 30 min across an air-block edge. Like a real
-   timetable it repeats: the same flight number leaves at the same time every day of the season.
+   timetable it repeats: the same flight number leaves at the same time every day of the season, with
+   one **published block time** per flight number and season on the 5-minute grid (the route's longest
+   airborne time in its daily winds plus taxi, rounded up) — so it also lands at the same time daily.
 2. **The day** (seed `sched|ROUTE|DATE`): the frequencies flying that weekday (a few skip Saturdays),
    ~8% equipment swaps, every arrival re-checked against that date's time zones and curfews.
-3. **Shared facts**: one airborne time per day (= A/B's), the A/B route history (route + month), weather
+3. **Shared facts**: one airborne time per day (= A/B's; it only feeds the turbulence model — schedules,
+   durations and the Fastest sort/pill use the published block), the A/B route history (route + month), weather
    per airport + date + clock hour (A/B's model), and one bump draw per 2-hour air block on odd hours
    (`air|ROUTE|DATE|HH:MM`) — the same body type gets the identical timeline, a wide-body never a
    bumpier one; blocks differ through the time-of-day model, so the history's best window holds.

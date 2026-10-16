@@ -26,18 +26,38 @@ function distanceKm(a: Airport, b: Airport): number {
   return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/** Airports closer than this are one metro area: nobody flies between them. */
+const SAME_AREA_KM = 80;
+
+/**
+ * Two airports in the same city or metro area (JFK and LGA, SFO and OAK): how
+ * they relate, for copy — `km` when the cities differ — or null.
+ */
+export function sameArea(day: RouteDay): { city: string | null; km: number } | null {
+  const origin = getAirport(day.origin);
+  const destination = getAirport(day.destination);
+  if (!origin || !destination) return null;
+  const km = distanceKm(origin, destination);
+  if (origin.city === destination.city) return { city: origin.city, km };
+  return km < SAME_AREA_KM ? { city: null, km } : null;
+}
+
 /** True when no airline would fly this route nonstop — a route-level fact, the same on every date. */
 export function routeHasNoNonstops(day: RouteDay): boolean {
   return !hasNonstopService(day.origin, day.destination);
 }
 
-/** The route has nonstops on `date` that really use these two airports (not the city's other airport). */
-function fliesAsNamed(route: RouteDay): boolean {
+/**
+ * The route as it is really flown on `date` — the airports its flights use
+ * (long flights "from LGA" leave from JFK) — or null when it has no nonstops.
+ */
+function flownAs(route: RouteDay): RouteDay | null {
+  if (!hasNonstopService(route.origin, route.destination)) return null;
   try {
     const first = searchFlights(route).options[0]?.flight;
-    return !!first && first.origin.code === route.origin && first.destination.code === route.destination;
+    return first ? { ...route, origin: first.origin.code, destination: first.destination.code } : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -54,21 +74,36 @@ function majorsNear(airport: Airport, exclude: readonly string[], limit: number)
  * Up to `limit` routes like this one that do have nonstop flights on the day:
  * the same destination from a major airport near the origin, and the same
  * origin to a major airport near the destination — alternating, nearest first.
- * Only routes whose flights use the airports named (long flights "from LGA"
- * leave from JFK, so LGA isn't suggested for them).
+ * When neither works, both ends change (LGA → OGG: JFK → HNL). Each is named
+ * by the airports its flights really use (long flights "from LGA" leave from
+ * JFK). Two airports in one metro area get no suggestions.
  */
 export function nearbyRoutes(day: RouteDay, limit = 4): RouteDay[] {
   const origin = getAirport(day.origin);
   const destination = getAirport(day.destination);
-  if (!origin || !destination) return [];
+  if (!origin || !destination || sameArea(day)) return [];
   const exclude = [origin.code, destination.code];
-  const fromSide = majorsNear(origin, exclude, 5).map((a) => ({ ...day, origin: a.code }));
-  const toSide = majorsNear(destination, exclude, 5).map((a) => ({ ...day, destination: a.code }));
+  const nearOrigin = majorsNear(origin, exclude, 5);
+  const nearDestination = majorsNear(destination, exclude, 5);
   const picked: RouteDay[] = [];
-  for (let i = 0; i < 5 && picked.length < limit; i += 1) {
-    for (const route of [fromSide[i], toSide[i]]) {
-      if (route && picked.length < limit && hasNonstopService(route.origin, route.destination) && fliesAsNamed(route)) picked.push(route);
-    }
+  const pick = (route: RouteDay | undefined) => {
+    const flown = route && picked.length < limit ? flownAs(route) : null;
+    if (!flown || (flown.origin === day.origin && flown.destination === day.destination)) return;
+    if (!picked.some((r) => r.origin === flown.origin && r.destination === flown.destination)) picked.push(flown);
+  };
+  for (let i = 0; i < 5; i += 1) {
+    const a = nearOrigin[i];
+    const b = nearDestination[i];
+    pick(a && { ...day, origin: a.code });
+    pick(b && { ...day, destination: b.code });
+  }
+  if (picked.length === 0) {
+    // Both ends: the nearest pairs first.
+    const pairs = nearOrigin
+      .slice(0, 3)
+      .flatMap((a) => nearDestination.slice(0, 3).map((b) => ({ a, b, km: distanceKm(origin, a) + distanceKm(destination, b) })))
+      .sort((x, y) => x.km - y.km);
+    for (const { a, b } of pairs) pick({ ...day, origin: a.code, destination: b.code });
   }
   return picked;
 }

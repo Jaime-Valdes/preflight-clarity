@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef } from "react";
 import { addDays, formatLongDate } from "@preflight/shared/dates";
 import { TURBULENCE_FORECAST_DAYS } from "@preflight/shared/forecast";
-import { dayOverview, type DayOverview } from "@preflight/shared/search";
-import { availabilityOn } from "@/components/c/common/availability";
+import { dayOverview, searchFlights, type DayOverview } from "@preflight/shared/search";
+import { availabilityAt, daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { formatFare } from "@/lib/c/format";
 import { clampDate, MAX_DAYS_AHEAD, type RouteDay } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
@@ -32,6 +32,8 @@ interface DateStripProps {
    */
   stripDay: RouteDay | null;
   today: string;
+  /** useNowMs(): today's tile only counts the flights still to leave. */
+  nowMs: number | null;
   /** Link for another date (keeps sort and filters). */
   hrefFor: (date: string) => string;
 }
@@ -43,13 +45,13 @@ interface DateStripProps {
  * day is a link. Computed one tile at a time after the day's own results, so
  * the first paint isn't held up.
  */
-export function DateStrip({ day, stripDay, today, hrefFor }: DateStripProps) {
+export function DateStrip({ day, stripDay, today, nowMs, hrefFor }: DateStripProps) {
   const scrollerRef = useRef<HTMLUListElement>(null);
   const sameRoute = stripDay !== null && stripDay.origin === day.origin && stripDay.destination === day.destination;
   const dates = sameRoute ? stripDates(stripDay.date, today) : null;
   const stale = !sameRoute || stripDay.date !== day.date;
   const firstDate = dates ? dates[0] : null;
-  const anyScores = dates ? availabilityOn(dates[0]!, today).turbulence : availabilityOn(day.date, today).turbulence;
+  const anyScores = availabilityAt(today, dates ? dates[0]! : day.date).turbulence;
 
   // Keep the chosen day in view when the strip scrolls sideways (phones).
   useEffect(() => {
@@ -65,7 +67,7 @@ export function DateStrip({ day, stripDay, today, hrefFor }: DateStripProps) {
       <ul
         ref={scrollerRef}
         className={cn(
-          "relative -mx-4 flex snap-x gap-2 overflow-x-auto overscroll-x-contain px-4 py-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:grid lg:grid-cols-7 lg:overflow-visible lg:px-0",
+          "relative -mx-4 flex snap-x scroll-px-4 gap-2 overflow-x-auto overscroll-x-contain px-4 py-1 sm:-mx-6 sm:scroll-px-6 sm:px-6 lg:mx-0 lg:grid lg:grid-cols-7 lg:scroll-px-0 lg:overflow-visible lg:px-0",
           "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         )}
       >
@@ -77,7 +79,8 @@ export function DateStrip({ day, stripDay, today, hrefFor }: DateStripProps) {
                 destination={day.destination}
                 date={date}
                 current={date === day.date}
-                scores={availabilityOn(date, today).turbulence}
+                scores={availabilityAt(today, date).turbulence}
+                nowMs={daysToDeparture(today, date) <= 1 ? nowMs : null}
                 href={hrefFor(date)}
               />
             ))
@@ -96,9 +99,24 @@ export function DateStrip({ day, stripDay, today, hrefFor }: DateStripProps) {
   );
 }
 
-function safeOverview(origin: string, destination: string, date: string): DayOverview | null {
+/** The day's count, lowest fare and best score; with `nowMs`, only over the flights that haven't left yet (`left`: how many have). */
+function safeOverview(
+  origin: string,
+  destination: string,
+  date: string,
+  nowMs: number | null,
+): (DayOverview & { left: number }) | null {
   try {
-    return dayOverview({ origin, destination, date }, date);
+    if (nowMs === null) return { ...dayOverview({ origin, destination, date }, date), left: 0 };
+    const all = searchFlights({ origin, destination, date }).options;
+    const options = all.filter((o) => !hasLeft(o.flight, nowMs));
+    return {
+      date,
+      left: all.length - options.length,
+      count: options.length,
+      lowestFareUsd: options.reduce((min, o) => Math.min(min, o.fareUsd), options.length > 0 ? Infinity : 0),
+      bestScore: options.reduce((max, o) => Math.max(max, o.flight.smoothness.score), 0),
+    };
   } catch {
     return null;
   }
@@ -111,11 +129,13 @@ interface DayTileProps {
   current: boolean;
   /** The day's turbulence forecast is out, so its best score can be shown. */
   scores: boolean;
+  /** Set for today (and tomorrow, for far-off time zones): flights that have left don't count. */
+  nowMs: number | null;
   href: string;
 }
 
-function DayTile({ origin, destination, date, current, scores, href }: DayTileProps) {
-  const overview = useMemo(() => safeOverview(origin, destination, date), [origin, destination, date]);
+function DayTile({ origin, destination, date, current, scores, nowMs, href }: DayTileProps) {
+  const overview = useMemo(() => safeOverview(origin, destination, date, nowMs), [origin, destination, date, nowMs]);
   const has = overview !== null && overview.count > 0;
   return (
     <li className="min-w-[5.5rem] flex-1 snap-start lg:min-w-0">
@@ -165,7 +185,7 @@ function DayTile({ origin, destination, date, current, scores, href }: DayTilePr
         ) : (
           <span className={cn("mt-1.5 text-[11px] leading-tight", current ? "text-white/70" : "text-ink-500")}>
             <span className="sr-only">: </span>
-            No flights
+            {overview && overview.left > 0 ? "All left" : "No flights"}
           </span>
         )}
       </Link>
