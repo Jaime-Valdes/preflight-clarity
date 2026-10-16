@@ -42,3 +42,40 @@ export function useQueryParam(name: string): string | null {
     () => null,
   );
 }
+
+let minuteNow = 0;
+const minuteListeners = new Set<() => void>();
+let minuteTimer: ReturnType<typeof setInterval> | null = null;
+
+function subscribeToMinute(onChange: () => void) {
+  minuteListeners.add(onChange);
+  if (minuteTimer === null) {
+    minuteTimer = setInterval(() => {
+      minuteNow = Date.now();
+      for (const listener of minuteListeners) listener();
+    }, 60_000);
+  }
+  return () => {
+    minuteListeners.delete(onChange);
+    if (minuteListeners.size === 0 && minuteTimer !== null) {
+      clearInterval(minuteTimer);
+      minuteTimer = null;
+    }
+  };
+}
+
+/**
+ * The current time in ms on the client, refreshed every minute (for "already left" checks);
+ * null during server render and hydration. The value only changes on the minute tick, so
+ * renders stay pure.
+ */
+export function useNowMs(): number | null {
+  return useSyncExternalStore(
+    subscribeToMinute,
+    () => {
+      if (minuteNow === 0) minuteNow = Date.now();
+      return minuteNow;
+    },
+    () => null,
+  );
+}

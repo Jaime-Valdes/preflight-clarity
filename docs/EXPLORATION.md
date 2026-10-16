@@ -31,7 +31,7 @@ switching; "I'd prefer this one" is recorded, never acted on.
    **"Compare"** chip appears.
 2. **What-if sheet** ("Try a different flight") with four calm options, each generating a new
    deterministic flight and adding it to the strip (max 6 flights; then the add chip says "Up to 6"):
-   - *Same route, another day* — date picker (today … today + 365).
+   - *Same route, another day* — date picker (today … today + 330, when schedules are published).
    - *A different time of day* — Morning (06–11) / Afternoon (11–17) / Evening (17–23) departure.
    - *A larger plane* — a wide-body option on the same route and day, where plausible.
    - *A different route* — origin / destination / date fields (reuse the setup fields).

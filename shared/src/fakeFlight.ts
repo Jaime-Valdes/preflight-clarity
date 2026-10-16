@@ -205,6 +205,14 @@ function localToUtc(dateIso: string, hhmm: string, tz: string): number {
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
+/**
+ * The UTC instant a flight leaves the gate (its departure date and local time at the origin).
+ * Pure; the UI compares it with the client's clock to tell flights that already left today.
+ */
+export function departureUtcMs(flight: Pick<Flight, "input" | "departTime" | "origin">): number {
+  return localToUtc(flight.input.date, flight.departTime, flight.origin.tz);
+}
+
 
 function utcToLocal(utcMs: number, tz: string): { date: string; time: string; hour: number } {
   const p = localParts(tz, utcMs);

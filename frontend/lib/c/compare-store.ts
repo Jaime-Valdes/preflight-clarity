@@ -94,6 +94,8 @@ export interface CompareList {
   /** Replaces the whole list (e.g. with the flights from a shared compare link). */
   replace(items: readonly CompareItem[]): void;
   clear(): void;
+  /** Drops flights whose date is before `today` ("YYYY-MM-DD"). Call from an effect or handler, never in render. */
+  prune(today: string): void;
 }
 
 /** The visitor's compare list. Empty during server render and hydration. */
@@ -122,5 +124,10 @@ export function useCompareList(): CompareList {
     },
     replace: (next) => save(next),
     clear: () => save([]),
+    prune: (today) => {
+      const current = getSnapshot();
+      const kept = current.filter((i) => i.date >= today);
+      if (kept.length !== current.length) save(kept);
+    },
   };
 }
