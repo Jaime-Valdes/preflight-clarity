@@ -37,12 +37,23 @@ function firstSet(...values: Array<string | undefined>): string | undefined {
 
 /** Read fresh on every call so tests (and a restarted process) see the current environment. */
 export function supabaseConfig(): SupabaseConfig | null {
-  const url = firstSet(process.env.SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_URL);
+  // Only the project origin ("https://<ref>.supabase.co"): a pasted "/rest/v1/" or any other
+  // path would be doubled by the client and fail with PGRST125.
+  const url = projectOrigin(firstSet(process.env.SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_URL));
   const key = firstSet(process.env.SUPABASE_SERVICE_ROLE_KEY, process.env.SUPABASE_SECRET_KEY);
   return url && key ? { url, key } : null;
 }
 
 let cached: { id: string; client: SupabaseClient } | null = null;
+
+function projectOrigin(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    return new URL(value.trim()).origin;
+  } catch {
+    return value.trim();
+  }
+}
 
 /** One client per (url, key); a server-side client keeps no session and refreshes no token. */
 export function getClient(config: SupabaseConfig): SupabaseClient {
