@@ -221,6 +221,7 @@ function fixture(): SessionRecord {
       wouldSwitch: "not_sure",
     },
     email: "participant@example.com",
+    firstName: "Sam",
   };
 }
 
@@ -351,6 +352,13 @@ group("parseSessionRecord", () => {
     assert.equal(expectOk(loose((r) => (r.email = null))).email, "");
     assert.equal(expectOk(loose((r) => delete r.email)).email, "");
     assert.equal(expectOk(loose((r) => (r.email = "a@b.c"))).email, "");
+  });
+
+  test("first name is optional, trimmed and capped", () => {
+    assert.equal(expectOk(loose((r) => (r.firstName = "  Sam "))).firstName, "Sam");
+    assert.equal(expectOk(loose((r) => (r.firstName = "x".repeat(80)))).firstName?.length, 60);
+    assert.equal(expectOk(loose((r) => (r.firstName = 7))).firstName, "");
+    assert.equal(expectOk(loose((r) => delete r.firstName)).firstName, "");
   });
 
   test("unknown keys are dropped at every level", () => {
@@ -500,6 +508,7 @@ group("parseSessionRecord", () => {
         stillScaredOf: "",
       },
       email: "",
+      firstName: "",
     };
     // Records from before the participant label / exploration fields parse with "" / null.
     assert.deepEqual(expectOk(minimal), { ...minimal, participant: "", post: { ...minimal.post, wouldSwitch: null } });

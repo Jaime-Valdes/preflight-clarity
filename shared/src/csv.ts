@@ -125,6 +125,7 @@ export const CSV_COLUMNS: readonly string[] = [
   "would_replace",
   "would_replace_text",
   "still_scared_of",
+  "first_name",
   "email",
 ];
 
@@ -225,6 +226,7 @@ export function recordToRow(record: SessionRecord): Cell[] {
     joinList(post.wouldReplace),
     post.wouldReplaceText,
     post.stillScaredOf,
+    record.firstName ?? "",
     record.email,
   ];
 }

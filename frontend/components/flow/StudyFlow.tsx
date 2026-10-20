@@ -436,7 +436,7 @@ function StudyFlowClient() {
       return (
         <DebriefScreen
           emailSent={state.emailSent}
-          onEmail={(email) => commit({ type: "email", email }, { save: true })}
+          onEmail={(email, firstName) => commit({ type: "email", email, firstName }, { save: true })}
           isTest={session?.isTest ?? false}
           onStartOver={startOver}
         />

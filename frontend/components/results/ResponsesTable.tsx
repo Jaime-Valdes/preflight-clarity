@@ -140,6 +140,7 @@ function Details({ record }: { record: SessionRecord }) {
         {record.variant === "A" ? (
           <Field label="Would switch">{post.wouldSwitch ? WOULD_SWITCH_LABELS[post.wouldSwitch] ?? post.wouldSwitch : "—"}</Field>
         ) : null}
+        <Field label="First name">{record.firstName || "—"}</Field>
         <Field label="Email">{record.email || "—"}</Field>
       </dl>
 

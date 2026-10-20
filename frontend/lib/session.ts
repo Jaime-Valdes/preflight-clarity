@@ -147,6 +147,8 @@ export interface FlowState {
   dashboard: DashboardMetrics | null;
   post: PostSurvey;
   email: string;
+  /** Optional first name given with the email (absent in flow states saved before it existed). */
+  firstName?: string;
   emailSent: boolean;
 }
 
@@ -193,6 +195,7 @@ export function initialFlowState(): FlowState {
     dashboard: null,
     post: emptyPost(),
     email: "",
+    firstName: "",
     emailSent: false,
   };
 }
@@ -218,7 +221,7 @@ export type FlowAction =
   | { type: "postDone" }
   | { type: "postPartsDone" }
   | { type: "postHabitsDone"; completedAt: string }
-  | { type: "email"; email: string }
+  | { type: "email"; email: string; firstName: string }
   | { type: "touch" };
 
 export function reduceFlow(state: FlowState, action: FlowAction): FlowState {
@@ -262,7 +265,7 @@ export function reduceFlow(state: FlowState, action: FlowAction): FlowState {
     case "postHabitsDone":
       return { ...state, completedAt: state.completedAt ?? action.completedAt, screen: "debrief" };
     case "email":
-      return { ...state, email: action.email, emailSent: true };
+      return { ...state, email: action.email, firstName: action.firstName, emailSent: true };
     case "touch":
       return state;
   }
@@ -303,6 +306,7 @@ export function buildRecord(state: FlowState): SessionRecord | null {
     // The switch question is variant A only; B always stores null.
     post: { ...state.post, wouldSwitch: s.variant === "A" ? normalizeWouldSwitch(state.post.wouldSwitch) : null },
     email: state.email,
+    firstName: state.firstName ?? "",
   };
 }
 

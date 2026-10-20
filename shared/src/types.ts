@@ -597,6 +597,8 @@ export interface SessionRecord {
   post: PostSurvey;
   /** Optional follow-up email from the debrief screen; "" if none. */
   email: string;
+  /** Optional first name given with the follow-up email; "" if none (absent in older records). */
+  firstName?: string;
 }
 
 // ── API ─────────────────────────────────────────────────────────────────────

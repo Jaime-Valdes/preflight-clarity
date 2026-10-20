@@ -62,6 +62,7 @@ export const MAX_TEXT_CHARS = 2000;
 /** Labels, codes, names, routes. */
 export const MAX_SHORT_CHARS = 120;
 export const MAX_EMAIL_CHARS = 254;
+export const MAX_FIRST_NAME_CHARS = 60;
 export const MAX_USER_AGENT_CHARS = 512;
 /** Mirrors MAX_EVENTS in frontend/lib/tracking.ts. */
 export const MAX_EVENTS = 300;
@@ -470,6 +471,7 @@ function build(input: unknown): SessionRecord {
     dashboard: parseDashboard(input.dashboard),
     post: parsePost(input.post),
     email: email(input.email),
+    firstName: text(input.firstName, MAX_FIRST_NAME_CHARS),
   };
 }
 

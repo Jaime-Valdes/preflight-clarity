@@ -10,7 +10,7 @@ import { Wordmark } from "./StepHeader";
 interface DebriefScreenProps {
   /** Email already submitted (e.g. after a reload). */
   emailSent: boolean;
-  onEmail: (email: string) => void;
+  onEmail: (email: string, firstName: string) => void;
   /** Team test sessions get a way to start over. */
   isTest?: boolean;
   onStartOver?: () => void;
@@ -18,11 +18,13 @@ interface DebriefScreenProps {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-/** Thank-you + the illustrative-data reminder + optional follow-up email. */
+/** Thank-you + the illustrative-data reminder + optional first name and follow-up email. */
 export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver }: DebriefScreenProps) {
   const emailId = useId();
+  const nameId = useId();
   const hintId = useId();
   const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [attempted, setAttempted] = useState(false);
   /** When the email went out: the shorter "thanks" card moves "Start a new test session" under the thumb. */
   const sentAt = useRef<number | null>(null);
@@ -35,7 +37,7 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
       return;
     }
     sentAt.current = performance.now();
-    onEmail(email.trim());
+    onEmail(email.trim(), firstName.trim().slice(0, 60));
   }
 
   function startOver() {
@@ -83,17 +85,34 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
             </span>
             <div>
               <p className="text-[15px] font-semibold leading-snug text-ink-900">Thanks — we may reach out.</p>
-              <p className="mt-1 text-[13px] leading-snug text-ink-500">We&rsquo;ll only use your email for this study.</p>
+              <p className="mt-1 text-[13px] leading-snug text-ink-500">We&rsquo;ll only use your name and email for this study.</p>
             </div>
           </div>
         ) : (
           <form onSubmit={submit} noValidate>
-            <label htmlFor={emailId} className="block text-[15px] font-semibold leading-snug text-ink-900">
-              Open to a short follow-up chat?
-            </label>
+            <p className="text-[15px] font-semibold leading-snug text-ink-900">Open to a short follow-up chat?</p>
             <p className="mt-1 text-[13px] leading-snug text-ink-500">
-              Optional. Leave an email and we may invite you to a 15-minute interview. It&rsquo;s stored with your answers.
+              Optional. Leave your first name and email and we may invite you to a 15-minute interview. They&rsquo;re
+              stored with your answers.
             </p>
+            <label htmlFor={nameId} className="mt-4 block text-[13px] font-semibold text-ink-700">
+              First name
+            </label>
+            <input
+              id={nameId}
+              type="text"
+              autoComplete="given-name"
+              autoCapitalize="words"
+              spellCheck={false}
+              maxLength={60}
+              placeholder="Alex"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="mt-1.5 h-12 w-full rounded-2xl bg-surface px-4 text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-500 focus:outline-none"
+            />
+            <label htmlFor={emailId} className="mt-3 block text-[13px] font-semibold text-ink-700">
+              Email
+            </label>
             <input
               id={emailId}
               type="email"
@@ -105,7 +124,7 @@ export function DebriefScreen({ emailSent, onEmail, isTest = false, onStartOver 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               aria-describedby={hintId}
-              className="mt-3 h-12 w-full rounded-2xl bg-surface px-4 text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-500 focus:outline-none"
+              className="mt-1.5 h-12 w-full rounded-2xl bg-surface px-4 text-[15px] text-ink-900 shadow-soft ring-1 ring-inset ring-line-strong placeholder:text-ink-400 focus:ring-2 focus:ring-breeze-500 focus:outline-none"
             />
             <p id={hintId} className="mt-1.5 h-4 text-[13px] leading-snug text-sand-700" aria-live="polite">
               {attempted && !valid ? "That email doesn't look complete yet." : ""}
