@@ -98,6 +98,17 @@ Three services. Do them in this order, because each one needs a value from the p
    `eyJ…` service_role JWT). Never the anon / publishable key: the server-side key is the one that is
    allowed through RLS, and it must never reach the browser.
 
+### 2. Backend → Vercel (second project, free)
+
+1. [vercel.com](https://vercel.com) → **Add New → Project → Import** the same repo `Jaime-Valdes/preflight-clarity`.
+2. **Root Directory**: `backend`. Keep "Include source files outside of the Root Directory" enabled.
+   Framework preset: **Other**. `backend/vercel.json` sets the install/build commands and sends every path
+   to one function (`backend/api/index.js` → `src/vercel.ts`).
+3. **Environment Variables**: `ADMIN_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. Deploy.
+4. Check: `https://<backend-project>.vercel.app/health` → `{"ok":true,"storage":"supabase"}`.
+
+Railway (below) works too, but isn't free.
+
 ### 2. Backend → Railway
 
 1. [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo** → pick
