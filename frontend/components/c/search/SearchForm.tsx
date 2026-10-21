@@ -7,6 +7,7 @@ import { AirportField } from "@/components/flow/AirportField";
 import { searchHref, type RouteDay } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
 import { dateHint, dateNote, maxSearchDate, validateDraft, WINDOW_TEXT, type SearchDraft } from "./query";
+import { track } from "@/lib/analytics";
 
 interface SearchFormProps {
   /** Prefix for the fields' ids — unique on the page ("home", "change"…). */
@@ -66,6 +67,7 @@ export function SearchForm({
       document.getElementById(first)?.focus();
       return;
     }
+    track("c_search", { origin: check.day.origin, destination: check.day.destination, date: check.day.date });
     router.push(searchHref(check.day, carry));
     onSearched?.(check.day);
   }

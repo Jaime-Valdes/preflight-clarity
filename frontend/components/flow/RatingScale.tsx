@@ -106,7 +106,7 @@ export function RatingScale({ question, value, onChange, minLabel, maxLabel, cla
   }
 
   return (
-    <div className={cn("select-none", className)}>
+    <div data-ph-mask className={cn("select-none", className)}>
       <p id={questionId} className="text-[15px] font-semibold leading-snug text-ink-900">
         {question}
       </p>

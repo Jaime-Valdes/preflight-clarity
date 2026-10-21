@@ -2,7 +2,7 @@
 
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
 import type { FlightOption } from "@preflight/shared/search";
 import type { SectionContext } from "@preflight/shared/types";
@@ -15,6 +15,7 @@ import { monthDay, routeText } from "./copy";
 import { FareCard } from "./FareCard";
 import { FlightSections } from "./FlightSections";
 import { OtherFlights } from "./OtherFlights";
+import { track } from "@/lib/analytics";
 
 interface FlightDetailProps {
   day: RouteDay;
@@ -49,6 +50,10 @@ export function FlightDetail({ day, option, options, today }: FlightDetailProps)
     [daysUntil, history],
   );
   const availability = availabilityFor(daysUntil);
+
+  useEffect(() => {
+    track("c_flight_view", { key: option.key, origin: flight.origin.code, destination: flight.destination.code, days_until: daysUntil, has_scores: availability.turbulence });
+  }, [option.key, flight.origin.code, flight.destination.code, daysUntil, availability.turbulence]);
 
   // What the section bodies keep for this flight (the chosen seat…); see useFlightState.
   const [bodyState, setBodyState] = useState<Readonly<Record<string, unknown>>>({});

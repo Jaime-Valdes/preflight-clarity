@@ -2,6 +2,7 @@
 
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { setContext, track } from "@/lib/analytics";
 import { addDays, daysBetween, formatShortDate, isISODate, toISODate } from "@preflight/shared/dates";
 import { generateFlight, normalizeInput } from "@preflight/shared/fakeFlight";
 import { previewDaysUntil, summarizeFlight } from "@preflight/shared/forecast";
@@ -25,6 +26,7 @@ import {
   type FlowAction,
   type FlowScreen,
   type FlowState,
+  screenIndex,
 } from "@/lib/session";
 import { saveSession } from "@/lib/storage";
 import { DebriefScreen } from "./DebriefScreen";
@@ -245,6 +247,19 @@ function StudyFlowClient() {
     if (!changed) return;
     document.querySelector<HTMLElement>("main [data-focus-start], main h1")?.focus({ preventScroll: true });
   }, [state.screen, prepFailed]);
+
+  // Analytics (docs/ANALYTICS.md): one "study_step" per screen reached, with the session's
+  // variant, test flag and participant label attached to every event from here on. No answers.
+  const sessionId = state.session?.sessionId ?? null;
+  const sessionVariant = state.session?.variant ?? null;
+  const sessionIsTest = state.session?.isTest ?? false;
+  const sessionParticipant = state.session?.participant ?? "";
+  useEffect(() => {
+    if (sessionId) setContext({ variant: sessionVariant, is_test: sessionIsTest, participant: sessionParticipant || null });
+  }, [sessionId, sessionVariant, sessionIsTest, sessionParticipant]);
+  useEffect(() => {
+    track("study_step", { step: state.screen, step_index: screenIndex(state.screen) });
+  }, [state.screen]);
 
   // ── step handlers ─────────────────────────────────────────────────────────
 

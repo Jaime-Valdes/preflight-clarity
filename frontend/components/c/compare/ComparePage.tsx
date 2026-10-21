@@ -14,6 +14,7 @@ import { CompareEmpty } from "./CompareEmpty";
 import { CompareSkeleton } from "./CompareSkeleton";
 import { CompareTable } from "./CompareTable";
 import { assignSlots, flightNames, isFlightColumn, resolveColumns, spoken } from "./facts";
+import { track } from "@/lib/analytics";
 
 const NO_IDS: ReadonlySet<string> = new Set();
 
@@ -56,6 +57,10 @@ export function ComparePage() {
   const items = url.fromUrl ? url.items : list.items;
   const visible = useMemo(() => items.filter((i) => !hiddenIds.has(itemId(i))), [items, hiddenIds]);
   const columns = useMemo(() => (today ? resolveColumns(visible, today, nowMs) : []), [visible, today, nowMs]);
+  const shownCount = columns.filter(isFlightColumn).length;
+  useEffect(() => {
+    if (today) track("c_compare_view", { flights: shownCount, from_link: url.fromUrl });
+  }, [today, shownCount, url.fromUrl]);
   const flights = useMemo(() => columns.filter(isFlightColumn), [columns]);
   const names = useMemo(() => flightNames(flights), [flights]);
 

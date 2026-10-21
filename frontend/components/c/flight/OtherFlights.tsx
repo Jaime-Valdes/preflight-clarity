@@ -17,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { CompareToggle } from "./CompareToggle";
 import { PendingNote } from "./PendingNote";
 import { LINK_BASE, LINK_BUTTON, LINK_TONE, dayOffsetMark, dayOffsetWords, monthDay } from "./copy";
+import { track } from "@/lib/analytics";
 
 /** How many other flights the page lists before "See all". */
 const SHOWN = 5;
@@ -68,6 +69,7 @@ export function OtherFlights({ day, options, currentKey, turbulence, id, classNa
 
   const toggle = (item: CompareItem, label: string) => {
     const wasIn = list.has(itemId(item));
+    track("c_compare_toggle", { from: "other_flights", added: !wasIn, key: item.key });
     if (!list.toggle(item)) {
       setAnnouncement(`You can compare up to ${MAX_COMPARE} flights.`);
       return;

@@ -12,6 +12,7 @@ import { formatFare } from "@/lib/c/format";
 import { MAX_COMPARE, compareHref, itemId, type CompareItem } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
 import { LINK_BUTTON, dayOffsetMark } from "./copy";
+import { track } from "@/lib/analytics";
 
 interface FareCardProps {
   option: FlightOption;
@@ -52,6 +53,7 @@ export function FareCard({ option, item, othersHref, className }: FareCardProps)
     // Full: the button stays focusable (aria-disabled) so its note is read; pressing it does nothing.
     if (full) return;
     if (list.add(item)) {
+      track("c_compare_toggle", { from: "flight", added: true, key: item.key });
       setAnnouncement(`Added to compare. ${count + 1} of ${MAX_COMPARE} flights picked.`);
       setFocus({ target: "remove" });
     } else {
@@ -60,6 +62,7 @@ export function FareCard({ option, item, othersHref, className }: FareCardProps)
   };
 
   const remove = () => {
+    track("c_compare_toggle", { from: "flight", added: false, key: item.key });
     list.remove(id);
     setAnnouncement("Removed from compare.");
     setFocus({ target: "add" });

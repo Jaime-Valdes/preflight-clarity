@@ -24,6 +24,7 @@ import { SearchForm } from "./SearchForm";
 import { SearchSummary } from "./SearchSummary";
 import { ResultsSkeleton } from "./Skeletons";
 import { SortTabs } from "./SortTabs";
+import { track } from "@/lib/analytics";
 import {
   activeFilterCount,
   airlineName,
@@ -155,6 +156,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 
   function changeView(next: ResultsView, focusId?: string) {
     if (focusId) focusNext.current = focusId;
+    track("c_results_view", { sort: next.sort, times: next.times.join(","), airlines: next.airlines.join(","), wide: next.wide, min_score: next.min ?? null });
     startTransition(() => {
       setOptimisticView(next);
       router.replace(resultsHref(day, next), { scroll: false });
@@ -356,6 +358,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                         inCompare={inCompare}
                         compareLocked={compare.isFull && !inCompare}
                         onToggleCompare={(control) => {
+                          track("c_compare_toggle", { from: "results", added: !inCompare, key: item.key, has_scores: scores });
                           compare.toggle(item);
                           keepClearOfTray(control);
                         }}
