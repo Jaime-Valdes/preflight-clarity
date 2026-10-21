@@ -599,6 +599,50 @@ export interface SessionRecord {
   email: string;
   /** Optional first name given with the follow-up email; "" if none (absent in older records). */
   firstName?: string;
+  /** Debrief sign-up: wants free access when the product launches (absent in older records). */
+  waitlist?: boolean;
+  /** Debrief sign-up: open to a short follow-up interview (absent in older records). */
+  interview?: boolean;
+}
+
+// ── Product-interest sign-ups ───────────────────────────────────────────────
+
+/** Where a sign-up came from: the study's debrief screen, or version C. */
+export type SignupSource = "study" | "c";
+/** The screen the sign-up form was on. */
+export type SignupPlacement = "debrief" | "c_home" | "c_results" | "c_flight" | "c_compare";
+
+/**
+ * One "notify me when it's live" sign-up (docs/INTEREST.md). Stored in its own
+ * table so the team has one list of leads across the study and version C; the
+ * study also keeps waitlist/interview on its SessionRecord.
+ */
+export interface Signup {
+  schemaVersion: 1;
+  /** UUID generated in the browser. */
+  id: string;
+  /** ISO timestamp from the browser. */
+  createdAt: string;
+  source: SignupSource;
+  placement: SignupPlacement;
+  email: string;
+  /** "" if none. */
+  firstName: string;
+  /** Wants free access when it launches — the form's primary action, so true for every sign-up today. */
+  waitlist: boolean;
+  /** Open to a short interview. */
+  interview: boolean;
+  /** Study only: the session the sign-up belongs to (null for version C). */
+  sessionId: string | null;
+  variant: Variant | null;
+  /** Team test session (?test=1); false for version C. */
+  isTest: boolean;
+  /** ?p= label, "" if none. */
+  participant: string;
+  /** What they were looking at, e.g. "JFK → LAX · Nov 26 · 2 flights in compare"; "" if none. */
+  context: string;
+  /** Pathname the form was on, e.g. "/c/compare". */
+  page: string;
 }
 
 // ── API ─────────────────────────────────────────────────────────────────────
@@ -618,5 +662,20 @@ export interface ListResponse {
   ok: boolean;
   storage: StorageKind;
   responses: SessionRecord[];
+  error?: string;
+}
+
+/** POST /api/signups → */
+export interface SaveSignupResponse {
+  ok: boolean;
+  storage: StorageKind;
+  error?: string;
+}
+
+/** GET /api/signups?key=ADMIN_KEY → */
+export interface ListSignupsResponse {
+  ok: boolean;
+  storage: StorageKind;
+  signups: Signup[];
   error?: string;
 }

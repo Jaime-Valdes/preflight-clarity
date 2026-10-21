@@ -1,4 +1,4 @@
-import type { SessionRecord } from "@preflight/shared/types";
+import type { SessionRecord, Signup } from "@preflight/shared/types";
 
 /*
  * Saving session records — client only.
@@ -14,8 +14,12 @@ import type { SessionRecord } from "@preflight/shared/types";
  */
 
 export const LOCAL_RESPONSES_KEY = "pfc.responses.v1";
+/** Product-interest sign-ups saved in this browser (the no-backend fallback), newest last. */
+export const LOCAL_SIGNUPS_KEY = "pfc.signups.v1";
 const MAX_LOCAL_RECORDS = 200;
+const MAX_LOCAL_SIGNUPS = 200;
 const ENDPOINT = "/api/responses";
+const SIGNUP_ENDPOINT = "/api/signups";
 /** Chrome caps keepalive / sendBeacon payloads at 64 KB; stay comfortably under. */
 const KEEPALIVE_LIMIT_BYTES = 60_000;
 
@@ -50,7 +54,7 @@ export function saveSession(record: SessionRecord, opts?: { beacon?: boolean }):
     // Beacon refused (queue full / payload too large): fall through to fetch.
   }
 
-  const run = queue.then(() => postRecord(json)).catch((): SaveResult => "local");
+  const run = queue.then(() => postJson(ENDPOINT, json)).catch((): SaveResult => "local");
   queue = run;
   return run;
 }
@@ -61,6 +65,54 @@ export function loadLocalResponses(): SessionRecord[] {
   const records = Object.values(readLocalMap());
   records.sort((a, b) => (b.createdAt > a.createdAt ? 1 : b.createdAt < a.createdAt ? -1 : 0));
   return records;
+}
+
+// ── product-interest sign-ups ───────────────────────────────────────────────
+
+/**
+ * Save one sign-up (docs/INTEREST.md): mirrored to localStorage, then POSTed
+ * to /api/signups. Resolves to where it ended up. Never throws.
+ */
+export function saveSignup(signup: Signup): Promise<SaveResult> {
+  if (typeof window === "undefined") return Promise.resolve("local");
+  let json: string;
+  try {
+    json = JSON.stringify(signup);
+  } catch {
+    return Promise.resolve("local");
+  }
+  mirrorSignupToLocal(signup);
+  if (backendMissing) return Promise.resolve("local");
+  return postJson(SIGNUP_ENDPOINT, json).catch((): SaveResult => "local");
+}
+
+/** Sign-ups saved in this browser (the no-backend fallback), newest first. */
+export function loadLocalSignups(): Signup[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(LOCAL_SIGNUPS_KEY);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return [];
+    return list.filter(isSignupLike).reverse();
+  } catch {
+    return [];
+  }
+}
+
+function isSignupLike(value: unknown): value is Signup {
+  return typeof value === "object" && value !== null && typeof (value as Signup).id === "string" && typeof (value as Signup).email === "string";
+}
+
+function mirrorSignupToLocal(signup: Signup): void {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_SIGNUPS_KEY);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    const kept = (Array.isArray(list) ? list.filter(isSignupLike) : []).filter((s) => s.id !== signup.id);
+    kept.push(signup);
+    window.localStorage.setItem(LOCAL_SIGNUPS_KEY, JSON.stringify(kept.slice(-MAX_LOCAL_SIGNUPS)));
+  } catch {
+    // Storage blocked or full: the network save still goes out.
+  }
 }
 
 // ── network ─────────────────────────────────────────────────────────────────
@@ -81,10 +133,10 @@ const RATE_LIMIT_RETRIES = 2;
 const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 10_000;
 
-async function postRecord(json: string): Promise<SaveResult> {
+async function postJson(endpoint: string, json: string): Promise<SaveResult> {
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await fetch(ENDPOINT, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: json,
