@@ -1,7 +1,8 @@
 -- Pre-Flight Clarity — Supabase schema
 --
 -- Paste into the Supabase SQL editor (Project → SQL Editor) and run. Safe to
--- run more than once: every statement is idempotent.
+-- run more than once: every statement is idempotent. Two tables: `responses`
+-- (study sessions, below) and `signups` (product-interest sign-ups, at the end).
 --
 -- One row per participant session. The flat columns hold the headline numbers
 -- for quick queries in the Supabase UI; the full SessionRecord (see
@@ -114,6 +115,112 @@ begin
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     revoke all on table public.responses from authenticated;
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Product-interest sign-ups (docs/INTEREST.md)
+--
+-- One row per email per source: "study" (the debrief screen) or "c" (version
+-- C). The API upserts on (email_key, source): a repeat sign-up from the same
+-- source replaces the row's details, and the trigger below keeps the original
+-- created_at, an earlier first name and an earlier interview opt-in. The flat
+-- columns are for quick queries; the full Signup (see
+-- shared/src/types.ts) lives in `record`. Same access rule as responses: RLS
+-- on, no policies, server only.
+
+create table if not exists public.signups (
+  id           uuid primary key,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  source       text not null check (source in ('study', 'c')),
+  placement    text not null,
+  email        text not null,
+  email_key    text generated always as (lower(btrim(email))) stored,
+  first_name   text,
+  waitlist     boolean not null default true,
+  interview    boolean not null default false,
+  session_id   uuid,
+  variant      text check (variant in ('A', 'B')),
+  is_test      boolean not null default false,
+  participant  text,
+  context      text,
+  page         text,
+  record       jsonb not null,
+  constraint signups_email_key_source_key unique (email_key, source)
+);
+
+comment on table  public.signups is 'Product-interest sign-ups ("notify me when it''s live"), one row per email per source. Upserted by the API on (email_key, source); the original created_at is kept by a trigger.';
+comment on column public.signups.id is 'Sign-up UUID generated in the browser (the latest one for this email and source).';
+comment on column public.signups.created_at is 'When this email first signed up from this source (preserved on repeats).';
+comment on column public.signups.updated_at is 'Server time of the latest accepted sign-up for this row.';
+comment on column public.signups.source is 'study = the debrief screen of the A/B study; c = version C, the flight comparison tool.';
+comment on column public.signups.placement is 'Screen the form was on: debrief, c_home, c_results, c_flight or c_compare (signups_placement_check).';
+comment on column public.signups.email is 'Email as typed (trimmed).';
+comment on column public.signups.email_key is 'lower(btrim(email)), generated; unique together with source.';
+comment on column public.signups.first_name is 'Optional first name; null if none.';
+comment on column public.signups.waitlist is 'Wants to be told when the product is live (the form''s primary action).';
+comment on column public.signups.interview is 'Open to a short follow-up chat.';
+comment on column public.signups.session_id is 'Study only: the session the sign-up belongs to (responses.session_id); null for version C.';
+comment on column public.signups.variant is 'Study only: A or B; null for version C.';
+comment on column public.signups.is_test is 'True for team test sessions (?test=1); exclude from analysis.';
+comment on column public.signups.participant is 'Optional ?p= label of the study link; null if none.';
+comment on column public.signups.context is 'What they were looking at, e.g. "JFK → LAX · Nov 26 · 2 flights in compare"; null if none.';
+comment on column public.signups.page is 'Pathname the form was on, e.g. /c/compare.';
+comment on column public.signups.record is 'The full Signup as sent by the browser (shared/src/types.ts).';
+
+-- Known placements. Dropped and re-added on every run, so adding one is a
+-- one-line edit here (shared/src/signup.ts SIGNUP_PLACEMENTS is the other copy).
+alter table public.signups drop constraint if exists signups_placement_check;
+alter table public.signups add constraint signups_placement_check
+  check (placement in ('debrief', 'c_home', 'c_results', 'c_flight', 'c_compare'));
+
+-- Repeat sign-ups: the upsert replaces the details, so keep the original
+-- created_at (in the column and inside the jsonb record), stamp updated_at
+-- with the server clock, and never lose what the first sign-up said: the forms
+-- start blank, so an empty first name or an unticked interview box on the
+-- repeat means "not asked again", not "take me off". Same rule as the file
+-- store (backend/src/lib/store/file.ts).
+create or replace function public.signups_before_update()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.created_at := old.created_at;
+  new.updated_at := now();
+  new.first_name := coalesce(nullif(new.first_name, ''), old.first_name);
+  new.interview := new.interview or old.interview;
+  new.record := new.record || jsonb_build_object(
+    'firstName', coalesce(new.first_name, ''),
+    'interview', new.interview
+  );
+  if old.record ? 'createdAt' then
+    new.record := jsonb_set(new.record, '{createdAt}', old.record -> 'createdAt');
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists signups_before_update on public.signups;
+create trigger signups_before_update
+  before update on public.signups
+  for each row
+  execute function public.signups_before_update();
+
+-- Results page: newest first.
+create index if not exists signups_created_at_idx on public.signups (created_at desc);
+
+-- Server-only access, like responses: RLS on, no policies, browser roles revoked.
+alter table public.signups enable row level security;
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on table public.signups from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on table public.signups from authenticated;
   end if;
 end
 $$;

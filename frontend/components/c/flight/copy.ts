@@ -1,4 +1,6 @@
 import { formatShortDate } from "@preflight/shared/dates";
+import type { Flight } from "@preflight/shared/types";
+import type { RouteDay } from "@/lib/c/model";
 
 /*
  * Version C: small pure helpers shared by the flight and compare pages
@@ -23,6 +25,11 @@ export function monthDay(iso: string): string {
 /** "JFK → LAX" */
 export function routeText(origin: string, destination: string): string {
   return `${origin} → ${destination}`;
+}
+
+/** "DL 2165 · JFK → LAX · Nov 26" — what the sign-up card records as the visitor's context (docs/INTEREST.md). */
+export function flightContext(flight: Pick<Flight, "flightNumber">, day: RouteDay): string {
+  return `${flight.flightNumber} · ${routeText(day.origin, day.destination)} · ${monthDay(day.date)}`;
 }
 
 /** "Today" · "Tomorrow" · "In 42 days" */

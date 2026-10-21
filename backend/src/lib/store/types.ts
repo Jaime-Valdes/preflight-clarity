@@ -1,4 +1,4 @@
-import type { SessionRecord } from "@preflight/shared/types";
+import type { SessionRecord, Signup } from "@preflight/shared/types";
 
 /** What every storage adapter provides. `lib/db.ts` picks one from the environment. */
 export interface ResponseStore {
@@ -6,6 +6,15 @@ export interface ResponseStore {
   upsert(record: SessionRecord): Promise<void>;
   /** All records, newest first (by createdAt). Throws on error. */
   list(): Promise<SessionRecord[]>;
+  /**
+   * Insert or update a product-interest sign-up (docs/INTEREST.md). One row per
+   * email per source: a repeat from the same source replaces the stored sign-up
+   * but keeps its original createdAt. Throws on error, including an id that
+   * already belongs to another email.
+   */
+  upsertSignup(signup: Signup): Promise<void>;
+  /** All sign-ups, newest first (by createdAt). Throws on error. */
+  listSignups(): Promise<Signup[]>;
 }
 
 /** Newest first by createdAt, then updatedAt; sessionId breaks remaining ties so the order is stable. */

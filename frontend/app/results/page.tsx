@@ -33,14 +33,16 @@ async function Results({ searchParams }: { searchParams: PageProps<"/results">["
     case "unauthorized":
       return <AccessCard />;
     case "ok":
-      return <ResultsDashboard records={data.records} storage={data.storage} />;
+      return (
+        <ResultsDashboard records={data.records} signups={data.signups} signupsNote={data.signupsNote} storage={data.storage} />
+      );
     case "no_backend":
       return (
         <LocalResults
           banner={
             data.reason === "not_configured"
-              ? "The backend has no storage configured yet — showing sessions saved in this browser only."
-              : "No backend configured — showing sessions saved in this browser only."
+              ? "The backend has no storage configured yet — showing sessions and sign-ups saved in this browser only."
+              : "No backend configured — showing sessions and sign-ups saved in this browser only."
           }
         />
       );

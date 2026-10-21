@@ -3,6 +3,7 @@
 import { HardDrive, Info } from "lucide-react";
 import { useMemo, useState } from "react";
 import { recordsToCsv } from "@preflight/shared/csv";
+import { SIGNUP_PLACEMENTS, SIGNUP_SOURCES, signupStats } from "@preflight/shared/signup";
 import {
   DEFAULT_FILTERS,
   applyFilters,
@@ -15,12 +16,13 @@ import {
   summarizeMeasures,
   type StatsFilters,
 } from "@preflight/shared/stats";
-import type { SessionRecord, StorageKind } from "@preflight/shared/types";
+import type { SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
 import { useHydrated } from "@/lib/hooks";
 import { ChangeBlock } from "./ChangeBlock";
 import { DistributionsBlock } from "./DistributionsBlock";
 import { EngagementBlock } from "./EngagementBlock";
 import { ExplorationBlock } from "./ExplorationBlock";
+import { InterestBlock } from "./InterestBlock";
 import { InterpretationNote } from "./InterpretationNote";
 import { KpiRow, ResultsHeader } from "./ResultsHeader";
 import { OpenTextBlock } from "./OpenTextBlock";
@@ -28,13 +30,19 @@ import { PartsBlock } from "./PartsBlock";
 import { PrePostBlock } from "./PrePostBlock";
 import { ResponsesTable } from "./ResponsesTable";
 import { ResultsSkeleton } from "./ResultsSkeleton";
+import { SignupsTable } from "./SignupsTable";
 import { Notice } from "./bits";
+import { downloadCsv } from "./download";
 
 /** Where the records on screen came from. "browser" = this browser's localStorage. */
 export type ResultsSource = StorageKind | "browser";
 
 export interface ResultsDashboardProps {
   records: SessionRecord[];
+  /** Product-interest sign-ups (docs/INTEREST.md) from the same store as the records. */
+  signups: Signup[];
+  /** Why the sign-ups may be incomplete (e.g. the backend has no sign-ups endpoint yet). */
+  signupsNote?: string;
   storage: ResultsSource;
   /** Extra note shown under the header (e.g. "No backend configured — …"). */
   banner?: string;
@@ -43,25 +51,27 @@ export interface ResultsDashboardProps {
 const FILE_BANNER =
   "The backend is storing sessions in a local file — set up Supabase before running the real study.";
 
-function downloadCsv(records: SessionRecord[], scope: "filtered" | "all"): void {
-  const csv = recordsToCsv(records);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().slice(0, 10);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `preflight-clarity-sessions-${scope}-${stamp}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1_000);
+/**
+ * Cheap shape check for sign-ups (an old localStorage entry, a hand-edited
+ * file store) so one malformed row cannot crash the Interest block.
+ */
+function isPlausibleSignup(value: unknown): value is Signup {
+  if (typeof value !== "object" || value === null) return false;
+  const s = value as Partial<Signup>;
+  return (
+    typeof s.id === "string" &&
+    typeof s.email === "string" &&
+    typeof s.createdAt === "string" &&
+    SIGNUP_SOURCES.includes(s.source as Signup["source"]) &&
+    SIGNUP_PLACEMENTS.includes(s.placement as Signup["placement"])
+  );
 }
 
 /**
  * The team results page body. Everything below the header is computed from
  * one filtered slice, so every chart, list and the table agree.
  */
-export function ResultsDashboard({ records, storage, banner }: ResultsDashboardProps) {
+export function ResultsDashboard({ records, signups, signupsNote, storage, banner }: ResultsDashboardProps) {
   const hydrated = useHydrated();
   const [filters, setFilters] = useState<StatsFilters>(DEFAULT_FILTERS);
 
@@ -75,17 +85,36 @@ export function ResultsDashboard({ records, storage, banner }: ResultsDashboardP
   const feedback = useMemo(() => partFeedback(filtered), [filtered]);
   const texts = useMemo(() => openTextAnswers(filtered), [filtered]);
 
+  /**
+   * Sign-ups follow the test/forced filters (a study sign-up is "forced" when
+   * its session was), never "completed only": a debrief sign-up implies a
+   * completed session, and version C has no sessions at all.
+   */
+  const shownSignups = useMemo(() => {
+    const forced = new Set(all.filter((r) => r.variantSource === "forced").map((r) => r.sessionId));
+    return signups.filter(isPlausibleSignup).filter((s) => {
+      if (!filters.includeTest && s.isTest) return false;
+      if (!filters.includeForced && s.sessionId && forced.has(s.sessionId)) return false;
+      return true;
+    });
+  }, [all, signups, filters.includeTest, filters.includeForced]);
+  /** The rate's denominator comes from the same slice as the KPI counts (test/forced filters only). */
+  const interest = useMemo(() => signupStats(shownSignups, base), [shownSignups, base]);
+
   if (!hydrated) return <ResultsSkeleton />;
 
+  // ph-no-capture: PostHog starts on every route (root layout). This page shows
+  // names, emails and answers, so the whole subtree is blanked in replays and
+  // left out of autocapture (docs/ANALYTICS.md).
   return (
-    <div className="mx-auto w-full max-w-6xl animate-fade-up px-4 pb-16 pt-6 sm:px-6 sm:pt-10 lg:px-8">
+    <div className="ph-no-capture mx-auto w-full max-w-6xl animate-fade-up px-4 pb-16 pt-6 sm:px-6 sm:pt-10 lg:px-8">
       <ResultsHeader
         total={all.length}
         shown={filtered.length}
         storage={storage}
         filters={filters}
         onFiltersChange={setFilters}
-        onDownload={(scope) => downloadCsv(scope === "all" ? all : filtered, scope)}
+        onDownload={(scope) => downloadCsv(recordsToCsv(scope === "all" ? all : filtered), `preflight-clarity-sessions-${scope}`)}
       />
 
       {banner || storage === "file" ? (
@@ -109,6 +138,8 @@ export function ResultsDashboard({ records, storage, banner }: ResultsDashboardP
         <DistributionsBlock records={filtered} />
         <ExplorationBlock records={filtered} className="lg:col-span-2" />
         <OpenTextBlock answers={texts} className="lg:col-span-2" />
+        <InterestBlock stats={interest} note={signupsNote} className="lg:col-span-2" />
+        <SignupsTable signups={shownSignups} className="lg:col-span-2" />
         <ResponsesTable records={filtered} className="lg:col-span-2" />
         <InterpretationNote className="lg:col-span-2" />
       </div>

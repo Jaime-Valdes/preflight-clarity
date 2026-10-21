@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TURBULENCE_FORECAST_DAYS, WEATHER_FORECAST_DAYS } from "@preflight/shared/forecast";
+import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useCompareList } from "@/lib/c/compare-store";
 import { MAX_COMPARE, clampDate, compareHref, itemId, parseCompareParam, searchHref, type CompareItem } from "@/lib/c/model";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
@@ -199,6 +200,13 @@ export function ComparePage() {
           change until check-in. All flights, prices and forecasts are illustrative — nothing can be booked here.
         </p>
       ) : null}
+
+      {/* After the table or the empty state (docs/INTEREST.md): interest peaks right after comparing. */}
+      <InterestCard
+        placement="c_compare"
+        context={comparing ? `${flights.length} flights compared` : flights.length === 1 ? "1 flight picked" : ""}
+        className={cn("mt-6", !comparing && "mx-auto max-w-[640px]")}
+      />
 
       <p role="status" className="sr-only">
         {announcement}

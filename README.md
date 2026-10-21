@@ -45,7 +45,11 @@ One link, one phone, about 5–10 minutes:
 5. **Post-survey** — the same three sliders, which parts helped or worried them, how often they'd check
    it, what it would replace, what they'd still be scared of.
 6. **Debrief** — reminder that the briefing was a day-before preview for an example flight and nothing was
-   a real forecast; optional email for a follow-up interview.
+   a real forecast; then the one product sign-up ("Want this for your real flights?" → **Notify me when
+   it's live**): optional first name, email, and an unticked checkbox for a 15-minute follow-up chat. It is
+   identical in A and B and only appears here, after every answer is saved, so the sign-up rate by variant
+   is a clean business signal ([docs/INTEREST.md](docs/INTEREST.md)). The record keeps `waitlist` /
+   `interview`, and the same sign-up is also stored in the `signups` table.
 
 Progress lives in the browser tab (`sessionStorage`), so a reload resumes the same session at the same
 screen. The record is saved to the backend after every step, every ~20 s on the dashboard, and with a
@@ -58,6 +62,7 @@ screen. The record is saved to the backend after every step, every ~20 s on the 
 | `/` | The study. Each participant is randomly assigned variant A or B. **This is the link to share.** |
 | `/?v=A` · `/?v=B` | Force a variant (recorded as `variant_source = forced`). |
 | `/?test=1` | Team test session: flagged `is_test` and hidden from the results by default. Use this for your own run-throughs. |
+| `/c?test=1` | Version C in test mode for that browser tab: sign-ups you make are flagged as tests and hidden from the results by default. |
 | `/preview?origin=JFK&destination=LAX&date=YYYY-MM-DD&v=A` | The dashboard alone, for demos. No surveys, saves nothing. |
 | `/results?key=<ADMIN_KEY>` | Team results: table, CSV export, pre-vs-post numbers. |
 
@@ -91,8 +96,9 @@ Three services. Do them in this order, because each one needs a value from the p
    password, you won't need it again here).
 2. Open **SQL Editor → New query**, paste the whole of
    [`backend/supabase/schema.sql`](backend/supabase/schema.sql) and run it. It is safe to run again later.
-   It creates the `responses` table, a trigger that ignores stale writes, and turns on row level security
-   with no policies, so browser keys can't read or write anything.
+   It creates the `responses` table, a trigger that ignores stale writes, the `signups` table (product
+   sign-ups from the debrief and version C), and turns on row level security with no policies, so browser
+   keys can't read or write anything.
 3. Open **Project Settings → API** (or **Data API**) and copy two values: the **Project URL**
    (`https://xxxx.supabase.co`) and the **secret / service_role key** (`sb_secret_…` or the legacy
    `eyJ…` service_role JWT). Never the anon / publishable key: the server-side key is the one that is
@@ -161,8 +167,13 @@ own environment, so `NEXT_PUBLIC_SITE_URL` is only needed if you host the fronte
 - **Dev fallback** — no Supabase keys → `backend/data/responses.json` (gitignored, lost on redeploy).
 - **No backend** — `API_URL` unset → records stay in the browser's `localStorage`
   (`pfc.responses.v1`), and `/results` reads them from there. Fine for solo testing, useless for a study.
-- **Privacy** — no names, no accounts; the email field is optional and only used for follow-up interviews.
-  Test sessions are flagged, not deleted.
+- **Privacy** — no accounts; the first name and email on the debrief are optional, used only to say when
+  the product is live and (if the box was ticked) to invite a follow-up chat. Test sessions are flagged,
+  not deleted.
+- **Sign-ups** — every "notify me when it's live" sign-up (debrief and version C) is also one `Signup`
+  row: Supabase table `public.signups` (same `schema.sql`), `backend/data/signups.json` in dev, or the
+  browser's `localStorage` (`pfc.signups.v1`) with no backend. Duplicate emails from the same source
+  update the existing row.
 
 ## The results page
 
@@ -210,6 +221,9 @@ data the participant sees. `?v=A` / `?v=B` override the draw for demos and testi
 - [ ] `ADMIN_KEY` is set to the same long random value on Railway **and** Vercel, and `/results?key=…`
       opens with it (and shows nothing without it).
 - [ ] `https://<api>/health` says `"storage":"supabase"`.
+- [ ] You re-ran [`backend/supabase/schema.sql`](backend/supabase/schema.sql) in the Supabase SQL editor
+      since the sign-up was added (it is re-runnable), so the `signups` table exists — otherwise debrief
+      and version C sign-ups only land in the browser's `localStorage`.
 - [ ] You did a full run on **your own phone** with `/?test=1` (both variants: `/?test=1&v=A`,
       `/?test=1&v=B`; open it in a fresh tab — over an in-progress real session in the same tab it
       starts a new test session and the old one stays in storage as incomplete), the whole thing

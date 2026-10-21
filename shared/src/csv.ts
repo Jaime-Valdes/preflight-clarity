@@ -127,6 +127,9 @@ export const CSV_COLUMNS: readonly string[] = [
   "still_scared_of",
   "first_name",
   "email",
+  // debrief sign-up (blank when the record predates it)
+  "waitlist",
+  "interview",
 ];
 
 /** Flatten one session record into cells, in `CSV_COLUMNS` order. */
@@ -228,6 +231,8 @@ export function recordToRow(record: SessionRecord): Cell[] {
     post.stillScaredOf,
     record.firstName ?? "",
     record.email,
+    record.waitlist ?? null,
+    record.interview ?? null,
   ];
 }
 

@@ -9,12 +9,14 @@ import { getForecastStatus } from "@preflight/shared/forecast";
 import { searchFlights, type FlightOption, type SearchResults as DayResults } from "@preflight/shared/search";
 import { availabilityAt, daysToDeparture, hasLeft, marker } from "@/components/c/common/availability";
 import { Sheet } from "@/components/c/common/Sheet";
+import { InterestCard } from "@/components/c/interest/InterestCard";
 import { keepClearOfTray } from "@/components/c/shell/CompareTray";
 import { useCompareList } from "@/lib/c/compare-store";
 import { TIME_BUCKET_LABELS } from "@/lib/c/format";
 import { itemId, searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
+import { monthDay, routeText } from "../flight/copy";
 import { DateStrip } from "./DateStrip";
 import { Filters } from "./Filters";
 import { checkQuery, issueMessage, type QueryCheck, type SearchDraft } from "./query";
@@ -86,6 +88,12 @@ const NO_OPTIONS: readonly FlightOption[] = [];
 const FILTERS_TITLE_ID = "c-filters-title";
 const FILTERS_BUTTON_ID = "c-filters-button";
 const COUNT_ID = "c-results-count";
+
+/** What the sign-up card records as the visitor's context: "JFK → LAX · Nov 26 · 14 flights". */
+function signupContext(day: RouteDay, total: number): string {
+  const flights = total === 0 ? "no nonstop flights" : `${total} ${total === 1 ? "flight" : "flights"}`;
+  return `${routeText(day.origin, day.destination)} · ${monthDay(day.date)} · ${flights}`;
+}
 
 /** Opens a sheet; Back/forward (a different page under it) closes it again. */
 function useSheetState(): [boolean, (open: boolean) => void] {
@@ -175,6 +183,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
           No nonstop flights on this route
         </p>
         <NoNonstops day={day} carry={carryFor(view)} />
+        <InterestCard placement="c_results" context={signupContext(day, 0)} className="mt-2" />
       </div>
     );
   }
@@ -371,6 +380,9 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
           </div>
         </section>
       </div>
+
+      {/* After the day's flights (docs/INTEREST.md). In flow, so the sticky tray never covers its button. */}
+      <InterestCard placement="c_results" context={signupContext(day, total)} className="mt-2" />
 
       {filtersOpen ? (
         <Sheet
@@ -633,34 +645,37 @@ function InvalidSearch({ check, today, params }: { check: QueryCheck; today: str
   // No day yet, so no forecast distance: only the sort is carried, and Smoothest counts as the default.
   const view = parseView(params, true);
   return (
-    <section
-      aria-labelledby="c-search-title"
-      className="rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80 sm:p-6"
-    >
-      <div className="flex items-start gap-4">
-        <span
-          aria-hidden
-          className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-breeze-50 text-breeze-700 ring-1 ring-inset ring-breeze-100"
-        >
-          <Compass className="size-5" />
-        </span>
-        <div className="min-w-0">
-          <h1 id="c-search-title" className="text-xl font-bold leading-tight text-ink-900">
-            {message.title}
-          </h1>
-          <p className="mt-1.5 max-w-[60ch] text-[15px] leading-relaxed text-ink-700">{message.text}</p>
+    <div className="flex flex-col gap-4 sm:gap-5">
+      <section
+        aria-labelledby="c-search-title"
+        className="rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80 sm:p-6"
+      >
+        <div className="flex items-start gap-4">
+          <span
+            aria-hidden
+            className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-breeze-50 text-breeze-700 ring-1 ring-inset ring-breeze-100"
+          >
+            <Compass className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 id="c-search-title" className="text-xl font-bold leading-tight text-ink-900">
+              {message.title}
+            </h1>
+            <p className="mt-1.5 max-w-[60ch] text-[15px] leading-relaxed text-ink-700">{message.text}</p>
+          </div>
         </div>
-      </div>
-      <div className="mt-5 border-t border-line/70 pt-5">
-        <SearchForm
-          idPrefix="fix"
-          today={today}
-          draft={draft}
-          onDraftChange={setDraft}
-          carry={carryFor(view)}
-          showHints={check.issue !== "empty"}
-        />
-      </div>
-    </section>
+        <div className="mt-5 border-t border-line/70 pt-5">
+          <SearchForm
+            idPrefix="fix"
+            today={today}
+            draft={draft}
+            onDraftChange={setDraft}
+            carry={carryFor(view)}
+            showHints={check.issue !== "empty"}
+          />
+        </div>
+      </section>
+      <InterestCard placement="c_results" context="" className="mt-2" />
+    </div>
   );
 }

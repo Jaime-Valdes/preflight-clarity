@@ -90,6 +90,8 @@ API (`backend/`, JSON everywhere, `Cache-Control: no-store`):
 | `GET /health` | `{ ok: true, storage: "supabase" \| "file" \| "none" }` |
 | `POST /responses` | Upsert one `SessionRecord` by `sessionId` (body: JSON as `application/json` or `text/plain`; ≤ 100 KB). `200 {ok:true, storage}`; `400` invalid; `413` too large; `503 {error:"not_configured"}` when storage is `"none"`; `500 {error:"db_error"}`; `429 {error:"rate_limited"}` with `Retry-After: 60` (per IP, `RATE_LIMIT_PER_MINUTE`, default 1000). |
 | `GET /responses` | All records newest first. Needs `x-admin-key: <ADMIN_KEY>` or `?key=`; `401` otherwise. `503` when storage is `"none"`. |
+| `POST /signups` | Upsert one `Signup` (docs/INTEREST.md) on email + source, merging a repeat (≤ 10 KB; JSON as `application/json` or `text/plain`). Same answers as `POST /responses`; one shared per-IP rate budget (`backend/src/lib/rateLimit.ts`). |
+| `GET /signups` | All sign-ups newest first. Same admin key, `401` / `503` as `GET /responses`. |
 
 Storage adapter is chosen from the environment: Supabase when `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`) are set; otherwise a local JSON file when `DATA_FILE` is set (dev only — the API logs a warning); otherwise `"none"`.
 `CORS_ORIGIN` sets the allowed origin for direct browser calls (default `*`; unneeded behind the `/api/*` rewrite).
@@ -217,6 +219,7 @@ Mood: an aviation app crossed with a wellness app. Calm, premium, soft colours, 
 - **No nudging**: never say or imply the dashboard will reduce anxiety. No praise for answers, no "great!", no progress rewards tied to answers. Multi-selects include an explicit "None" / "Nothing" option with equal visual weight.
 - **Honest data framing**: the consent and debrief screens say all data is illustrative; the dashboard carries a small, quiet "Prototype · illustrative data" footer.
 - **Every session is saved** progressively (upsert by `sessionId` with an increasing `seq`): after the pre-survey, flight setup, dashboard (plus checkpoints and a `sendBeacon` on page hide), post-survey and debrief.
+- **The product sign-up appears only on the debrief**, after every answer is saved, identical in A and B (docs/INTEREST.md). Never on the dashboard or before the post-survey, never required to continue, and its copy makes no claim about anxiety or safety.
 
 ## Data model
 

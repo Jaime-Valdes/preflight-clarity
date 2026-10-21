@@ -20,6 +20,7 @@ import {
   initialFlowState,
   loadFlowState,
   markSaved,
+  newSessionId,
   pushesHistory,
   reduceFlow,
   saveFlowState,
@@ -28,8 +29,9 @@ import {
   type FlowState,
   screenIndex,
 } from "@/lib/session";
-import { saveSession } from "@/lib/storage";
-import { DebriefScreen } from "./DebriefScreen";
+import { saveSession, saveSignup } from "@/lib/storage";
+import { INTEREST_KEY } from "@/components/c/interest/signupState";
+import { DebriefScreen, type DebriefSignup } from "./DebriefScreen";
 import { FlightSetupScreen, catalogueCode, defaultOffsetDays } from "./FlightSetupScreen";
 import { OptionalDetailsScreen } from "./OptionalDetailsScreen";
 import { PostHabitsScreen } from "./PostHabitsScreen";
@@ -306,6 +308,45 @@ function StudyFlowClient() {
     [commit],
   );
 
+  /**
+   * Debrief sign-up (docs/INTEREST.md): the record keeps email/name/waitlist/interview,
+   * and the same details go to the sign-ups list as one Signup row. The browser is also
+   * marked as signed up (`pfc.interest.v1`, shared with version C), so a participant who
+   * goes on to /c sees "You're on the list" there instead of a second form.
+   */
+  const onSignup = useCallback(
+    ({ email, firstName, interview }: DebriefSignup) => {
+      const current = latest.current.session;
+      commit({ type: "email", email, firstName, waitlist: true, interview }, { save: true });
+      if (!current) return;
+      const createdAt = new Date().toISOString();
+      void saveSignup({
+        schemaVersion: 1,
+        id: newSessionId(),
+        createdAt,
+        source: "study",
+        placement: "debrief",
+        email,
+        firstName,
+        waitlist: true,
+        interview,
+        sessionId: current.sessionId,
+        variant: current.variant,
+        isTest: current.isTest,
+        participant: current.participant,
+        context: "",
+        page: "/",
+      });
+      try {
+        window.localStorage.setItem(INTEREST_KEY, JSON.stringify({ source: "study", at: createdAt }));
+      } catch {
+        // Storage blocked: the study's own "on the list" state still comes from the session record.
+      }
+      track("interest_signup", { source: "study", placement: "debrief", interview });
+    },
+    [commit],
+  );
+
   const startOver = useCallback(() => {
     leaving.current = true;
     if (persistTimer.current !== null) {
@@ -450,8 +491,8 @@ function StudyFlowClient() {
     case "debrief":
       return (
         <DebriefScreen
-          emailSent={state.emailSent}
-          onEmail={(email, firstName) => commit({ type: "email", email, firstName }, { save: true })}
+          signedUp={state.emailSent}
+          onSignup={onSignup}
           isTest={session?.isTest ?? false}
           onStartOver={startOver}
         />

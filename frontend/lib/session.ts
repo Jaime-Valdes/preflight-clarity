@@ -149,6 +149,11 @@ export interface FlowState {
   email: string;
   /** Optional first name given with the email (absent in flow states saved before it existed). */
   firstName?: string;
+  /** Debrief sign-up (docs/INTEREST.md): wants to hear when the product is live. Absent in older saved states. */
+  waitlist?: boolean;
+  /** Debrief sign-up: also open to a short follow-up chat. Absent in older saved states. */
+  interview?: boolean;
+  /** The debrief sign-up form was submitted (name kept from when it was a follow-up email form). */
   emailSent: boolean;
 }
 
@@ -196,6 +201,8 @@ export function initialFlowState(): FlowState {
     post: emptyPost(),
     email: "",
     firstName: "",
+    waitlist: false,
+    interview: false,
     emailSent: false,
   };
 }
@@ -221,7 +228,7 @@ export type FlowAction =
   | { type: "postDone" }
   | { type: "postPartsDone" }
   | { type: "postHabitsDone"; completedAt: string }
-  | { type: "email"; email: string; firstName: string }
+  | { type: "email"; email: string; firstName: string; waitlist: boolean; interview: boolean }
   | { type: "touch" };
 
 export function reduceFlow(state: FlowState, action: FlowAction): FlowState {
@@ -265,7 +272,14 @@ export function reduceFlow(state: FlowState, action: FlowAction): FlowState {
     case "postHabitsDone":
       return { ...state, completedAt: state.completedAt ?? action.completedAt, screen: "debrief" };
     case "email":
-      return { ...state, email: action.email, firstName: action.firstName, emailSent: true };
+      return {
+        ...state,
+        email: action.email,
+        firstName: action.firstName,
+        waitlist: action.waitlist,
+        interview: action.interview,
+        emailSent: true,
+      };
     case "touch":
       return state;
   }
@@ -307,6 +321,9 @@ export function buildRecord(state: FlowState): SessionRecord | null {
     post: { ...state.post, wouldSwitch: s.variant === "A" ? normalizeWouldSwitch(state.post.wouldSwitch) : null },
     email: state.email,
     firstName: state.firstName ?? "",
+    // Flow states saved before the sign-up existed have neither flag.
+    waitlist: state.waitlist ?? false,
+    interview: state.interview ?? false,
   };
 }
 

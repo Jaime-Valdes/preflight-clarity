@@ -14,8 +14,12 @@
  *    numbers are clamped to a sane range, an email is kept only if it looks
  *    like one.
  *  - Fields added after launch (participant, dashboard.exploration,
- *    post.wouldSwitch) are optional on input: older records parse with
- *    "" / null. The exploration block is sanitized, never a reason to reject.
+ *    post.wouldSwitch, firstName, waitlist, interview) are optional on input:
+ *    older records parse with "" / null / false. The exploration block is
+ *    sanitized, never a reason to reject.
+ *  - The cleaners are exported at the bottom (cleanText, cleanLine, cleanEmail,
+ *    cleanParticipant, parseTimestamp, isUuid) so the sign-up parser in
+ *    ./signup applies the same policy.
  *  - The result is rebuilt field by field from literal keys, so unknown keys
  *    (and prototype tricks such as "__proto__") never get through, and the
  *    output is always a well-formed SessionRecord.
@@ -141,6 +145,11 @@ function text(value: unknown, max: number): string {
   return Array.from(cleaned).slice(0, max).join("").trim();
 }
 
+/** `text` for one-line values (names, labels, paths): runs of whitespace, line breaks included, become one space. */
+function line(value: unknown, max: number): string {
+  return text(value, max).replace(/\s+/g, " ");
+}
+
 function enumValue<T extends string>(value: unknown, values: readonly T[]): T | undefined {
   return typeof value === "string" && (values as readonly string[]).includes(value) ? (value as T) : undefined;
 }
@@ -183,6 +192,11 @@ function optionalTimestamp(value: unknown, code: string): string | null {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A UUID in its canonical hyphenated form, any case. */
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID.test(value);
+}
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -446,7 +460,7 @@ function build(input: unknown): SessionRecord {
   if (input.sessionId === undefined || input.sessionId === null || input.sessionId === "") {
     fail("missing_session_id");
   }
-  if (typeof input.sessionId !== "string" || !UUID.test(input.sessionId)) fail("invalid_session_id");
+  if (!isUuid(input.sessionId)) fail("invalid_session_id");
   if (input.schemaVersion !== 1) fail("unsupported_schema_version");
 
   const seq = input.seq;
@@ -471,7 +485,10 @@ function build(input: unknown): SessionRecord {
     dashboard: parseDashboard(input.dashboard),
     post: parsePost(input.post),
     email: email(input.email),
-    firstName: text(input.firstName, MAX_FIRST_NAME_CHARS),
+    firstName: line(input.firstName, MAX_FIRST_NAME_CHARS),
+    // Debrief sign-up (docs/INTEREST.md); absent in records from before it.
+    waitlist: input.waitlist === true,
+    interview: input.interview === true,
   };
 }
 
@@ -490,3 +507,15 @@ export function parseSessionRecord(input: unknown): ParseResult {
     throw err;
   }
 }
+
+// ── Shared cleaners (the sign-up parser in ./signup applies the same policy) ─
+
+export {
+  isObject,
+  isUuid,
+  text as cleanText,
+  line as cleanLine,
+  email as cleanEmail,
+  participant as cleanParticipant,
+  timestamp as parseTimestamp,
+};

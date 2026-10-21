@@ -1,3 +1,4 @@
+import { signupKey } from "@preflight/shared/signup";
 import type { SessionRecord, Signup } from "@preflight/shared/types";
 
 /*
@@ -107,8 +108,11 @@ function mirrorSignupToLocal(signup: Signup): void {
   try {
     const raw = window.localStorage.getItem(LOCAL_SIGNUPS_KEY);
     const list: unknown = raw ? JSON.parse(raw) : [];
-    const kept = (Array.isArray(list) ? list.filter(isSignupLike) : []).filter((s) => s.id !== signup.id);
-    kept.push(signup);
+    // One row per email + source, like the stores; a repeat keeps the first sign-up's time.
+    const all = Array.isArray(list) ? list.filter(isSignupLike) : [];
+    const earlier = all.find((s) => signupKey(s) === signupKey(signup));
+    const kept = all.filter((s) => signupKey(s) !== signupKey(signup));
+    kept.push(earlier ? { ...signup, createdAt: earlier.createdAt } : signup);
     window.localStorage.setItem(LOCAL_SIGNUPS_KEY, JSON.stringify(kept.slice(-MAX_LOCAL_SIGNUPS)));
   } catch {
     // Storage blocked or full: the network save still goes out.

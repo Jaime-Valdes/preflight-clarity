@@ -3,10 +3,10 @@
  * or `npm run test -w backend`. Exits non-zero on failure.
  *
  * No test runner, just node:assert and a tiny harness, so it works anywhere
- * tsx does. Covers: parseSessionRecord (accept, reject, sanitize), the local
- * file store (upsert, stale writes, ordering, concurrency), the Supabase row
- * mapping (pure), and the HTTP routes through Hono's app.request() against a
- * temporary data file.
+ * tsx does. Covers: parseSessionRecord and parseSignup (accept, reject,
+ * sanitize), the local file store (upsert, stale writes, ordering, concurrency,
+ * sign-ups), the Supabase row mappings (pure), and the HTTP routes through
+ * Hono's app.request() against temporary data files.
  */
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -20,6 +20,16 @@ import {
   MAX_TEXT_CHARS,
   parseSessionRecord,
 } from "@preflight/shared/record";
+import {
+  emailKey,
+  MAX_CONTEXT_CHARS,
+  parseSignup,
+  SIGNUP_CSV_COLUMNS,
+  signupKey,
+  signupStats,
+  signupsToCsv,
+  sortSignupsNewestFirst,
+} from "@preflight/shared/signup";
 import { explorationStats } from "@preflight/shared/stats";
 import type {
   DashboardEvent,
@@ -29,9 +39,10 @@ import type {
   SectionId,
   SectionStats,
   SessionRecord,
+  Signup,
 } from "@preflight/shared/types";
-import { createFileStore } from "../src/lib/store/file";
-import { recordToRow, rowToRecord } from "../src/lib/store/supabase";
+import { createFileStore, SIGNUPS_FILE } from "../src/lib/store/file";
+import { recordToRow, rowToRecord, rowToSignup, signupToRow } from "../src/lib/store/supabase";
 
 // ── Harness ─────────────────────────────────────────────────────────────────
 
@@ -222,6 +233,32 @@ function fixture(): SessionRecord {
     },
     email: "participant@example.com",
     firstName: "Sam",
+    waitlist: true,
+    interview: true,
+  };
+}
+
+// ── Fixture: a debrief sign-up for that session ─────────────────────────────
+
+const SIGNUP_ID = "0b3c1d2e-4f5a-4b6c-8d7e-9f0a1b2c3d4e";
+
+function signupFixture(): Signup {
+  return {
+    schemaVersion: 1,
+    id: SIGNUP_ID,
+    createdAt: "2026-10-21T15:30:00.000Z",
+    source: "study",
+    placement: "debrief",
+    email: "Sam@Example.com",
+    firstName: "Sam",
+    waitlist: true,
+    interview: true,
+    sessionId: SESSION_ID,
+    variant: "A",
+    isTest: false,
+    participant: "sarah",
+    context: "JFK → LAX · Nov 26",
+    page: "/",
   };
 }
 
@@ -354,11 +391,31 @@ group("parseSessionRecord", () => {
     assert.equal(expectOk(loose((r) => (r.email = "a@b.c"))).email, "");
   });
 
-  test("first name is optional, trimmed and capped", () => {
+  test("first name is optional, one line, trimmed and capped", () => {
     assert.equal(expectOk(loose((r) => (r.firstName = "  Sam "))).firstName, "Sam");
+    assert.equal(expectOk(loose((r) => (r.firstName = "Sam\n\tLee  Jr"))).firstName, "Sam Lee Jr");
     assert.equal(expectOk(loose((r) => (r.firstName = "x".repeat(80)))).firstName?.length, 60);
     assert.equal(expectOk(loose((r) => (r.firstName = 7))).firstName, "");
     assert.equal(expectOk(loose((r) => delete r.firstName)).firstName, "");
+  });
+
+  test("waitlist and interview are booleans; absent or invalid → false", () => {
+    const record = expectOk(
+      loose((r) => {
+        delete r.waitlist;
+        r.interview = "yes";
+      }),
+    );
+    assert.equal(record.waitlist, false);
+    assert.equal(record.interview, false);
+    const signed = expectOk(
+      loose((r) => {
+        r.waitlist = true;
+        r.interview = 1;
+      }),
+    );
+    assert.equal(signed.waitlist, true);
+    assert.equal(signed.interview, false);
   });
 
   test("unknown keys are dropped at every level", () => {
@@ -510,8 +567,14 @@ group("parseSessionRecord", () => {
       email: "",
       firstName: "",
     };
-    // Records from before the participant label / exploration fields parse with "" / null.
-    assert.deepEqual(expectOk(minimal), { ...minimal, participant: "", post: { ...minimal.post, wouldSwitch: null } });
+    // Records from before the participant label / exploration / sign-up fields parse with "" / null / false.
+    assert.deepEqual(expectOk(minimal), {
+      ...minimal,
+      participant: "",
+      post: { ...minimal.post, wouldSwitch: null },
+      waitlist: false,
+      interview: false,
+    });
   });
 
   test("an old record without participant / exploration / wouldSwitch is accepted with defaults", () => {
@@ -624,6 +687,8 @@ group("parseSessionRecord", () => {
       delete r.participant;
       r.dashboard.exploration = null;
       delete r.post.wouldSwitch;
+      delete r.waitlist;
+      delete r.interview;
     });
     const records = [fixture(), expectOk(old)];
     const stats = explorationStats(records);
@@ -646,6 +711,10 @@ group("parseSessionRecord", () => {
     assert.equal(col(records[0], "ended_on_flight"), "c0ffee12");
     assert.equal(col(records[0], "would_switch"), "not_sure");
     assert.equal(col(records[0], "what_if_s"), "9");
+    assert.equal(col(records[0], "waitlist"), "true");
+    assert.equal(col(records[0], "interview"), "true");
+    assert.equal(col(records[1], "waitlist"), "false", "parsed records always carry the sign-up flags");
+    assert.equal(col({ ...records[1], waitlist: undefined, interview: undefined }, "interview"), "", "blank when the record predates them");
     for (const name of ["participant", "flights_explored", "switches", "compares", "alternatives_opened", "what_ifs", "what_if_s", "preferred_flight", "ended_on_flight", "would_switch"]) {
       assert.equal(col(records[1], name), "", `${name} is blank without exploration`);
     }
@@ -795,6 +864,391 @@ group("file store", () => {
   });
 });
 
+// ── parseSignup ─────────────────────────────────────────────────────────────
+
+function looseSignup(mutate: (s: Loose) => void): unknown {
+  const s = JSON.parse(JSON.stringify(signupFixture())) as Loose;
+  mutate(s);
+  return s;
+}
+
+function expectSignupError(input: unknown, code: string): void {
+  const result = parseSignup(input);
+  assert.equal(result.ok, false, `expected rejection with ${code}`);
+  if (!result.ok) assert.equal(result.error, code);
+}
+
+function expectSignup(input: unknown): Signup {
+  const result = parseSignup(input);
+  assert.equal(result.ok, true, `expected acceptance, got ${result.ok ? "" : result.error}`);
+  if (!result.ok) throw new Error("unreachable");
+  return result.signup;
+}
+
+group("parseSignup", () => {
+  test("accepts a full sign-up unchanged, as a fresh object", () => {
+    const input = signupFixture();
+    const signup = expectSignup(input);
+    assert.deepEqual(signup, signupFixture());
+    assert.notEqual(signup, input);
+    assert.deepEqual(expectSignup(JSON.parse(JSON.stringify(input))), signupFixture(), "survives a JSON round trip");
+  });
+
+  test("rejects non-objects and unknown schema versions", () => {
+    expectSignupError(null, "invalid_body");
+    expectSignupError("sam@example.com", "invalid_body");
+    expectSignupError([], "invalid_body");
+    expectSignupError(looseSignup((s) => (s.schemaVersion = 2)), "unsupported_schema_version");
+    assert.equal(expectSignup(looseSignup((s) => delete s.schemaVersion)).schemaVersion, 1);
+  });
+
+  test("id must be a UUID; it is trimmed and lower-cased", () => {
+    expectSignupError(looseSignup((s) => delete s.id), "missing_id");
+    expectSignupError(looseSignup((s) => (s.id = "")), "missing_id");
+    expectSignupError(looseSignup((s) => (s.id = "abc")), "missing_id");
+    expectSignupError(looseSignup((s) => (s.id = 42)), "missing_id");
+    assert.equal(expectSignup(looseSignup((s) => (s.id = ` ${SIGNUP_ID.toUpperCase()} `))).id, SIGNUP_ID);
+  });
+
+  test("email must look like one (kept as typed, trimmed)", () => {
+    expectSignupError(looseSignup((s) => delete s.email), "invalid_email");
+    expectSignupError(looseSignup((s) => (s.email = "")), "invalid_email");
+    expectSignupError(looseSignup((s) => (s.email = "not an email")), "invalid_email");
+    expectSignupError(looseSignup((s) => (s.email = "a@b.c")), "invalid_email");
+    expectSignupError(looseSignup((s) => (s.email = "sam@example")), "invalid_email");
+    expectSignupError(looseSignup((s) => (s.email = `${"a".repeat(250)}@example.com`)), "invalid_email");
+    expectSignupError(looseSignup((s) => (s.email = ["sam@example.com"])), "invalid_email");
+    assert.equal(expectSignup(looseSignup((s) => (s.email = "  Person@Example.org "))).email, "Person@Example.org");
+  });
+
+  test("source, placement and createdAt are strict", () => {
+    expectSignupError(looseSignup((s) => (s.source = "C")), "invalid_source");
+    expectSignupError(looseSignup((s) => delete s.source), "invalid_source");
+    expectSignupError(looseSignup((s) => (s.placement = "footer")), "invalid_placement");
+    expectSignupError(looseSignup((s) => (s.placement = null)), "invalid_placement");
+    expectSignupError(looseSignup((s) => delete s.createdAt), "invalid_created_at");
+    expectSignupError(looseSignup((s) => (s.createdAt = "yesterday")), "invalid_created_at");
+    expectSignupError(looseSignup((s) => (s.createdAt = "2026-10-21")), "invalid_created_at");
+    expectSignupError(looseSignup((s) => (s.createdAt = 1760364131000)), "invalid_created_at");
+    expectSignupError(looseSignup((s) => (s.createdAt = "1999-12-31T23:59:59Z")), "invalid_created_at");
+    assert.equal(expectSignup(looseSignup((s) => (s.createdAt = "2026-10-21T17:30:00+02:00"))).createdAt, "2026-10-21T15:30:00.000Z");
+    const c = expectSignup(
+      looseSignup((s) => {
+        s.source = "c";
+        s.placement = "c_compare";
+        s.sessionId = null;
+        s.variant = null;
+        s.page = "/c/compare";
+      }),
+    );
+    assert.equal(c.source, "c");
+    assert.equal(c.placement, "c_compare");
+    assert.equal(c.sessionId, null);
+    assert.equal(c.variant, null);
+  });
+
+  test("free text is one line, trimmed, cleaned and capped", () => {
+    const signup = expectSignup(
+      looseSignup((s) => {
+        s.firstName = "  Sam\n\tLee  Jr ";
+        s.context = `JFK → LAX\u0000 · Nov 26\n· ${"x".repeat(200)}`;
+        s.participant = "José M. <script>";
+      }),
+    );
+    assert.equal(signup.firstName, "Sam Lee Jr");
+    assert.equal(signup.context.startsWith("JFK → LAX · Nov 26 · xxx"), true);
+    assert.equal(signup.context.length, MAX_CONTEXT_CHARS);
+    assert.equal(signup.participant, "José M. script");
+    assert.equal(expectSignup(looseSignup((s) => (s.firstName = "x".repeat(80)))).firstName.length, 60);
+    assert.equal(expectSignup(looseSignup((s) => (s.firstName = 7))).firstName, "");
+    assert.equal(expectSignup(looseSignup((s) => delete s.context)).context, "");
+    assert.equal(expectSignup(looseSignup((s) => (s.participant = "x".repeat(80)))).participant.length, 40);
+  });
+
+  test("page is reduced to a pathname", () => {
+    const page = (v: unknown) => expectSignup(looseSignup((s) => (s.page = v))).page;
+    assert.equal(page("/c/compare"), "/c/compare");
+    assert.equal(page("/c/compare?key=secret#top"), "/c/compare");
+    assert.equal(page("https://preflight.example/c/flight?x=1"), "/c/flight");
+    assert.equal(page("c/results"), "/c/results");
+    assert.equal(page(""), "");
+    assert.equal(page(7), "");
+    assert.equal(page("javascript:alert(1)"), "");
+    assert.equal(page(`/${"p".repeat(500)}`).length, 200);
+  });
+
+  test("booleans, session id and variant fall back safely", () => {
+    const signup = expectSignup(
+      looseSignup((s) => {
+        delete s.waitlist;
+        s.interview = "yes";
+        s.isTest = 1;
+        s.sessionId = "abc";
+        s.variant = "C";
+      }),
+    );
+    assert.equal(signup.waitlist, true, "the primary action: true unless explicitly false");
+    assert.equal(signup.interview, false);
+    assert.equal(signup.isTest, false);
+    assert.equal(signup.sessionId, null);
+    assert.equal(signup.variant, null);
+    const explicit = expectSignup(
+      looseSignup((s) => {
+        s.waitlist = false;
+        s.interview = true;
+        s.isTest = true;
+        s.sessionId = ` ${SESSION_ID.toUpperCase()} `;
+        s.variant = "B";
+      }),
+    );
+    assert.equal(explicit.waitlist, false);
+    assert.equal(explicit.interview, true);
+    assert.equal(explicit.isTest, true);
+    assert.equal(explicit.sessionId, SESSION_ID);
+    assert.equal(explicit.variant, "B");
+    assert.equal(expectSignup(looseSignup((s) => (s.sessionId = null))).sessionId, null);
+  });
+
+  test("unknown keys are dropped", () => {
+    const signup = expectSignup(
+      looseSignup((s) => {
+        s.extra = "top";
+        s.__proto__ = { polluted: true };
+        s.record = {};
+      }),
+    );
+    assert.deepEqual(signup, signupFixture());
+    assert.equal(Object.hasOwn(signup, "extra"), false);
+    assert.equal(({} as Loose).polluted, undefined, "no prototype pollution");
+  });
+
+  test("dedupe key: lower-cased, trimmed email per source", () => {
+    assert.equal(emailKey("  Sam@Example.COM "), "sam@example.com");
+    assert.equal(signupKey(signupFixture()), "sam@example.com|study");
+    assert.equal(signupKey({ email: "sam@example.com", source: "c" }), "sam@example.com|c");
+    const again = expectSignup(
+      looseSignup((s) => {
+        s.id = session(9);
+        s.email = "SAM@example.com";
+      }),
+    );
+    assert.equal(signupKey(again), signupKey(signupFixture()), "same person, same source");
+  });
+});
+
+// ── Sign-up stats and CSV ───────────────────────────────────────────────────
+
+group("signup stats and CSV", () => {
+  test("sorts newest first with id as the tie-break", () => {
+    const a = { ...signupFixture(), id: session(1), createdAt: "2026-10-21T10:00:00.000Z" };
+    const b = { ...signupFixture(), id: session(2), createdAt: "2026-10-22T10:00:00.000Z" };
+    const c = { ...signupFixture(), id: session(3), createdAt: "2026-10-22T10:00:00.000Z" };
+    assert.deepEqual(sortSignupsNewestFirst([c, a, b]).map((s) => s.id), [b.id, c.id, a.id]);
+  });
+
+  test("CSV: BOM, header, formula-safe cells, blanks for nulls", () => {
+    const csv = signupsToCsv([
+      signupFixture(),
+      { ...signupFixture(), id: session(2), source: "c", placement: "c_home", firstName: "=cmd", sessionId: null, variant: null, context: "JFK → LAX, Nov 26", page: "/c" },
+    ]);
+    assert.equal(csv.startsWith("﻿"), true);
+    const lines = csv.slice(1).split("\r\n");
+    assert.deepEqual(lines[0].split(","), [...SIGNUP_CSV_COLUMNS]);
+    assert.equal(lines[1], `${SIGNUP_ID},2026-10-21T15:30:00.000Z,study,debrief,Sam,Sam@Example.com,true,true,${SESSION_ID},A,false,sarah,JFK → LAX · Nov 26,/`);
+    assert.equal(lines[2], `${session(2)},2026-10-21T15:30:00.000Z,c,c_home,'=cmd,Sam@Example.com,true,true,,,false,sarah,"JFK → LAX, Nov 26",/c`);
+    assert.deepEqual(lines.slice(3), [""], "ends with CRLF");
+  });
+
+  test("stats: totals, unique emails, by source and placement", () => {
+    const signups: Signup[] = [
+      signupFixture(),
+      { ...signupFixture(), id: session(2), email: "SAM@example.com", source: "c", placement: "c_compare", sessionId: null, variant: null, interview: false },
+      { ...signupFixture(), id: session(3), email: "kim@example.com", source: "c", placement: "c_compare", sessionId: null, variant: null, interview: false },
+    ];
+    const stats = signupStats(signups, []);
+    assert.equal(stats.total, 3);
+    assert.equal(stats.uniqueEmails, 2);
+    assert.equal(stats.interview, 1);
+    assert.deepEqual(stats.bySource, { study: 1, c: 2 });
+    assert.deepEqual(stats.byPlacement, { debrief: 1, c_compare: 2 });
+    assert.deepEqual(stats.study.all, { signups: 1, reachedDebrief: 1, pct: 100 }, "a signed-up session reached the debrief even without its record");
+  });
+
+  test("stats: the study rate per variant counts real sessions once and never passes 100%", () => {
+    const records: SessionRecord[] = [
+      fixture(), // A, debrief, signed up (the fixture's record says waitlist: true, like the debrief save does)
+      { ...fixture(), sessionId: session(2), variant: "A", step: "post", completedAt: null, waitlist: false }, // A, never reached the debrief
+      { ...fixture(), sessionId: session(3), variant: "B", step: "debrief", waitlist: false }, // B, no sign-up
+      { ...fixture(), sessionId: session(4), variant: "B", step: "post", completedAt: null, waitlist: false }, // B, signed up but the debrief save never landed
+      { ...fixture(), sessionId: session(5), variant: "B", step: "debrief", isTest: true }, // team test
+    ];
+    const signups: Signup[] = [
+      signupFixture(),
+      { ...signupFixture(), id: session(11), email: "again@example.com" }, // the same session twice: one sign-up
+      { ...signupFixture(), id: session(12), sessionId: session(4), variant: "A", email: "b@example.com" }, // the record says B: trust the record
+      { ...signupFixture(), id: session(13), sessionId: session(5), variant: "B", email: "t@example.com" }, // test session: excluded
+      { ...signupFixture(), id: session(14), sessionId: null, variant: "B", isTest: true, email: "t2@example.com" },
+      { ...signupFixture(), id: session(15), sessionId: null, variant: null, email: "nov@example.com" }, // no variant known: not counted
+      { ...signupFixture(), id: session(16), source: "c", placement: "c_home", sessionId: null, variant: null, email: "c@example.com" },
+    ];
+    const stats = signupStats(signups, records);
+    assert.deepEqual(stats.study.A, { signups: 1, reachedDebrief: 1, pct: 100 });
+    assert.deepEqual(stats.study.B, { signups: 1, reachedDebrief: 2, pct: 50 });
+    assert.deepEqual(stats.study.all, { signups: 2, reachedDebrief: 3, pct: 67 });
+    assert.deepEqual(signupStats([], records).study.A, { signups: 1, reachedDebrief: 1, pct: 100 }, "no rows: the fixture's record still says waitlist");
+    const declined = records.map((r) => ({ ...r, waitlist: false }));
+    assert.deepEqual(signupStats([], declined).study.A, { signups: 0, reachedDebrief: 1, pct: 0 });
+    assert.equal(signupStats([], []).study.all.pct, null);
+  });
+
+  test("stats: a session whose record says waitlist counts even without a sign-up row", () => {
+    // Two real B sessions signed up with the same email: the store keeps one row (the later session's).
+    const records: SessionRecord[] = [
+      { ...fixture(), sessionId: session(1), variant: "B", waitlist: true, interview: false },
+      { ...fixture(), sessionId: session(2), variant: "B", waitlist: true, interview: true },
+      { ...fixture(), sessionId: session(3), variant: "B", step: "post", completedAt: null, waitlist: true }, // POST /signups lost, debrief save landed
+      { ...fixture(), sessionId: session(4), variant: "A", waitlist: false }, // declined
+      { ...fixture(), sessionId: session(5), variant: "A", waitlist: true, isTest: true }, // team test
+    ];
+    const oneRow: Signup[] = [{ ...signupFixture(), id: session(12), sessionId: session(2), variant: "B", email: "two@example.com" }];
+    assert.deepEqual(signupStats(oneRow, records).study.B, { signups: 3, reachedDebrief: 3, pct: 100 });
+    assert.deepEqual(signupStats(oneRow, records).study.A, { signups: 0, reachedDebrief: 1, pct: 0 });
+    assert.deepEqual(signupStats([], records).study.B, { signups: 3, reachedDebrief: 3, pct: 100 }, "no rows at all: the records carry the fact");
+    assert.equal(signupStats(oneRow, records).total, 1, "the totals still count rows");
+  });
+});
+
+// ── Supabase row mapping: sign-ups (pure) ───────────────────────────────────
+
+group("supabase row mapping: sign-ups", () => {
+  test("signupToRow flattens the columns and keeps the full sign-up", () => {
+    const signup = signupFixture();
+    const row = signupToRow(signup);
+    assert.deepEqual(row, {
+      id: SIGNUP_ID,
+      created_at: "2026-10-21T15:30:00.000Z",
+      source: "study",
+      placement: "debrief",
+      email: "Sam@Example.com",
+      first_name: "Sam",
+      waitlist: true,
+      interview: true,
+      session_id: SESSION_ID,
+      variant: "A",
+      is_test: false,
+      participant: "sarah",
+      context: "JFK → LAX · Nov 26",
+      page: "/",
+      record: signup,
+    });
+    assert.equal(row.record, signup);
+    assert.equal("email_key" in row, false, "email_key is generated by the database");
+    assert.equal("updated_at" in row, false, "updated_at is the database's job");
+  });
+
+  test("signupToRow uses nulls for empty optional text", () => {
+    const row = signupToRow({ ...signupFixture(), source: "c", placement: "c_home", firstName: "", sessionId: null, variant: null, participant: "", context: "", page: "" });
+    assert.equal(row.first_name, null);
+    assert.equal(row.session_id, null);
+    assert.equal(row.variant, null);
+    assert.equal(row.participant, null);
+    assert.equal(row.context, null);
+    assert.equal(row.page, null);
+  });
+
+  test("rowToSignup reads the jsonb column (object or string)", () => {
+    const signup = signupFixture();
+    assert.deepEqual(rowToSignup({ record: signup }), signup);
+    assert.deepEqual(rowToSignup({ record: JSON.stringify(signup) }), signup);
+    assert.throws(() => rowToSignup({ id: SIGNUP_ID }), /record/);
+    assert.throws(() => rowToSignup({ record: "[]" }), /record/);
+  });
+});
+
+// ── File store: sign-ups ────────────────────────────────────────────────────
+
+group("file store: sign-ups", () => {
+  test("writes signups.json next to the responses file, keyed by email_key|source", async () => {
+    const store = createFileStore(join(tempDir, "signups", "responses.json"));
+    assert.equal(store.signupsPath, join(tempDir, "signups", SIGNUPS_FILE));
+    await store.upsertSignup(signupFixture());
+    const raw = JSON.parse(await readFile(store.signupsPath, "utf8"));
+    assert.deepEqual(Object.keys(raw), ["sam@example.com|study"]);
+    assert.deepEqual(raw["sam@example.com|study"], signupFixture());
+    assert.deepEqual(await store.listSignups(), [signupFixture()]);
+    assert.deepEqual(await store.list(), [], "the responses file is separate");
+    await store.upsert(fixture());
+    assert.deepEqual(await store.listSignups(), [signupFixture()], "and a session save leaves sign-ups alone");
+    assert.deepEqual((await readdir(join(tempDir, "signups"))).sort(), ["responses.json", SIGNUPS_FILE]);
+  });
+
+  test("lists nothing when the file does not exist yet", async () => {
+    const store = createFileStore(join(tempDir, "signups-empty", "responses.json"));
+    assert.deepEqual(await store.listSignups(), []);
+  });
+
+  test("the same email from the same source updates the entry but keeps the original createdAt", async () => {
+    const store = createFileStore(join(tempDir, "signups-dupe", "responses.json"));
+    await store.upsertSignup(signupFixture());
+    const again = { ...signupFixture(), id: session(2), createdAt: "2026-10-22T09:00:00.000Z", email: "SAM@example.com", firstName: "Samuel", interview: false };
+    await store.upsertSignup(again);
+    const listed = await store.listSignups();
+    assert.equal(listed.length, 1);
+    // The new name wins; the earlier interview opt-in survives an unticked box (see the next test).
+    assert.deepEqual(listed[0], { ...again, createdAt: signupFixture().createdAt, interview: true });
+    // Another source is another entry.
+    await store.upsertSignup({ ...signupFixture(), id: session(3), source: "c", placement: "c_home", sessionId: null, variant: null });
+    assert.equal((await store.listSignups()).length, 2);
+  });
+
+  test("a repeat with a blank name and an unticked interview box keeps the earlier name and opt-in", async () => {
+    const store = createFileStore(join(tempDir, "signups-merge", "responses.json"));
+    const first: Signup = { ...signupFixture(), source: "c", placement: "c_compare", sessionId: null, variant: null, firstName: "Cee", interview: true, context: "JFK → LAX · 2 flights in compare" };
+    await store.upsertSignup(first);
+    const repeat: Signup = { ...first, id: session(4), createdAt: "2026-10-22T09:00:00.000Z", placement: "c_flight", firstName: "", interview: false, context: "", page: "/c/flight/abc" };
+    await store.upsertSignup(repeat);
+    const listed = await store.listSignups();
+    assert.equal(listed.length, 1);
+    assert.deepEqual(listed[0], { ...repeat, createdAt: first.createdAt, firstName: "Cee", interview: true });
+    // The first sign-up blank, the repeat filled in: the repeat's values are kept as they are.
+    const store2 = createFileStore(join(tempDir, "signups-merge-2", "responses.json"));
+    await store2.upsertSignup({ ...first, firstName: "", interview: false });
+    await store2.upsertSignup({ ...repeat, firstName: "C.", interview: true });
+    assert.deepEqual((await store2.listSignups())[0], { ...repeat, createdAt: first.createdAt, firstName: "C.", interview: true });
+  });
+
+  test("an id that already belongs to another email is refused, like the database's primary key", async () => {
+    const store = createFileStore(join(tempDir, "signups-id", "responses.json"));
+    await store.upsertSignup(signupFixture());
+    await assert.rejects(store.upsertSignup({ ...signupFixture(), email: "other@example.com" }), /already belongs/);
+    assert.equal((await store.listSignups()).length, 1, "file untouched");
+    // The same id with the same email is just a repeat.
+    await store.upsertSignup({ ...signupFixture(), firstName: "Sammy" });
+    assert.equal((await store.listSignups())[0].firstName, "Sammy");
+  });
+
+  test("lists newest first", async () => {
+    const store = createFileStore(join(tempDir, "signups-order", "responses.json"));
+    const times = ["2026-10-11T09:00:00.000Z", "2026-10-13T09:00:00.000Z", "2026-10-12T09:00:00.000Z"];
+    for (const [i, createdAt] of times.entries()) {
+      await store.upsertSignup({ ...signupFixture(), id: session(20 + i), email: `p${i}@example.com`, createdAt });
+    }
+    assert.deepEqual(
+      (await store.listSignups()).map((s) => s.createdAt),
+      ["2026-10-13T09:00:00.000Z", "2026-10-12T09:00:00.000Z", "2026-10-11T09:00:00.000Z"],
+    );
+  });
+
+  test("a corrupt sign-up file fails loudly instead of being overwritten", async () => {
+    const store = createFileStore(join(tempDir, "signups-corrupt", "responses.json"));
+    await store.upsertSignup(signupFixture());
+    await writeFile(store.signupsPath, "[]", "utf8");
+    await assert.rejects(store.upsertSignup(signupFixture()), /keyed by email_key\|source/);
+    await assert.rejects(store.listSignups(), /keyed by/);
+    assert.equal(await readFile(store.signupsPath, "utf8"), "[]", "file untouched");
+  });
+});
+
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 type App = typeof import("../src/app").app;
@@ -907,6 +1361,93 @@ group("routes", () => {
     assert.equal(other.status, 400, "another IP is unaffected");
   });
 
+});
+
+// ── Routes: sign-ups ────────────────────────────────────────────────────────
+
+/** A client address of its own, so these tests never share a rate-limit bucket with the ones above. */
+const SIGNUP_IP = { "x-forwarded-for": "203.0.113.50" };
+
+async function postSignup(body: string, headers: Record<string, string> = {}) {
+  return app.request("/signups", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...SIGNUP_IP, ...headers },
+    body,
+  });
+}
+
+group("routes: sign-ups", () => {
+  test("POST a valid sign-up → 200, then GET lists it (parsed)", async () => {
+    const res = await postSignup(JSON.stringify({ ...signupFixture(), id: SIGNUP_ID.toUpperCase(), email: " Sam@Example.com ", extra: 1 }));
+    assert.equal(res.status, 200);
+    assert.deepEqual(await json(res), { ok: true, storage: "file" });
+    assert.equal(res.headers.get("cache-control"), "no-store");
+
+    const list = await app.request(`/signups?key=${ADMIN_KEY}`);
+    assert.equal(list.status, 200);
+    const body = await json(list);
+    assert.equal(body.ok, true);
+    assert.equal(body.storage, "file");
+    assert.deepEqual(body.signups, [signupFixture()]);
+    const byHeader = await app.request("/signups", { headers: { "x-admin-key": ADMIN_KEY } });
+    assert.deepEqual(await json(byHeader), body);
+  });
+
+  test("POST as text/plain → 200; a repeat from the same email keeps the first createdAt", async () => {
+    const repeat = { ...signupFixture(), id: session(31), createdAt: "2026-10-22T08:00:00.000Z", firstName: "Samuel", interview: false };
+    const res = await postSignup(JSON.stringify(repeat), { "content-type": "text/plain" });
+    assert.equal(res.status, 200);
+    const body = await json(await app.request("/signups", { headers: { "x-admin-key": ADMIN_KEY } }));
+    assert.equal(body.signups.length, 1);
+    assert.deepEqual(body.signups[0], { ...repeat, createdAt: signupFixture().createdAt, interview: true }, "and the earlier interview opt-in");
+  });
+
+  test("POST invalid → 400 with a short error code, nothing stored", async () => {
+    let res = await postSignup("{not json");
+    assert.equal(res.status, 400);
+    assert.equal((await json(res)).error, "invalid_json");
+    res = await postSignup(JSON.stringify([1]));
+    assert.equal(res.status, 400);
+    assert.equal((await json(res)).error, "invalid_body");
+    res = await postSignup(JSON.stringify({ ...signupFixture(), email: "not an email" }));
+    assert.equal(res.status, 400);
+    assert.deepEqual(await json(res), { ok: false, storage: "file", error: "invalid_email" });
+    res = await postSignup(JSON.stringify({ ...signupFixture(), source: "newsletter" }));
+    assert.equal(res.status, 400);
+    assert.equal((await json(res)).error, "invalid_source");
+    const body = await json(await app.request("/signups", { headers: { "x-admin-key": ADMIN_KEY } }));
+    assert.equal(body.signups.length, 1);
+  });
+
+  test("POST too large → 413 (declared Content-Length, and a streamed body)", async () => {
+    const declared = await postSignup("{}", { "content-length": "20000" });
+    assert.equal(declared.status, 413);
+    assert.equal((await json(declared)).error, "too_large");
+    const actual = await postSignup(JSON.stringify({ ...signupFixture(), context: "x".repeat(12_000) }));
+    assert.equal(actual.status, 413);
+    assert.equal((await json(actual)).error, "too_large");
+  });
+
+  test("GET without a key → 401", async () => {
+    let res = await app.request("/signups");
+    assert.equal(res.status, 401);
+    assert.deepEqual(await json(res), { ok: false, storage: "file", signups: [], error: "unauthorized" });
+    res = await app.request("/signups?key=wrong");
+    assert.equal(res.status, 401);
+  });
+
+  test("the rate limit is shared with /responses", async () => {
+    // 203.0.113.9 used up its minute in the /responses tests above.
+    const limited = await postSignup(JSON.stringify(signupFixture()), { "x-forwarded-for": "203.0.113.9" });
+    assert.equal(limited.status, 429);
+    assert.equal(limited.headers.get("retry-after"), "60");
+    assert.deepEqual(await json(limited), { ok: false, storage: "file", error: "rate_limited" });
+  });
+});
+
+// ── Routes: no storage ──────────────────────────────────────────────────────
+
+group("routes: no storage", () => {
   test("without DATA_FILE storage is none → 503 not_configured", async () => {
     delete process.env.DATA_FILE;
     assert.deepEqual(await json(await app.request("/health")), { ok: true, storage: "none" });
@@ -916,6 +1457,12 @@ group("routes", () => {
     const list = await app.request("/responses", { headers: { "x-admin-key": ADMIN_KEY } });
     assert.equal(list.status, 503);
     assert.deepEqual(await json(list), { ok: false, storage: "none", responses: [], error: "not_configured" });
+    const signup = await postSignup(JSON.stringify(signupFixture()));
+    assert.equal(signup.status, 503);
+    assert.deepEqual(await json(signup), { ok: false, storage: "none", error: "not_configured" });
+    const signups = await app.request("/signups", { headers: { "x-admin-key": ADMIN_KEY } });
+    assert.equal(signups.status, 503);
+    assert.deepEqual(await json(signups), { ok: false, storage: "none", signups: [], error: "not_configured" });
   });
 });
 

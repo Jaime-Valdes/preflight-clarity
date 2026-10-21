@@ -4,6 +4,7 @@ import { TURBULENCE_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { CompareTray } from "@/components/c/shell/CompareTray";
 import { Footer } from "@/components/c/shell/Footer";
 import { Header } from "@/components/c/shell/Header";
+import { TestFlag } from "@/components/c/interest/TestFlag";
 
 const DESCRIPTION = `Compare nonstop flights side by side with the pre-flight picture in hand: times and fares, aircraft, airline and who flies it, plus the turbulence forecast from ${TURBULENCE_FORECAST_DAYS} days before departure and the weather from about a week before. A prototype — all data is illustrative.`;
 
@@ -22,6 +23,7 @@ export const metadata: Metadata = {
 export default function CLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh w-full flex-1 flex-col">
+      <TestFlag />
       <Header />
       <main
         id="c-main"

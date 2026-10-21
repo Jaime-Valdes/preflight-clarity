@@ -41,11 +41,15 @@ the form (`localStorage` `pfc.interest.v1`).
   overall and per variant).
 - The study's `SessionRecord` also gets `waitlist` and `interview` (+ CSV columns), so the research
   record is complete on its own.
-- API (`backend/`): `POST /signups` (public, ≤ 10 KB, same rate limit as responses; upsert by
-  `id`), `GET /signups` (admin key). Storage follows the responses adapter: Supabase table `signups`
+- API (`backend/`): `POST /signups` (public, ≤ 10 KB, same rate limit as responses; upsert on
+  `email_key` + `source` — a repeat from the same email and source takes the latest id, placement,
+  context and page, keeps the original `created_at`, keeps an earlier first name when the repeat's is
+  blank, and keeps the interview opt-in once given), `GET /signups` (admin key). Storage follows the responses adapter: Supabase table `signups`
   (`backend/supabase/schema.sql`, re-runnable), a sibling `signups.json` next to `DATA_FILE`, or none
-  (503). Duplicate emails from the same source update the existing row (`email_key` = lower-cased
-  email + source) and keep the original `created_at`.
+  (503). `email_key` = lower-cased, trimmed email.
+- Team tests: the study marks its sign-ups with the session's `isTest`; on version C, open any `/c`
+  page with `?test=1` and that tab's sign-ups are marked as tests (`pfc.c.test.v1`). The results page
+  excludes test sign-ups unless "Include test sessions" is on.
 - Frontend: `saveSignup(signup)` in `frontend/lib/storage.ts` mirrors to `localStorage`
   (`pfc.signups.v1`) then POSTs to `/api/signups` (proxied like responses); `loadLocalSignups()` is
   the no-backend fallback for the results page.

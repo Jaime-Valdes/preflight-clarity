@@ -8,6 +8,7 @@ const POINTS = [
   "Variant assignment is random unless the link forced it (?v=A or ?v=B). Forced sessions are flagged and can be excluded with the filter; test sessions (?test=1) are hidden by default.",
   "Each participant chose their own route and date, so the flight they saw — and its smoothness score — varies between sessions. The score is kept per session so you can check whether reactions follow the forecast rather than the variant.",
   "Two self-reported 0–10 ratings taken minutes apart can move for reasons unrelated to the dashboard (settling in, wanting to be helpful). A drop is not proof the dashboard works; a rise is not proof it hurts.",
+  "Sign-ups measure interest in a launch email, not use or willingness to pay. The study's sign-up rate counts real sessions that reached the debrief, where the form is identical in A and B; version C sign-ups have no session and no rate.",
 ];
 
 /** Short, honest reading guide for the numbers above. */

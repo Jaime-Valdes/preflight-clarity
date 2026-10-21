@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useHydrated } from "@/lib/hooks";
-import { loadLocalResponses } from "@/lib/storage";
+import { loadLocalResponses, loadLocalSignups } from "@/lib/storage";
 import { ResultsDashboard } from "./ResultsDashboard";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 
 /**
- * No backend (or a backend without storage): show the sessions saved in this
- * browser. localStorage is read once, after hydration, with a lazy initializer.
+ * No backend (or a backend without storage): show the sessions and sign-ups
+ * saved in this browser. localStorage is read once, after hydration, with a
+ * lazy initializer.
  */
 export function LocalResults({ banner }: { banner: string }) {
   const hydrated = useHydrated();
@@ -18,5 +19,6 @@ export function LocalResults({ banner }: { banner: string }) {
 
 function LocalResultsInner({ banner }: { banner: string }) {
   const [records] = useState(() => loadLocalResponses());
-  return <ResultsDashboard records={records} storage="browser" banner={banner} />;
+  const [signups] = useState(() => loadLocalSignups());
+  return <ResultsDashboard records={records} signups={signups} storage="browser" banner={banner} />;
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { InterestCard } from "@/components/c/interest/InterestCard";
 import { HomeSearch } from "@/components/c/search/HomeSearch";
 import { HomeTiles } from "@/components/c/search/HomeTiles";
 
@@ -8,8 +9,8 @@ export const metadata: Metadata = {
 
 /**
  * /c — version C home: one search form, popular routes, what the comparison
- * covers, and the illustrative-data note. Static; the form renders on the
- * client once today's date is known.
+ * covers, the illustrative-data note and the sign-up card. Static; the form
+ * renders on the client once today's date is known.
  */
 export default function CHomePage() {
   return (
@@ -41,6 +42,8 @@ export default function CHomePage() {
       </section>
 
       <HomeTiles />
+
+      <InterestCard placement="c_home" context="" className="mt-8" />
     </>
   );
 }

@@ -9,9 +9,10 @@ import type { SectionContext } from "@preflight/shared/types";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
+import { InterestCard } from "@/components/c/interest/InterestCard";
 import { searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
 import { daysToDeparture } from "@/components/c/common/availability";
-import { monthDay, routeText } from "./copy";
+import { flightContext, monthDay, routeText } from "./copy";
 import { FareCard } from "./FareCard";
 import { FlightSections } from "./FlightSections";
 import { OtherFlights } from "./OtherFlights";
@@ -120,9 +121,11 @@ export function FlightDetail({ day, option, options, today }: FlightDetailProps)
             turbulence={availability.turbulence}
             className="mt-6 min-w-0 lg:col-start-1 lg:mt-4"
           />
+
+          {/* After the sections and the other flights (docs/INTEREST.md). */}
+          <InterestCard placement="c_flight" context={flightContext(flight, day)} className="mt-2 min-w-0 lg:col-start-1" />
         </div>
       </ExploreContext.Provider>
-
     </div>
   );
 }

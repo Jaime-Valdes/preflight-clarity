@@ -3,11 +3,12 @@
 import { CalendarDays, PlaneTakeoff, Search } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { addDays, formatTime12 } from "@preflight/shared/dates";
 import { findOption, searchFlights, type FlightOption } from "@preflight/shared/search";
 import { availabilityAt, hasLeft } from "@/components/c/common/availability";
+import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import {
   MAX_DAYS_AHEAD,
@@ -21,7 +22,7 @@ import {
   type CompareItem,
   type RouteDay,
 } from "@/lib/c/model";
-import { LINK_BUTTON, shortDate } from "./copy";
+import { LINK_BUTTON, flightContext, monthDay, routeText, shortDate } from "./copy";
 import { FlightDetail } from "./FlightDetail";
 import { FlightSkeleton } from "./FlightSkeleton";
 import { Notice } from "./Notice";
@@ -91,6 +92,21 @@ function airportLabel(code: string): string {
   return airport ? `${airport.city} (${code})` : code;
 }
 
+/** "JFK → LAX · Nov 26" — the sign-up card's context when there is no flight to name. */
+function dayContext(day: RouteDay): string {
+  return `${routeText(day.origin, day.destination)} · ${monthDay(day.date)}`;
+}
+
+/** A calm message plus the sign-up card under it (docs/INTEREST.md: at the bottom of every page), in the message's column. */
+function WithSignup({ context, children }: { context: string; children: ReactNode }) {
+  return (
+    <>
+      {children}
+      <InterestCard placement="c_flight" context={context} className="mx-auto w-full max-w-[600px]" />
+    </>
+  );
+}
+
 /**
  * /c/flight?from=JFK&to=LAX&date=2026-11-26&f=DL1423 — one flight in full.
  * Reads the query on the client (inside the page's Suspense boundary), waits
@@ -121,22 +137,32 @@ export function FlightPage() {
       return <FlightSkeleton />;
     case "invalid":
       return (
-        <Notice
-          title="We couldn’t find that flight"
-          actions={
-            <Link href="/c" className={LINK_BUTTON.primary}>
-              <Search aria-hidden className="size-4" />
-              Search flights
-            </Link>
-          }
-        >
-          <p>The link is missing its route or date, or they aren&rsquo;t ones we know. Start a new search to pick a flight.</p>
-        </Notice>
+        <WithSignup context="">
+          <Notice
+            title="We couldn’t find that flight"
+            actions={
+              <Link href="/c" className={LINK_BUTTON.primary}>
+                <Search aria-hidden className="size-4" />
+                Search flights
+              </Link>
+            }
+          >
+            <p>The link is missing its route or date, or they aren&rsquo;t ones we know. Start a new search to pick a flight.</p>
+          </Notice>
+        </WithSignup>
       );
     case "date":
-      return <DateNotice day={view.day} status={view.status} nearest={view.nearest} />;
+      return (
+        <WithSignup context={dayContext(view.day)}>
+          <DateNotice day={view.day} status={view.status} nearest={view.nearest} />
+        </WithSignup>
+      );
     case "missing":
-      return <NotOnSchedule day={view.day} flightText={view.flightText} reason={view.reason} noFlights={view.noFlights} />;
+      return (
+        <WithSignup context={dayContext(view.day)}>
+          <NotOnSchedule day={view.day} flightText={view.flightText} reason={view.reason} noFlights={view.noFlights} />
+        </WithSignup>
+      );
     case "found":
       return <FlightDetail key={view.id} day={view.day} option={view.option} options={view.options} today={view.today} />;
     case "departed":
@@ -196,6 +222,7 @@ function Departed({ day, option, options, today, next }: DepartedProps) {
         turbulence={turbulence}
         className="mx-auto w-full max-w-[600px] min-w-0"
       />
+      <InterestCard placement="c_flight" context={flightContext(f, day)} className="mx-auto mt-6 w-full max-w-[600px]" />
     </div>
   );
 }

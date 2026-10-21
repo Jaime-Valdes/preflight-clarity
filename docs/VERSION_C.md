@@ -9,7 +9,9 @@ the generator, the design system and the dashboard's section components.
 Decisions taken by the lead (change only with the team):
 
 - **Separate tool, own URL**: `/c`. Not part of A/B assignment, not linked from the study.
-- **No tracking, no backend calls.** Only the visitor's compare list is kept, in `localStorage`.
+- **No research tracking, no session records.** Only the visitor's compare list is kept, in `localStorage`.
+  Two later additions: product analytics (docs/ANALYTICS.md) and the "notify me when it's live" sign-up
+  (docs/INTEREST.md, "Sign-up" below) — the only thing C sends to the backend.
 - **Nonstop flights only**, economy, one-way, one traveller. Every route in the airport catalogue.
 - **Illustrative prices** (whole US dollars) next to the safety information. Nothing can be booked:
   there is no "Book"/"Select" step, and the copy says so quietly where it matters.
@@ -107,6 +109,25 @@ than 330 days ahead (`MAX_DAYS_AHEAD`) get a calm message with a way to pick ano
 - A quiet marker for the smoothest / cheapest / fastest per row group is fine ("Smoothest" pill) — facts,
   not advice. Ties marked for all tied flights.
 - Empty state (0–1 flights): explain and link back to search.
+
+## Sign-up (docs/INTEREST.md)
+
+The product-interest call to action, same copy as the study's debrief: a card at the **bottom of every
+page** (`components/c/interest/InterestCard.tsx` — after the home tiles, the results list or its empty
+states, the flight's sections and "Other flights", the compare table or its empty state) and a quiet
+**"Get early access"** link in the footer (`EarlyAccessLink.tsx`). Both open the same sheet
+(`InterestSheet.tsx`, built on `common/Sheet.tsx`): first name (optional), email (required, the study's
+rule and hint), the interview checkbox, "Notify me when it's live". A submit builds a `Signup`
+(`source: "c"`, `placement` c_home / c_results / c_flight / c_compare, `context` = what the visitor was
+looking at: "JFK → LAX · Nov 26 · 14 flights", "DL 2165 · JFK → LAX · Nov 26", "3 flights compared"),
+calls `saveSignup()` and sets `localStorage` `pfc.interest.v1`; from then on every C page (and the
+footer) shows "You're on the list." instead (`signupState.ts`, read with `useSyncExternalStore`). The
+card is in flow, so the sticky compare tray never covers its button. The shared strings use typographic
+apostrophes (’), like the debrief. After a submit the sheet ignores closes for 600 ms (the Done button
+and the backdrop land where the submit button was, so a double tap would dismiss the confirmation —
+same guard as the debrief). Events: `interest_cta_view` once per page view when the card scrolls into
+view, only while the form is offered (a "You're on the list." card is not a call to action, and would
+inflate the view → sign-up funnel), `interest_signup` on submit (docs/ANALYTICS.md).
 
 ## Data contract — `shared/src/search.ts` (generator owns the internals)
 

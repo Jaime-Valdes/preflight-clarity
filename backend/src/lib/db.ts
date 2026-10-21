@@ -10,7 +10,7 @@
  *   "none"     — nothing configured: the API answers 503 not_configured
  */
 import { resolve } from "node:path";
-import type { SessionRecord, StorageKind } from "@preflight/shared/types";
+import type { SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
 import { createFileStore, type FileStore } from "./store/file";
 import { createSupabaseStore, supabaseConfig } from "./store/supabase";
 import type { ResponseStore } from "./store/types";
@@ -51,4 +51,14 @@ export async function upsertResponse(record: SessionRecord): Promise<void> {
 /** All responses, newest first. Throws on error. */
 export async function listResponses(): Promise<SessionRecord[]> {
   return store().list();
+}
+
+/** Insert or update a product-interest sign-up: one row per email per source, original createdAt kept. Throws on error. */
+export async function upsertSignup(signup: Signup): Promise<void> {
+  await store().upsertSignup(signup);
+}
+
+/** All sign-ups, newest first. Throws on error. */
+export async function listSignups(): Promise<Signup[]> {
+  return store().listSignups();
 }
