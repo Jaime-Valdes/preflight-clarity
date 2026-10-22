@@ -206,6 +206,20 @@ function recordColumn(row: unknown): unknown {
   return record;
 }
 
+/** Flat columns added after the table was first created (schema.sql adds them with `add column if not exists`). */
+export const NEWER_RESPONSE_COLUMNS = ["worries_most", "anxiety_starts", "travel_impact"] as const;
+
+/** PostgREST "column not in schema cache" (PGRST204) or Postgres "undefined column" (42703). */
+export function isMissingColumn(error: { code?: string; message: string }): boolean {
+  return error.code === "PGRST204" || error.code === "42703" || /column .* does not exist|Could not find the '.*' column/i.test(error.message);
+}
+
+/** The row without the newer flat columns, for a table that doesn't have them yet. */
+export function withoutNewerColumns(row: ResponseRow): Omit<ResponseRow, (typeof NEWER_RESPONSE_COLUMNS)[number]> {
+  const { worries_most: _w, anxiety_starts: _a, travel_impact: _t, ...rest } = row;
+  return rest;
+}
+
 function describe(error: { message: string; code?: string; details?: string | null; hint?: string | null }): string {
   const parts = [error.message];
   if (error.code) parts.push(`code ${error.code}`);
@@ -237,8 +251,19 @@ export function createSupabaseStore(config: SupabaseConfig): ResponseStore {
   const client = getClient(config);
   return {
     async upsert(record) {
-      const { error } = await client.from(TABLE).upsert(recordToRow(record), { onConflict: "session_id" });
-      if (error) throw new Error(`Supabase upsert failed: ${describe(error)}`);
+      const row = recordToRow(record);
+      const { error } = await client.from(TABLE).upsert(row, { onConflict: "session_id" });
+      if (!error) return;
+      // The table predates a column this version writes (schema.sql not re-run yet): the full
+      // record is in the jsonb column regardless, so store it without the newer flat columns
+      // rather than lose the session. The team should re-run schema.sql to get the columns.
+      if (isMissingColumn(error)) {
+        console.warn(`responses: ${describe(error)} — saving without the newer columns; re-run backend/supabase/schema.sql`);
+        const retry = await client.from(TABLE).upsert(withoutNewerColumns(row), { onConflict: "session_id" });
+        if (!retry.error) return;
+        throw new Error(`Supabase upsert failed: ${describe(retry.error)}`);
+      }
+      throw new Error(`Supabase upsert failed: ${describe(error)}`);
     },
 
     list() {
