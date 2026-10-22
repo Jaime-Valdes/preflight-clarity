@@ -42,7 +42,7 @@ import type {
   Signup,
 } from "@preflight/shared/types";
 import { createFileStore, SIGNUPS_FILE } from "../src/lib/store/file";
-import { recordToRow, rowToRecord, rowToSignup, signupToRow } from "../src/lib/store/supabase";
+import { isMissingColumn, recordToRow, rowToRecord, rowToSignup, signupToRow, withoutNewerColumns } from "../src/lib/store/supabase";
 
 // ── Harness ─────────────────────────────────────────────────────────────────
 
@@ -772,6 +772,18 @@ group("supabase row mapping", () => {
     assert.equal(row.alert_tapped, null);
     assert.equal(row.email, null);
     assert.equal(recordToRow({ ...fixture(), post: { ...fixture().post, travelImpact: [] } }).travel_impact, null);
+  });
+
+  test("a table without the newer columns gets the row without them (record jsonb keeps everything)", () => {
+    const row = recordToRow(fixture());
+    const legacy = withoutNewerColumns(row);
+    assert.equal("worries_most" in legacy, false);
+    assert.equal("anxiety_starts" in legacy, false);
+    assert.equal("travel_impact" in legacy, false);
+    assert.equal(legacy.record.pre.worriesMost, "turbulence");
+    assert.equal(isMissingColumn({ code: "PGRST204", message: "Could not find the 'worries_most' column of 'responses' in the schema cache" }), true);
+    assert.equal(isMissingColumn({ code: "42703", message: 'column "travel_impact" of relation "responses" does not exist' }), true);
+    assert.equal(isMissingColumn({ code: "23505", message: "duplicate key value violates unique constraint" }), false);
   });
 
   test("rowToRecord reads the jsonb column (object or string)", () => {

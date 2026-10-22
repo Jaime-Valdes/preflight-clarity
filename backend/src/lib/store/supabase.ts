@@ -216,8 +216,9 @@ export function isMissingColumn(error: { code?: string; message: string }): bool
 
 /** The row without the newer flat columns, for a table that doesn't have them yet. */
 export function withoutNewerColumns(row: ResponseRow): Omit<ResponseRow, (typeof NEWER_RESPONSE_COLUMNS)[number]> {
-  const { worries_most: _w, anxiety_starts: _a, travel_impact: _t, ...rest } = row;
-  return rest;
+  const rest: Record<string, unknown> = { ...row };
+  for (const column of NEWER_RESPONSE_COLUMNS) delete rest[column];
+  return rest as Omit<ResponseRow, (typeof NEWER_RESPONSE_COLUMNS)[number]>;
 }
 
 function describe(error: { message: string; code?: string; details?: string | null; hint?: string | null }): string {
