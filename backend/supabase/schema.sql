@@ -74,6 +74,14 @@ comment on column public.responses.record is 'The full SessionRecord as sent by 
 -- Adding columns later? Use `alter table public.responses add column if not exists …` here,
 -- so this file stays safe to re-run.
 
+-- 2026-10-22: the "About your flying" screen and the travel-plans question.
+alter table public.responses add column if not exists worries_most   text;
+alter table public.responses add column if not exists anxiety_starts text;
+alter table public.responses add column if not exists travel_impact  text;
+comment on column public.responses.worries_most is 'Pre-survey: what worries them most about flying (turbulence, takeoff_landing, not_in_control, something_wrong, feeling_trapped, other).';
+comment on column public.responses.anxiety_starts is 'Pre-survey: when the anxiety usually starts (at_booking, weeks_before, days_before, day_of, not_before).';
+comment on column public.responses.travel_impact is 'Post-survey: how fear of flying changed travel plans in the past year, comma-joined (no, ground_instead, paid_more, skipped_trip).';
+
 -- Stale writes: saves can arrive out of order (a sendBeacon on page hide can
 -- land after the next save). Skip any update whose seq is lower than the
 -- stored one, keep the original created_at (in the column and inside the

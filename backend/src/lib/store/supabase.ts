@@ -98,6 +98,10 @@ export interface ResponseRow {
   sections_opened: number | null;
   alert_tapped: boolean | null;
   check_frequency: string | null;
+  worries_most: string | null;
+  anxiety_starts: string | null;
+  /** Comma-joined TravelImpact values; null when unanswered. */
+  travel_impact: string | null;
   email: string | null;
   record: SessionRecord;
 }
@@ -128,6 +132,9 @@ export function recordToRow(record: SessionRecord): ResponseRow {
     sections_opened: sectionsOpened,
     alert_tapped: dashboard ? dashboard.alert.tapped : null,
     check_frequency: record.post.checkFrequency,
+    worries_most: record.pre.worriesMost ?? null,
+    anxiety_starts: record.pre.anxietyStarts ?? null,
+    travel_impact: record.post.travelImpact?.length ? record.post.travelImpact.join(",") : null,
     email: record.email || null,
     record,
   };

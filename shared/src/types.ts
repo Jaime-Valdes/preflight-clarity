@@ -35,6 +35,12 @@ export type DashboardPart = "summary" | SectionId;
 export type Timeframe = "lt1w" | "1to4w" | "1to3m" | "3mplus";
 export type FlightsPerYear = "0to1" | "2to3" | "4to6" | "7to12" | "13plus";
 export type CheckFrequency = "never" | "once" | "weekly" | "daily" | "multiple_daily";
+/** "What worries you most about flying?" */
+export type WorryMost = "turbulence" | "takeoff_landing" | "not_in_control" | "something_wrong" | "feeling_trapped" | "other";
+/** "When does the anxiety usually start before a flight?" */
+export type AnxietyStart = "at_booking" | "weeks_before" | "days_before" | "day_of" | "not_before";
+/** "In the past year, has fear of flying changed your travel plans?" `"no"` is exclusive. */
+export type TravelImpact = "no" | "ground_instead" | "paid_more" | "skipped_trip";
 export type ReplaceOption =
   | "medication"
   | "videos"
@@ -57,7 +63,11 @@ export interface PreSurvey extends Ratings {
   routeOrigin: string;
   routeDestination: string;
   timeframe: Timeframe | null;
+  /** Required on the "About your flying" screen (optional before 2026-10-22; null on older records). */
   flightsPerYear: FlightsPerYear | null;
+  /** "About your flying" screen; absent on records from before 2026-10-22. */
+  worriesMost?: WorryMost | null;
+  anxietyStarts?: AnxietyStart | null;
 }
 
 export interface PostSurvey extends Ratings {
@@ -72,6 +82,8 @@ export interface PostSurvey extends Ratings {
   stillScaredOf: string;
   /** Variant A only: "If you could, would you switch to one of the other flights you looked at?" */
   wouldSwitch?: WouldSwitch | null;
+  /** "In the past year, has fear of flying changed your travel plans?" Absent on older records. */
+  travelImpact?: TravelImpact[];
 }
 
 // ── Flight (generated — every value is fake but must look credible) ────────

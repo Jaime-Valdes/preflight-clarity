@@ -55,6 +55,9 @@ import type {
   Variant,
   VariantSource,
   WouldSwitch,
+  WorryMost,
+  AnxietyStart,
+  TravelImpact,
 } from "./types";
 
 export type ParseResult = { ok: true; record: SessionRecord } | { ok: false; error: string };
@@ -115,6 +118,9 @@ const ADDED_VIA: readonly AddedVia[] = [
   "whatif_route",
 ];
 const WOULD_SWITCH: readonly WouldSwitch[] = ["yes", "no", "not_sure", "didnt_look"];
+const WORRIES: readonly WorryMost[] = ["turbulence", "takeoff_landing", "not_in_control", "something_wrong", "feeling_trapped", "other"];
+const ANXIETY_STARTS: readonly AnxietyStart[] = ["at_booking", "weeks_before", "days_before", "day_of", "not_before"];
+const TRAVEL_IMPACTS: readonly TravelImpact[] = ["no", "ground_instead", "paid_more", "skipped_trip"];
 
 // ── Primitives ──────────────────────────────────────────────────────────────
 
@@ -240,6 +246,9 @@ function parsePre(value: unknown): PreSurvey {
     routeDestination: text(value.routeDestination, MAX_SHORT_CHARS),
     timeframe: enumValue(value.timeframe, TIMEFRAMES) ?? null,
     flightsPerYear: enumValue(value.flightsPerYear, FLIGHTS_PER_YEAR) ?? null,
+    // "About your flying" screen (2026-10-22); absent on older records.
+    worriesMost: enumValue(value.worriesMost, WORRIES) ?? null,
+    anxietyStarts: enumValue(value.anxietyStarts, ANXIETY_STARTS) ?? null,
   };
 }
 
@@ -262,7 +271,14 @@ function parsePost(value: unknown): PostSurvey {
     stillScaredOf: text(value.stillScaredOf, MAX_TEXT_CHARS),
     // Added with free exploration; absent on older records.
     wouldSwitch: enumValue(value.wouldSwitch, WOULD_SWITCH) ?? null,
+    // "No" is exclusive: it wins over anything sent beside it (2026-10-22; absent on older records).
+    travelImpact: travelImpacts(value.travelImpact),
   };
+}
+
+function travelImpacts(value: unknown): TravelImpact[] {
+  const picked = knownValues(value, (item) => enumValue(item, TRAVEL_IMPACTS));
+  return picked.includes("no") ? ["no"] : picked;
 }
 
 function parseFlightInput(value: unknown): FlightInput | null {

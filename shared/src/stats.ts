@@ -23,6 +23,9 @@ import type {
   Timeframe,
   Variant,
   WouldSwitch,
+  WorryMost,
+  AnxietyStart,
+  TravelImpact,
 } from "./types";
 
 // ── Vocabulary ──────────────────────────────────────────────────────────────
@@ -107,6 +110,36 @@ export const FLIGHTS_PER_YEAR_LABELS: Record<FlightsPerYear, string> = {
   "4to6": "4–6 flights a year",
   "7to12": "7–12 flights a year",
   "13plus": "13+ flights a year",
+};
+
+export const WORRIES: readonly WorryMost[] = ["turbulence", "takeoff_landing", "not_in_control", "something_wrong", "feeling_trapped", "other"];
+
+export const WORRY_LABELS: Record<WorryMost, string> = {
+  turbulence: "Turbulence",
+  takeoff_landing: "Takeoff/landing",
+  not_in_control: "Not being in control",
+  something_wrong: "Something going wrong",
+  feeling_trapped: "Feeling trapped",
+  other: "Other",
+};
+
+export const ANXIETY_STARTS: readonly AnxietyStart[] = ["at_booking", "weeks_before", "days_before", "day_of", "not_before"];
+
+export const ANXIETY_START_LABELS: Record<AnxietyStart, string> = {
+  at_booking: "As soon as I book",
+  weeks_before: "Weeks before",
+  days_before: "A few days before",
+  day_of: "Day of",
+  not_before: "I don't usually feel it before",
+};
+
+export const TRAVEL_IMPACTS: readonly TravelImpact[] = ["no", "ground_instead", "paid_more", "skipped_trip"];
+
+export const TRAVEL_IMPACT_LABELS: Record<TravelImpact, string> = {
+  no: "No",
+  ground_instead: "Took a train/bus/car instead",
+  paid_more: "Paid more for a different flight",
+  skipped_trip: "Skipped a trip",
 };
 
 export const WOULD_SWITCH_OPTIONS: readonly WouldSwitch[] = ["yes", "no", "not_sure", "didnt_look"];
@@ -233,6 +266,42 @@ export function ratingChange(record: SessionRecord, measure: Measure): number | 
 
 export function hasPairedRatings(record: SessionRecord, measure: Measure): boolean {
   return ratingChange(record, measure) !== null;
+}
+
+/** Mean rating change for the sessions that gave one answer, overall and per variant. */
+export interface ChangeByAnswer<T extends string> {
+  answer: T;
+  label: string;
+  all: { n: number; meanChange: number | null };
+  A: { n: number; meanChange: number | null };
+  B: { n: number; meanChange: number | null };
+}
+
+/**
+ * Average pre→post change of `measure` broken down by one answer (e.g. "worries
+ * most"). Only sessions with both ratings and that answer count; every option is
+ * listed, with n = 0 where nobody picked it. Small cells say nothing on their own.
+ */
+export function changeByAnswer<T extends string>(
+  records: readonly SessionRecord[],
+  measure: Measure,
+  options: readonly T[],
+  labels: Record<T, string>,
+  answerOf: (record: SessionRecord) => T | null | undefined,
+): ChangeByAnswer<T>[] {
+  return options.map((answer) => {
+    const cell = (variant?: Variant) => {
+      const values: number[] = [];
+      for (const r of records) {
+        if (variant && r.variant !== variant) continue;
+        if (answerOf(r) !== answer) continue;
+        const change = ratingChange(r, measure);
+        if (change !== null) values.push(change);
+      }
+      return { n: values.length, meanChange: mean(values) };
+    };
+    return { answer, label: labels[answer], all: cell(), A: cell("A"), B: cell("B") };
+  });
 }
 
 /** Sections the participant's dashboard actually displayed (falls back to the variant's list). */

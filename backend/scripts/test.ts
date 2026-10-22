@@ -190,6 +190,8 @@ function fixture(): SessionRecord {
       routeDestination: "LAX",
       timeframe: "1to4w",
       flightsPerYear: "2to3",
+      worriesMost: "turbulence",
+      anxietyStarts: "days_before",
     },
     flightInput: { origin: "JFK", destination: "LAX", date: "2026-11-26" },
     flight: {
@@ -229,6 +231,7 @@ function fixture(): SessionRecord {
       wouldReplace: ["turbulence_apps", "choosing_flights"],
       wouldReplaceText: "Maybe the forecast app I use now.",
       stillScaredOf: "Long stretches of bumps over the ocean, and the feeling of not knowing when they end.",
+      travelImpact: ["paid_more", "skipped_trip"],
       wouldSwitch: "not_sure",
     },
     email: "participant@example.com",
@@ -389,6 +392,15 @@ group("parseSessionRecord", () => {
     assert.equal(expectOk(loose((r) => (r.email = null))).email, "");
     assert.equal(expectOk(loose((r) => delete r.email)).email, "");
     assert.equal(expectOk(loose((r) => (r.email = "a@b.c"))).email, "");
+  });
+
+  test("About-your-flying answers and travel impact are validated; 'no' is exclusive", () => {
+    assert.equal(expectOk(loose((r) => (r.pre.worriesMost = "turbulence"))).pre.worriesMost, "turbulence");
+    assert.equal(expectOk(loose((r) => (r.pre.worriesMost = "spiders"))).pre.worriesMost, null);
+    assert.equal(expectOk(loose((r) => delete r.pre.anxietyStarts)).pre.anxietyStarts, null);
+    assert.deepEqual(expectOk(loose((r) => (r.post.travelImpact = ["skipped_trip", "no", "paid_more"]))).post.travelImpact, ["no"]);
+    assert.deepEqual(expectOk(loose((r) => (r.post.travelImpact = ["paid_more", "bogus", "paid_more"]))).post.travelImpact, ["paid_more"]);
+    assert.deepEqual(expectOk(loose((r) => delete r.post.travelImpact)).post.travelImpact, []);
   });
 
   test("first name is optional, one line, trimmed and capped", () => {
@@ -571,7 +583,8 @@ group("parseSessionRecord", () => {
     assert.deepEqual(expectOk(minimal), {
       ...minimal,
       participant: "",
-      post: { ...minimal.post, wouldSwitch: null },
+      pre: { ...minimal.pre, worriesMost: null, anxietyStarts: null },
+      post: { ...minimal.post, wouldSwitch: null, travelImpact: [] },
       waitlist: false,
       interview: false,
     });
@@ -741,6 +754,9 @@ group("supabase row mapping", () => {
     assert.equal(row.sections_opened, 6);
     assert.equal(row.alert_tapped, true);
     assert.equal(row.check_frequency, "weekly");
+    assert.equal(row.worries_most, "turbulence");
+    assert.equal(row.anxiety_starts, "days_before");
+    assert.equal(row.travel_impact, "paid_more,skipped_trip");
     assert.equal(row.email, "participant@example.com");
     assert.equal(row.record, record);
     assert.equal("updated_at" in row, false, "updated_at is the database's job");
@@ -755,6 +771,7 @@ group("supabase row mapping", () => {
     assert.equal(row.sections_opened, null);
     assert.equal(row.alert_tapped, null);
     assert.equal(row.email, null);
+    assert.equal(recordToRow({ ...fixture(), post: { ...fixture().post, travelImpact: [] } }).travel_impact, null);
   });
 
   test("rowToRecord reads the jsonb column (object or string)", () => {

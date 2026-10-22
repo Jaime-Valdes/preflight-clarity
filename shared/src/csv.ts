@@ -69,6 +69,8 @@ export const CSV_COLUMNS: readonly string[] = [
   "pre_route_destination",
   "pre_timeframe",
   "pre_flights_per_year",
+  "pre_worries_most",
+  "pre_anxiety_starts",
   // post ratings + deltas
   "post_anxiety",
   "post_control",
@@ -125,6 +127,7 @@ export const CSV_COLUMNS: readonly string[] = [
   "would_replace",
   "would_replace_text",
   "still_scared_of",
+  "travel_impact",
   "first_name",
   "email",
   // debrief sign-up (blank when the record predates it)
@@ -173,6 +176,8 @@ export function recordToRow(record: SessionRecord): Cell[] {
     pre.routeDestination,
     pre.timeframe,
     pre.flightsPerYear,
+    pre.worriesMost ?? null,
+    pre.anxietyStarts ?? null,
 
     post.anxiety,
     post.control,
@@ -229,6 +234,7 @@ export function recordToRow(record: SessionRecord): Cell[] {
     joinList(post.wouldReplace),
     post.wouldReplaceText,
     post.stillScaredOf,
+    joinList(post.travelImpact ?? []),
     record.firstName ?? "",
     record.email,
     record.waitlist ?? null,
