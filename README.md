@@ -30,21 +30,25 @@ One link, one phone, about 5–10 minutes:
    It also says the briefing is an example flight on a route they choose, shown as it would look the day
    before departure.
 2. **Pre-survey** — anxiety, control and predictability about their next flight, each 0–10. Sliders start
-   unset. Optional: route, how far away the flight is, how often they fly.
-3. **Flight setup** — origin, destination and date. Airports come from the app's list (pick a suggestion;
+   unset.
+3. **About your flying** — how many flights they take a year, what worries them most about flying and
+   when the anxiety usually starts; one tap each, all three required. Then, optional: the route and how
+   far away that flight is.
+4. **Flight setup** — origin, destination and date. Airports come from the app's list (pick a suggestion;
    for a small airport, the nearest major one) and the date can be up to 330 days ahead, about as far as
    airlines publish schedules. The app generates a believable fake flight from them (airline, flight
    number, aircraft, forecast…), labelled "An example flight on your route". Deterministic: same inputs,
    same flight.
-4. **Dashboard** — the main part, shown as the briefing would look **the day before the flight** (a quiet
+5. **Dashboard** — the main part, shown as the briefing would look **the day before the flight** (a quiet
    banner says so; the countdown stays true). Only information a real product could have by then appears
    (docs/FEASIBILITY.md): no pilot names, hours or ratings, no maintenance records. Header, smoothness
    score and, in variant A, nine collapsible sections (turbulence by phase, who flies your plane, aircraft,
    airline, weather, best seat, sounds and sensations, smoother options, forecast alerts). Time on page and
    every section open/close are recorded.
-5. **Post-survey** — the same three sliders, which parts helped or worried them, how often they'd check
-   it, what it would replace, what they'd still be scared of.
-6. **Debrief** — reminder that the briefing was a day-before preview for an example flight and nothing was
+6. **Post-survey** — the same three sliders, which parts helped or worried them, how often they'd check
+   it, what it would replace, what they'd still be scared of, and whether fear of flying changed their
+   travel plans in the past year.
+7. **Debrief** — reminder that the briefing was a day-before preview for an example flight and nothing was
    a real forecast; then the one product sign-up ("Want this for your real flights?" → **Notify me when
    it's live**): optional first name, email, and an unticked checkbox for a 15-minute follow-up chat. It is
    identical in A and B and only appears here, after every answer is saved, so the sign-up rate by variant

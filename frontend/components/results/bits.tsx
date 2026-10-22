@@ -233,6 +233,15 @@ export function Notice({
   );
 }
 
+/**
+ * Text colour for an anxiety change (post − pre): teal when it dropped, sand
+ * when it rose, neutral when it is null or rounds to 0.0 at one decimal.
+ */
+export function deltaClass(change: number | null): string {
+  if (change === null || Math.abs(change) < 0.05) return "text-ink-500";
+  return change < 0 ? "text-calm-700" : "text-sand-700";
+}
+
 /** Compact "Label · value" pair for detail panels. */
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

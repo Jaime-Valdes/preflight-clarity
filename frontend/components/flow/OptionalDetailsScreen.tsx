@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import type { FlightsPerYear, PreSurvey, Timeframe } from "@preflight/shared/types";
+import type { PreSurvey, Timeframe } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
@@ -9,19 +9,14 @@ import { AirportField } from "./AirportField";
 import { ChoiceGroup, type ChoiceOption } from "./ChoiceGroup";
 import { fadeUp, StepHeader } from "./StepHeader";
 
+// The flights-per-year question moved to the "About your flying" screen; its options stay importable from here.
+export { FLIGHTS_PER_YEAR_OPTIONS } from "./PreFlyingScreen";
+
 export const TIMEFRAME_OPTIONS: readonly ChoiceOption<Timeframe>[] = [
   { value: "lt1w", label: "Less than a week" },
   { value: "1to4w", label: "1–4 weeks" },
   { value: "1to3m", label: "1–3 months" },
   { value: "3mplus", label: "3+ months" },
-];
-
-export const FLIGHTS_PER_YEAR_OPTIONS: readonly ChoiceOption<FlightsPerYear>[] = [
-  { value: "0to1", label: "Once or less" },
-  { value: "2to3", label: "2–3" },
-  { value: "4to6", label: "4–6" },
-  { value: "7to12", label: "7–12" },
-  { value: "13plus", label: "13+" },
 ];
 
 interface OptionalDetailsScreenProps {
@@ -31,12 +26,12 @@ interface OptionalDetailsScreenProps {
 }
 
 /**
- * Route, how far away the flight is, flights per year — every field optional.
+ * Route and how far away the flight is — every field optional.
  * The route here is a survey answer, not flight data, so free text is kept;
  * the flight setup only prefills from it when it is a catalogue airport.
  */
 export function OptionalDetailsScreen({ pre, onChange, onContinue }: OptionalDetailsScreenProps) {
-  const touched = !!(pre.routeOrigin || pre.routeDestination || pre.timeframe || pre.flightsPerYear);
+  const touched = !!(pre.routeOrigin || pre.routeDestination || pre.timeframe);
   return (
     <Screen
       footer={
@@ -82,16 +77,6 @@ export function OptionalDetailsScreen({ pre, onChange, onContinue }: OptionalDet
             options={TIMEFRAME_OPTIONS}
             value={pre.timeframe}
             onChange={(v) => onChange({ timeframe: v })}
-            columns={2}
-          />
-        </Card>
-        <Card className="animate-fade-up" style={fadeUp(120)}>
-          <ChoiceGroup
-            kind="single"
-            label="How many flights do you take in a typical year?"
-            options={FLIGHTS_PER_YEAR_OPTIONS}
-            value={pre.flightsPerYear}
-            onChange={(v) => onChange({ flightsPerYear: v })}
             columns={2}
           />
         </Card>

@@ -2,7 +2,8 @@
 
 import { Check } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
-import type { CheckFrequency, PostSurvey, ReplaceOption, Variant, WouldSwitch } from "@preflight/shared/types";
+import { TRAVEL_IMPACT_LABELS, TRAVEL_IMPACTS } from "@preflight/shared/stats";
+import type { CheckFrequency, PostSurvey, ReplaceOption, TravelImpact, Variant, WouldSwitch } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
@@ -26,6 +27,12 @@ export const REPLACE_OPTIONS: readonly ChoiceOption<ReplaceOption>[] = [
   { value: "nothing", label: "Nothing" },
 ];
 
+/** Same labels as the results breakdown (shared/src/stats.ts); "No" clears the others. */
+export const TRAVEL_IMPACT_OPTIONS: readonly ChoiceOption<TravelImpact>[] = TRAVEL_IMPACTS.map((value) => ({
+  value,
+  label: TRAVEL_IMPACT_LABELS[value],
+}));
+
 export const WOULD_SWITCH_OPTIONS: readonly ChoiceOption<WouldSwitch>[] = [
   { value: "yes", label: "Yes" },
   { value: "no", label: "No" },
@@ -40,7 +47,7 @@ interface PostHabitsScreenProps {
   onFinish: () => void;
 }
 
-/** How they'd use it, what it might replace, what they'd still be scared of. */
+/** How they'd use it, what it might replace, what they'd still be scared of, whether the fear changed their plans. */
 export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabitsScreenProps) {
   const replaceTextId = useId();
   const scaredId = useId();
@@ -139,8 +146,19 @@ export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabi
             rows={3}
           />
         </Card>
+        <Card className="animate-fade-up" style={fadeUp(180)}>
+          <ChoiceGroup
+            kind="multi"
+            label="In the past year, has fear of flying changed your travel plans?"
+            hint="Optional. Choose as many as apply."
+            options={TRAVEL_IMPACT_OPTIONS}
+            values={post.travelImpact ?? []}
+            exclusive="no"
+            onChange={(values) => onChange({ travelImpact: values })}
+          />
+        </Card>
         {variant === "A" ? (
-          <Card className="animate-fade-up" style={fadeUp(180)}>
+          <Card className="animate-fade-up" style={fadeUp(240)}>
             <ChoiceGroup
               kind="single"
               labelRef={switchLabelRef}

@@ -4,6 +4,7 @@ import { ChevronDown, Monitor, Smartphone, Tablet, type LucideIcon } from "lucid
 import { Fragment, useState } from "react";
 import { PART_LABELS, SECTIONS } from "@preflight/shared/sections";
 import {
+  ANXIETY_START_LABELS,
   CHECK_FREQUENCY_LABELS,
   DEVICE_LABELS,
   FLIGHTS_PER_YEAR_LABELS,
@@ -11,7 +12,9 @@ import {
   REPLACE_LABELS,
   STEP_LABELS,
   TIMEFRAME_LABELS,
+  TRAVEL_IMPACT_LABELS,
   FEEDBACK_PART_LABELS,
+  WORRY_LABELS,
   WOULD_SWITCH_LABELS,
   flightsExplored,
   formatMs,
@@ -25,7 +28,7 @@ import {
 import type { DeviceType, SessionRecord } from "@preflight/shared/types";
 import { Pill } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
-import { Block, EmptyNote, Field, formatDateTime } from "./bits";
+import { Block, EmptyNote, Field, deltaClass, formatDateTime } from "./bits";
 
 const PAGE = 30;
 
@@ -52,11 +55,6 @@ function prePost(record: SessionRecord, measure: (typeof MEASURES)[number]): str
   const pre = record.pre[measure];
   const post = record.post[measure];
   return `${pre ?? "—"} → ${post ?? "—"}`;
-}
-
-function deltaClass(change: number | null): string {
-  if (change === null || change === 0) return "text-ink-500";
-  return change < 0 ? "text-calm-700" : "text-sand-700";
 }
 
 function alertCell(record: SessionRecord): string {
@@ -121,6 +119,8 @@ function Details({ record }: { record: SessionRecord }) {
             {pre.flightsPerYear ? FLIGHTS_PER_YEAR_LABELS[pre.flightsPerYear] : "flights per year not given"}
           </span>
         </Field>
+        <Field label="Worries most">{pre.worriesMost ? (WORRY_LABELS[pre.worriesMost] ?? pre.worriesMost) : "—"}</Field>
+        <Field label="Anxiety starts">{pre.anxietyStarts ? (ANXIETY_START_LABELS[pre.anxietyStarts] ?? pre.anxietyStarts) : "—"}</Field>
         <Field label="Device">
           {device ? `${DEVICE_LABELS[device.type]} · ${device.viewportW}×${device.viewportH}${device.touch ? " · touch" : ""}` : "—"}
           {device?.userAgent ? <span className="line-clamp-1 break-all text-xs text-ink-400" title={device.userAgent}>{device.userAgent}</span> : null}
@@ -137,6 +137,11 @@ function Details({ record }: { record: SessionRecord }) {
           {post.wouldReplaceText ? <span className="block text-xs text-ink-500">“{post.wouldReplaceText}”</span> : null}
         </Field>
         <Field label="Still scared of">{post.stillScaredOf ? `“${post.stillScaredOf}”` : "—"}</Field>
+        <Field label="Travel plans">
+          {Array.isArray(post.travelImpact) && post.travelImpact.length > 0
+            ? post.travelImpact.map((o) => TRAVEL_IMPACT_LABELS[o] ?? o).join(", ")
+            : "—"}
+        </Field>
         {record.variant === "A" ? (
           <Field label="Would switch">{post.wouldSwitch ? WOULD_SWITCH_LABELS[post.wouldSwitch] ?? post.wouldSwitch : "—"}</Field>
         ) : null}

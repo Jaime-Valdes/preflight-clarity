@@ -36,6 +36,7 @@ import { FlightSetupScreen, catalogueCode, defaultOffsetDays } from "./FlightSet
 import { OptionalDetailsScreen } from "./OptionalDetailsScreen";
 import { PostHabitsScreen } from "./PostHabitsScreen";
 import { PostPartsScreen } from "./PostPartsScreen";
+import { PreFlyingScreen } from "./PreFlyingScreen";
 import { PreparingFlight } from "./PreparingFlight";
 import { POST_QUESTIONS, PRE_QUESTIONS, RatingsScreen } from "./RatingsScreen";
 import { Wordmark } from "./StepHeader";
@@ -44,8 +45,8 @@ import { WelcomeScreen } from "./WelcomeScreen";
 /*
  * The participant flow: one client-side state machine.
  *
- *   welcome → pre-survey (ratings → optional details) → flight setup →
- *   preparing → dashboard → post-survey (ratings → parts → habits) → debrief
+ *   welcome → pre-survey (ratings → about your flying → optional details) →
+ *   flight setup → preparing → dashboard → post-survey (ratings → parts → habits) → debrief
  *
  * State lives in `FlowState` (lib/session.ts), is persisted to sessionStorage
  * after every change (so a reload resumes), and is saved to the backend at
@@ -385,6 +386,18 @@ function StudyFlowClient() {
           onChange={(patch) => commit({ type: "pre", patch })}
           onContinue={() => {
             commit({ type: "preDone" }, { save: true });
+            window.scrollTo({ top: 0 });
+          }}
+        />
+      );
+
+    case "preFlying":
+      return (
+        <PreFlyingScreen
+          pre={state.pre}
+          onChange={(patch) => commit({ type: "pre", patch })}
+          onContinue={() => {
+            commit({ type: "preFlyingDone" }, { save: true });
             window.scrollTo({ top: 0 });
           }}
         />

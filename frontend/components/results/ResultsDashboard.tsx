@@ -19,6 +19,7 @@ import {
 import type { SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
 import { useHydrated } from "@/lib/hooks";
 import { ChangeBlock } from "./ChangeBlock";
+import { ChangeByAnswerBlock } from "./ChangeByAnswerBlock";
 import { DistributionsBlock } from "./DistributionsBlock";
 import { EngagementBlock } from "./EngagementBlock";
 import { ExplorationBlock } from "./ExplorationBlock";
@@ -130,9 +131,15 @@ export function ResultsDashboard({ records, signups, signupsNote, storage, banne
 
       <KpiRow counts={counts} filtered={filtered} />
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {/*
+        Dense flow so the full-width breakdown can follow "Anxiety change" in
+        reading order while "Which parts" still fills the half-column beside it
+        on desktop (no empty cell).
+      */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-flow-row-dense lg:grid-cols-2">
         <PrePostBlock reports={measures} className="lg:col-span-2" />
         <ChangeBlock records={filtered} />
+        <ChangeByAnswerBlock records={filtered} className="lg:col-span-2" />
         <PartsBlock feedback={feedback} />
         <EngagementBlock records={filtered} />
         <DistributionsBlock records={filtered} />

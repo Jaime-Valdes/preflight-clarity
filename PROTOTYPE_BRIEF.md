@@ -33,7 +33,8 @@ The dashboard should include both, so we can see which one participants respond 
    - "Think about your next upcoming flight (or imagine one you'd need to take). Right now, how anxious do you feel about it?" Slider from 0 to 10.
    - "How in control do you feel about that flight?" Slider from 0 to 10.
    - "How predictable does the flight feel to you?" Slider from 0 to 10.
-   - Optional: route (origin → destination), roughly how far away the flight is (<1 week / 1–4 weeks / 1–3 months / 3+ months), and how often they fly per year.
+   - Required, on a second screen ("About your flying"): how often they fly per year, what worries them most about flying, and when the anxiety usually starts.
+   - Optional: route (origin → destination) and roughly how far away the flight is (<1 week / 1–4 weeks / 1–3 months / 3+ months).
 3. **Flight setup.** The participant picks or types an origin, destination and date. The app generates a believable fake flight (airline, flight number, aircraft) from these inputs. Make it deterministic: the same inputs always give the same data.
 4. **The dashboard** (the main part, see below). The participant explores it freely. Record time spent and which sections they open.
 5. **Post-survey:**

@@ -34,6 +34,7 @@ export const FLOW_STORAGE_KEY = "pfc.flow.v1";
 export type FlowScreen =
   | "welcome"
   | "pre"
+  | "preFlying"
   | "preDetails"
   | "setup"
   | "preparing"
@@ -46,6 +47,7 @@ export type FlowScreen =
 const SCREEN_ORDER: readonly FlowScreen[] = [
   "welcome",
   "pre",
+  "preFlying",
   "preDetails",
   "setup",
   "preparing",
@@ -61,7 +63,7 @@ export function screenIndex(screen: FlowScreen): number {
 }
 
 /** Screens the browser Back button may move between (answers are kept). */
-const BACKABLE: ReadonlySet<FlowScreen> = new Set(["welcome", "pre", "preDetails", "setup", "preparing"]);
+const BACKABLE: ReadonlySet<FlowScreen> = new Set(["welcome", "pre", "preFlying", "preDetails", "setup", "preparing"]);
 
 /** Whether Back/Forward may move from `from` to `to`. Later screens stay put. */
 export function canTraverse(from: FlowScreen, to: FlowScreen): boolean {
@@ -78,6 +80,7 @@ export function stepForScreen(screen: FlowScreen): Step {
     case "welcome":
       return "welcome";
     case "pre":
+    case "preFlying":
     case "preDetails":
       return "pre";
     case "setup":
@@ -100,6 +103,7 @@ export const PROGRESS_STAGES = ["Before", "Your flight", "Briefing", "After"] as
 export function stageForScreen(screen: FlowScreen): number | null {
   switch (screen) {
     case "pre":
+    case "preFlying":
     case "preDetails":
       return 1;
     case "setup":
@@ -166,6 +170,8 @@ export function emptyPre(): PreSurvey {
     routeDestination: "",
     timeframe: null,
     flightsPerYear: null,
+    worriesMost: null,
+    anxietyStarts: null,
   };
 }
 
@@ -182,6 +188,7 @@ export function emptyPost(): PostSurvey {
     wouldReplaceText: "",
     stillScaredOf: "",
     wouldSwitch: null,
+    travelImpact: [],
   };
 }
 
@@ -211,6 +218,11 @@ export function ratingsComplete(r: Ratings): boolean {
   return r.anxiety !== null && r.control !== null && r.predictability !== null;
 }
 
+/** The three required picks on the "About your flying" screen. */
+export function flyingComplete(pre: PreSurvey): boolean {
+  return pre.flightsPerYear !== null && pre.worriesMost != null && pre.anxietyStarts != null;
+}
+
 // ── Actions ─────────────────────────────────────────────────────────────────
 
 export type FlowAction =
@@ -218,6 +230,7 @@ export type FlowAction =
   | { type: "goto"; screen: FlowScreen }
   | { type: "pre"; patch: Partial<PreSurvey> }
   | { type: "preDone" }
+  | { type: "preFlyingDone" }
   | { type: "preDetailsDone" }
   | { type: "setupDraft"; draft: FlightInput }
   | { type: "setupDone"; input: FlightInput }
@@ -242,7 +255,9 @@ export function reduceFlow(state: FlowState, action: FlowAction): FlowState {
     case "pre":
       return { ...state, pre: { ...state.pre, ...action.patch } };
     case "preDone":
-      return ratingsComplete(state.pre) ? { ...state, screen: "preDetails" } : state;
+      return ratingsComplete(state.pre) ? { ...state, screen: "preFlying" } : state;
+    case "preFlyingDone":
+      return flyingComplete(state.pre) ? { ...state, screen: "preDetails" } : state;
     case "preDetailsDone":
       return { ...state, screen: "setup" };
     case "setupDraft":
@@ -313,12 +328,17 @@ export function buildRecord(state: FlowState): SessionRecord | null {
     isTest: s.isTest,
     participant: s.participant,
     device: s.device,
-    pre: state.pre,
+    // The "About your flying" picks are null until answered (and on flow states saved before they existed).
+    pre: { ...state.pre, worriesMost: state.pre.worriesMost ?? null, anxietyStarts: state.pre.anxietyStarts ?? null },
     flightInput: state.flightInput,
     flight: state.flight,
     dashboard: state.dashboard,
-    // The switch question is variant A only; B always stores null.
-    post: { ...state.post, wouldSwitch: s.variant === "A" ? normalizeWouldSwitch(state.post.wouldSwitch) : null },
+    post: {
+      ...state.post,
+      // The switch question is variant A only; B always stores null.
+      wouldSwitch: s.variant === "A" ? normalizeWouldSwitch(state.post.wouldSwitch) : null,
+      travelImpact: state.post.travelImpact ?? [],
+    },
     email: state.email,
     firstName: state.firstName ?? "",
     // Flow states saved before the sign-up existed have neither flag.
@@ -365,6 +385,8 @@ export function loadFlowState(): FlowState | null {
     if (state.completedAt) state.screen = "debrief";
     else if (state.screen === "debrief") state.screen = "postHabits";
     if ((state.screen === "preparing" || state.screen === "dashboard") && !state.flightInput) state.screen = "setup";
+    // Saved before the required "About your flying" screen existed and still in stage 1: resume there.
+    if (state.screen === "preDetails" && !flyingComplete(state.pre)) state.screen = "preFlying";
     return state;
   } catch {
     return null;

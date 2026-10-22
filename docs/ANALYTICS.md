@@ -20,7 +20,7 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 
 | Event | When | Properties |
 | --- | --- | --- |
-| `study_step` | each study screen reached (incl. on reload) | `step` (welcome, pre, preDetails, setup, preparing, dashboard, post, postParts, postHabits, debrief), `step_index` |
+| `study_step` | each study screen reached (incl. on reload) | `step` (welcome, pre, preFlying, preDetails, setup, preparing, dashboard, post, postParts, postHabits, debrief), `step_index` |
 | `c_search` | a version C search is submitted | `origin`, `destination`, `date` |
 | `c_results_view` | sort or filters change on results | `sort`, `times`, `airlines`, `wide`, `min_score` |
 | `c_flight_view` | a flight page is shown | `key`, `origin`, `destination`, `days_until`, `has_scores` |
