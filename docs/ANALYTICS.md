@@ -24,7 +24,7 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 | `c_search` | a version C search is submitted | `origin`, `destination`, `date` |
 | `c_results_view` | sort or filters change on results | `sort`, `dep_from`, `dep_to` (departure window, HHMM), `max_price`, `airlines`, `wide`, `min_score` |
 | `c_score_sheet` | the "How the smoothness score works" sheet is opened from a result card | `from`, `key`, `score` |
-| `c_flight_view` | a flight page is shown | `key`, `origin`, `destination`, `days_until`, `has_scores` |
+| `c_flight_view` | a flight page is shown | `key`, `origin`, `destination`, `days_until`, `has_scores`, `smoothness_score` (null until the forecast is out), `price` (the illustrative fare at that lead time), `is_cheapest` / `is_smoothest` (among that day's results; `is_smoothest` null without scores), `position` (1-based place in the results list it was opened from via `?pos=`; null from other-flights, compare or a shared link) |
 | `c_compare_toggle` | a flight is added to / removed from compare | `from` (results, flight, other_flights), `added`, `key`, `has_scores` |
 | `c_compare_view` | the compare page is shown | `flights`, `from_link` |
 | `dashboard_section_open` | a participant expands a dashboard section (not a section that only comes back into view on a flight switch or a reload) | `section` (turbulence, aircraft, seat, airline, pilot, weather, sounds, compare, alerts), `variant` |
@@ -38,6 +38,10 @@ debrief screen; a participant who already signed up on the briefing sees "You're
 
 Context on every study event once a session exists: `variant` (A/B), `is_test` (`?test=1`),
 `participant` (`?p=` label or null). Filter `is_test = false` for real participants.
+Every event sent from a /c page (custom events, pageviews, autocapture) carries `variant` "C" and
+`is_test` (the tab was opened with `?test=1`). These are stamped by URL in `before_send`, not
+registered as super properties, so the study's and version C's context never bleed into each other
+when one browser visits both.
 
 ## Funnels to build in PostHog
 

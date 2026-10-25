@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
-import type { FlightOption } from "@preflight/shared/search";
+import { fareAt, type FlightOption } from "@preflight/shared/search";
 import type { SectionContext } from "@preflight/shared/types";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
@@ -25,6 +25,8 @@ interface FlightDetailProps {
   options: readonly FlightOption[];
   /** "YYYY-MM-DD", already known to be on or before the flight's date. */
   today: string;
+  /** 1-based place in the results list this flight was opened from (analytics only); null when opened another way. */
+  position: number | null;
 }
 
 const OTHERS_ID = "other-flights";
@@ -39,7 +41,7 @@ function noop(): void {}
  * sticky column on the right. Mount it with a key per flight so the sections'
  * state starts fresh for each one.
  */
-export function FlightDetail({ day, option, options, today }: FlightDetailProps) {
+export function FlightDetail({ day, option, options, today, position }: FlightDetailProps) {
   const { flight } = option;
   // The flight's own airports: a search from LGA can list JFK's long-haul flights, and one flight is one compare item.
   const item: CompareItem = { origin: flight.origin.code, destination: flight.destination.code, date: day.date, key: option.key };
@@ -52,9 +54,26 @@ export function FlightDetail({ day, option, options, today }: FlightDetailProps)
   );
   const availability = availabilityFor(daysUntil);
 
+  // Where this flight stands among the day's results, for analytics: its fare at this lead time and
+  // whether it is the cheapest / smoothest of them (smoothness only once the forecast is out).
+  const price = fareAt(option, daysUntil);
+  const isCheapest = options.every((o) => fareAt(o, daysUntil) >= price);
+  const score = availability.turbulence ? flight.smoothness.score : null;
+  const isSmoothest = score === null ? null : options.every((o) => o.flight.smoothness.score <= score);
   useEffect(() => {
-    track("c_flight_view", { key: option.key, origin: flight.origin.code, destination: flight.destination.code, days_until: daysUntil, has_scores: availability.turbulence });
-  }, [option.key, flight.origin.code, flight.destination.code, daysUntil, availability.turbulence]);
+    track("c_flight_view", {
+      key: option.key,
+      origin: flight.origin.code,
+      destination: flight.destination.code,
+      days_until: daysUntil,
+      has_scores: availability.turbulence,
+      smoothness_score: score,
+      price,
+      is_cheapest: isCheapest,
+      is_smoothest: isSmoothest,
+      position,
+    });
+  }, [option.key, flight.origin.code, flight.destination.code, daysUntil, availability.turbulence, score, price, isCheapest, isSmoothest, position]);
 
   // What the section bodies keep for this flight (the chosen seat…); see useFlightState.
   const [bodyState, setBodyState] = useState<Readonly<Record<string, unknown>>>({});

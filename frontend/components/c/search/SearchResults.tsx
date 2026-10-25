@@ -366,7 +366,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
               />
             ) : (
               <ol aria-label={`Flights, ${SORT_ORDER_TEXT[view.sort]}`} className="flex flex-col gap-3">
-                {shown.map((option) => {
+                {shown.map((option, index) => {
                   // The flight's own airports: a long flight "from LGA" leaves from JFK, and is one flight either way.
                   const item: CompareItem = {
                     origin: option.flight.origin.code,
@@ -388,6 +388,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                         airframe={avail.airframe}
                         forecastFrom={forecastFrom}
                         forecastLead={forecastLead}
+                        position={index + 1}
                         inCompare={inCompare}
                         compareLocked={compare.isFull && !inCompare}
                         onToggleCompare={(control) => {

@@ -34,6 +34,8 @@ interface ResultCardProps {
   compareLocked: boolean;
   /** Called with the toggle button (so the caller can keep it in view). */
   onToggleCompare: (control: HTMLButtonElement) => void;
+  /** 1-based place in the list, carried to the flight page (`?pos=`) for analytics. */
+  position: number;
   /**
    * The flight's turbulence forecast is out (≤ 2 days before departure): show the score, the mini
    * timeline and the bump summary. Otherwise a calm marker says when they appear.
@@ -77,6 +79,7 @@ export function ResultCard({
   inCompare,
   compareLocked,
   onToggleCompare,
+  position,
   scores,
   airframe,
   forecastFrom,
@@ -282,7 +285,7 @@ export function ResultCard({
             </p>
           ) : null}
           <Link
-            href={flightHref(item, campaign)}
+            href={flightHref(item, { ...campaign, pos: String(position) })}
             className="ml-auto inline-flex h-11 items-center justify-center gap-0.5 rounded-full pl-4 pr-3 text-sm font-semibold text-breeze-700 transition-colors hover:bg-breeze-50 md:ml-0"
           >
             Details

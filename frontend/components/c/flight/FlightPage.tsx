@@ -86,6 +86,12 @@ function nextDay(option: FlightOption, today: string): CompareItem | null {
   }
 }
 
+/** `pos`: the 1-based place in the results list the flight was opened from (analytics only); null when absent or odd. */
+function positionFrom(params: { get(name: string): string | null }): number | null {
+  const n = Number(params.get("pos"));
+  return Number.isInteger(n) && n >= 1 && n <= 500 ? n : null;
+}
+
 /** "New York (JFK)" */
 function airportLabel(code: string): string {
   const airport = getAirport(code);
@@ -164,7 +170,16 @@ export function FlightPage() {
         </WithSignup>
       );
     case "found":
-      return <FlightDetail key={view.id} day={view.day} option={view.option} options={view.options} today={view.today} />;
+      return (
+        <FlightDetail
+          key={view.id}
+          day={view.day}
+          option={view.option}
+          options={view.options}
+          today={view.today}
+          position={positionFrom(params)}
+        />
+      );
     case "departed":
       return <Departed day={view.day} option={view.option} options={view.options} today={view.today} next={view.next} />;
   }
