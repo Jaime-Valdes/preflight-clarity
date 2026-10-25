@@ -2,13 +2,15 @@
 
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { formatShortDate } from "@preflight/shared/dates";
 import { searchHref } from "@/lib/c/model";
 import { useTodayISO } from "@/lib/hooks";
 import { defaultSearchDate, dateHint, type SearchDraft } from "./query";
 import { SearchForm } from "./SearchForm";
+import { campaignParams } from "./view";
 
 /** Demo routes: shuttles, a mountain crossing, an ocean hop and two long-hauls. */
 const POPULAR_ROUTES: ReadonlyArray<readonly [string, string]> = [
@@ -25,15 +27,28 @@ const POPULAR_ROUTES: ReadonlyArray<readonly [string, string]> = [
 /**
  * Home: the search form and popular routes. Both need today's date (the date
  * picker's range, the routes' links), so a placeholder of the same size
- * shows until it is known on the client.
+ * shows until it is known on the client. Campaign tags in the link that
+ * opened the page (utm_*) travel on to the results; the query string is read
+ * inside this component's own Suspense boundary, so the rest of the page
+ * still prerenders.
  */
 export function HomeSearch() {
-  const today = useTodayISO();
-  if (!today) return <HomeSearchSkeleton />;
-  return <HomeSearchReady today={today} />;
+  return (
+    <Suspense fallback={<HomeSearchSkeleton />}>
+      <HomeSearchClient />
+    </Suspense>
+  );
 }
 
-function HomeSearchReady({ today }: { today: string }) {
+function HomeSearchClient() {
+  const params = useSearchParams();
+  const today = useTodayISO();
+  const campaign = useMemo(() => campaignParams(params), [params]);
+  if (!today) return <HomeSearchSkeleton />;
+  return <HomeSearchReady today={today} campaign={campaign} />;
+}
+
+function HomeSearchReady({ today, campaign }: { today: string; campaign: Record<string, string | undefined> }) {
   const [draft, setDraft] = useState<SearchDraft>(() => ({
     origin: "",
     destination: "",
@@ -45,7 +60,7 @@ function HomeSearchReady({ today }: { today: string }) {
   return (
     <>
       <div className="rounded-3xl bg-surface p-4 text-ink-900 shadow-lift ring-1 ring-line/80 sm:p-5">
-        <SearchForm idPrefix="home" today={today} draft={draft} onDraftChange={setDraft} />
+        <SearchForm idPrefix="home" today={today} draft={draft} onDraftChange={setDraft} carry={campaign} />
       </div>
 
       <div className="mt-6">
@@ -60,7 +75,7 @@ function HomeSearchReady({ today }: { today: string }) {
             return (
               <li key={`${from}-${to}`} className="min-w-0">
                 <Link
-                  href={searchHref({ origin: from, destination: to, date })}
+                  href={searchHref({ origin: from, destination: to, date }, campaign)}
                   className="flex h-full min-h-14 flex-col justify-center rounded-2xl bg-white/[0.08] px-3.5 py-2 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/[0.16] focus-visible:outline-white"
                 >
                   <span className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-white">

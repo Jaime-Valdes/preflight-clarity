@@ -1,17 +1,26 @@
 "use client";
 
-import { CalendarClock, Info } from "lucide-react";
-import { useEffect, useId, useRef } from "react";
+import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, Info, Minus } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { availabilityFor } from "@preflight/shared/forecast";
 import type { Flight, ForecastStatus, Intensity, SectionContext } from "@preflight/shared/types";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import { COLORS, INTENSITY, PHASE_LABEL } from "@/lib/theme";
+import { scoreFactors, type FactorEffect } from "./summary/scoreFactors";
 import { TURBULENCE_LEAD, historyBasis, turbulenceForecastFrom, typicalSmoothLine } from "./turbulence/format";
 
 interface SummaryCardProps {
   flight: Flight;
   ctx: SectionContext;
+  /**
+   * The study's "What goes into this score" expander under the score (collapsed by default;
+   * the factors come from scoreFactors). Off by default — version C's flight page shows the
+   * plain card.
+   */
+  showFactors?: boolean;
+  /** Each time the participant opens or closes the factors (the dashboard logs the opens). */
+  onFactorsToggle?: (open: boolean) => void;
   className?: string;
 }
 
@@ -120,11 +129,11 @@ function PendingRing() {
  * TURBULENCE_FORECAST_DAYS, version C only) it shows when the score arrives
  * and the route's typical smoothness for the month instead.
  */
-export function SummaryCard({ flight, ctx, className }: SummaryCardProps) {
+export function SummaryCard({ flight, ctx, showFactors = false, onFactorsToggle, className }: SummaryCardProps) {
   if (!availabilityFor(ctx.daysUntil).turbulence) {
     return <PendingSummary flight={flight} className={className} />;
   }
-  return <ForecastSummary flight={flight} ctx={ctx} className={className} />;
+  return <ForecastSummary flight={flight} ctx={ctx} showFactors={showFactors} onFactorsToggle={onFactorsToggle} className={className} />;
 }
 
 function PendingSummary({ flight, className }: { flight: Flight; className?: string }) {
@@ -155,10 +164,21 @@ function PendingSummary({ flight, className }: { flight: Flight; className?: str
   );
 }
 
-function ForecastSummary({ flight, ctx, className }: SummaryCardProps) {
+function ForecastSummary({ flight, ctx, showFactors, onFactorsToggle, className }: SummaryCardProps) {
   const { smoothness, turbulence } = flight;
   const present = new Set<Intensity>(turbulence.phases.map((p) => p.intensity));
   const legend = (["none", "light", "moderate"] as const).filter((level) => present.has(level));
+  // "What goes into this score" (the study only): the toggle sits in the score row's text block, so it
+  // is in view on a laptop before the sticky column would need scrolling; the list opens under the row.
+  const factorsId = useId();
+  const [factorsOpen, setFactorsOpen] = useState(false);
+  const [factorsOpened, setFactorsOpened] = useState(false);
+  const toggleFactors = () => {
+    const next = !factorsOpen;
+    setFactorsOpen(next);
+    if (next) setFactorsOpened(true);
+    onFactorsToggle?.(next);
+  };
 
   return (
     <Card className={cn("p-5", className)}>
@@ -168,8 +188,24 @@ function ForecastSummary({ flight, ctx, className }: SummaryCardProps) {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Smoothness score</p>
           <p className="mt-1 text-xl font-bold leading-tight text-ink-900">{smoothness.label}</p>
           <p className="mt-1.5 text-xs text-ink-500">Higher is smoother</p>
+          {showFactors ? (
+            <button
+              type="button"
+              aria-expanded={factorsOpen}
+              aria-controls={factorsId}
+              onClick={toggleFactors}
+              className="-mb-2 -ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-lg px-1 text-[13px] font-semibold text-calm-700 transition-colors hover:text-calm-800"
+            >
+              What goes into this score
+              <ChevronDown aria-hidden className={cn("size-4 shrink-0 transition-transform duration-300", factorsOpen && "rotate-180")} />
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {showFactors ? (
+        <ScoreFactorsBody id={factorsId} flight={flight} ctx={ctx} open={factorsOpen} mounted={factorsOpened} />
+      ) : null}
 
       <p className="mt-4 text-[15px] leading-relaxed text-ink-700">{smoothness.summary}</p>
       <p className="mt-2.5 flex items-start gap-1.5 text-xs leading-snug text-ink-500">
@@ -210,5 +246,69 @@ function ForecastSummary({ flight, ctx, className }: SummaryCardProps) {
         </ul>
       </div>
     </Card>
+  );
+}
+
+const EFFECT_UI: Record<FactorEffect, { label: string; className: string; Icon: typeof ArrowUp }> = {
+  up: { label: "Smoother", className: "bg-calm-50 text-calm-700 ring-calm-100", Icon: ArrowUp },
+  down: { label: "Bumpier", className: "bg-sand-50 text-sand-700 ring-sand-100", Icon: ArrowDown },
+  neutral: { label: "Neutral", className: "bg-canvas text-ink-500 ring-line", Icon: Minus },
+};
+
+/**
+ * The "What goes into this score" list: the factors the illustrative model uses, each with a calm
+ * up / down / neutral marker (never red). Collapsed by default (the toggle is in the score row);
+ * the body stays mounted once opened so closing animates like a section.
+ */
+function ScoreFactorsBody({
+  id,
+  flight,
+  ctx,
+  open,
+  mounted,
+}: {
+  id: string;
+  flight: Flight;
+  ctx: SectionContext;
+  open: boolean;
+  /** Opened at least once: the list is rendered from then on. */
+  mounted: boolean;
+}) {
+  const factors = scoreFactors(flight, ctx);
+
+  return (
+    <div id={id} className="grid transition-[grid-template-rows] duration-300 ease-out" style={{ gridTemplateRows: open ? "1fr" : "0fr" }}>
+      <div className="min-h-0 overflow-hidden" inert={!open}>
+        {mounted ? (
+          <div className="mt-3 rounded-2xl bg-canvas/70 ring-1 ring-inset ring-line/80">
+            <ul className="flex flex-col gap-2.5 px-3.5 py-3.5">
+              {factors.map((f) => {
+                const ui = EFFECT_UI[f.effect];
+                return (
+                  <li key={f.id} className="flex items-start gap-2.5">
+                    <span
+                      className={cn(
+                        "mt-px inline-flex h-6 w-[84px] shrink-0 items-center justify-center gap-1 rounded-full text-[11px] font-semibold uppercase tracking-wide ring-1 ring-inset",
+                        ui.className,
+                      )}
+                    >
+                      <ui.Icon aria-hidden className="size-3" strokeWidth={2.25} />
+                      {ui.label}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold leading-snug text-ink-900">{f.title}</span>
+                      <span className="mt-0.5 block text-[13px] leading-snug text-ink-700">{f.detail}</span>
+                    </span>
+                  </li>
+                );
+              })}
+              <li className="pt-0.5 text-[11px] leading-snug text-ink-400">
+                An illustrative model, built for this study. It describes how the number on this card was put together, nothing more.
+              </li>
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

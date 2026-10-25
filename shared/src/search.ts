@@ -35,14 +35,17 @@
  *     the schedule shows the published block), the A/B route history, the weather
  *     by airport, date and hour, and one bump draw per two-hour air block (airBlockOf).
  *
- * Fares never look at the turbulence: distance, carrier tier, weekday, departure
- * hour and a ±10% seeded jitter, whole dollars, at least $39.
+ * Fares never look at the turbulence: distance, carrier tier, the date's demand
+ * (weekday, US holidays), departure hour and a ±10% seeded jitter, on realistic
+ * price points, at least $39. FlightOption.fareUsd is the base fare at a typical
+ * booking lead time; fareAt(option, daysUntil) moves it along the lead-time
+ * curve (last-minute high, a sweet spot 3–8 weeks out) for the UI to show.
  */
 import { buildScheduledFlight, normalizeInput, routeDay, routeNonstopCarriers, type RouteCarrier, type RouteDay } from "./fakeFlight";
 import { isRetiredFlightNumber, makeFlightNumber, type AirlineProfile } from "./airlines";
 import { chooseAircraftModel, getAircraftModel } from "./aircraft";
-import { minutesToTime, parseISODate, weekdayIndex } from "./dates";
-import { clamp, createRng, hashId, type Rng } from "./random";
+import { addDays, daysBetween, minutesToTime, parseISODate, weekdayIndex } from "./dates";
+import { clamp, createRng, hashId, hashString, type Rng } from "./random";
 import type { Flight, FlightInput } from "./types";
 
 export interface FlightOption {
@@ -50,7 +53,10 @@ export interface FlightOption {
   key: string;
   /** Full flight (dashboard shape). `alternatives` is [] — C shows other options from the same results. */
   flight: Flight;
-  /** Illustrative one-way economy fare, whole US dollars. */
+  /**
+   * Illustrative one-way economy fare, whole US dollars: the base fare, at a typical booking lead
+   * time (FARE_REFERENCE_LEAD_DAYS). Show fareAt(option, daysUntil) — the fare at today's lead time.
+   */
   fareUsd: number;
 }
 
@@ -440,36 +446,180 @@ function departuresFor(day: RouteDay): Departure[] {
 }
 
 // ── Fares (illustrative) ────────────────────────────────────────────────────
+//
+// One-way economy fares that look like the ones booking sites show, without ever being real:
+// a base fare from the route (distance, oceanic or international, cheaper regional markets), the
+// carrier's tier, the date's demand (weekday, US holidays) and the departure hour, with a ±10%
+// seeded jitter, on realistic price points. Calibrated to roughly the one-way equivalent of the
+// BTS average domestic itinerary fare (about $390 in 2025, one-way and round-trip tickets mixed)
+// plus the typical nonstop one-way economy ranges booking sites show (LGA–ORD ~$90–180, ATL–MCO
+// ~$75–140, JFK–LAX ~$200–320, JFK–LHR ~$400–650, SFO–NRT ~$520–820, LAX–SYD ~$780–1,150) — a
+// synthesis, not a published per-route figure; check-search.ts prints the medians. Never from the turbulence, the plane
+// or "today": the base fare is cached with the day; fareAt adds the lead time when the UI asks.
 
 /** Sunday … Saturday: Fridays and Sundays a little higher, Tuesdays, Wednesdays and Saturdays a little lower. */
 const WEEKDAY_FARE: readonly number[] = [1.08, 1.03, 0.93, 0.95, 1.02, 1.08, 0.92];
 
+/** Markets where fares run well below the distance curve: low-cost competition, lower incomes. */
 const SOUTH_ASIA = new Set(["IN", "PK", "BD", "LK", "NP"]);
 const SOUTHEAST_ASIA = new Set(["TH", "MY", "ID", "VN", "PH"]);
+const LATIN_AMERICA = new Set(["MX", "BR", "AR", "CL", "CO", "PE", "PA"]);
+const AFRICA = new Set(["ZA", "EG", "ET", "KE", "NG", "GH", "MA"]);
 
-/** Early and late departures a little lower, the morning and evening peaks a little higher (half as much on long-haul). */
+/**
+ * Departures before 06:30 and after 21:00 a little lower, the 07:00–09:30 and 16:00–19:00 peaks
+ * a little higher (half as much on long-haul, where the day has one or two departures).
+ */
 function hourFare(departMin: number, longHaul: boolean): number {
   const h = departMin / 60;
-  const f = h < 7 ? 0.9 : h < 10 ? 1.06 : h < 16 ? 0.97 : h < 20 ? 1.06 : h < 22 ? 0.95 : 0.9;
+  const f = h < 6.5 ? 0.9 : h < 7 ? 0.97 : h < 9.5 ? 1.07 : h < 16 ? 0.98 : h < 19 ? 1.07 : h < 21 ? 0.99 : 0.9;
   return longHaul ? 1 + (f - 1) / 2 : f;
 }
 
+/** Demand around the US holidays, by offset in days from the holiday (Thanksgiving, Memorial Day, Labor Day). */
+const THANKSGIVING_FARE: Readonly<Record<number, number>> = { [-2]: 1.12, [-1]: 1.25, 0: 0.92, 1: 0.95, 2: 1.06, 3: 1.28, 4: 1.12 };
+const LONG_WEEKEND_FARE: Readonly<Record<number, number>> = { [-4]: 1.05, [-3]: 1.1, 0: 1.08 };
+/** Christmas, New Year and the Fourth of July, by "MM-DD": the days around the holiday high, the day itself lower. */
+const FIXED_HOLIDAY_FARE: Readonly<Record<string, number>> = {
+  "12-18": 1.08, "12-19": 1.12, "12-20": 1.18, "12-21": 1.22, "12-22": 1.22, "12-23": 1.18, "12-24": 1.0, "12-25": 0.92,
+  "12-26": 1.12, "12-27": 1.15, "12-28": 1.15, "12-29": 1.15, "12-30": 1.12, "12-31": 0.95, "01-01": 1.08, "01-02": 1.2,
+  "01-03": 1.18, "01-04": 1.1, "01-05": 1.05,
+  "07-01": 1.06, "07-02": 1.1, "07-03": 1.12, "07-04": 0.95, "07-05": 1.08, "07-06": 1.05,
+};
+/** Christmas and New Year travel everywhere, at half the US amplitude. */
+const WINTER_HOLIDAYS = /^12-(1[89]|2\d|3[01])$|^01-0[1-5]$/;
+
+/** The n-th (1-based) given weekday (0 = Sunday) of a month, "YYYY-MM-DD". */
+function nthWeekday(y: number, m: number, weekday: number, n: number): string {
+  const first = `${y}-${pad2(m)}-01`;
+  return addDays(first, ((weekday - weekdayIndex(first) + 7) % 7) + 7 * (n - 1));
+}
+
+/** The last given weekday of a month. */
+function lastWeekday(y: number, m: number, weekday: number): string {
+  const next = m === 12 ? `${y + 1}-01-01` : `${y}-${pad2(m + 1)}-01`;
+  const last = addDays(next, -1);
+  return addDays(last, -((weekdayIndex(last) - weekday + 7) % 7));
+}
+
 /**
- * One-way economy, whole dollars, at least $39. Built from the route, the carrier, the weekday,
- * the departure hour and a ±10% seeded jitter — never from the turbulence, the plane or "today".
+ * How much the date's holidays move fares: on routes touching the US, the days around Thanksgiving,
+ * Christmas and New Year, the Fourth of July, Memorial Day and Labor Day (the holiday itself is a
+ * quiet travel day); elsewhere only the Christmas and New Year period, more gently. 1 on other days.
+ */
+function holidayFare(date: string, touchesUS: boolean): number {
+  const monthDay = date.slice(5);
+  const fixed = FIXED_HOLIDAY_FARE[monthDay] ?? 1;
+  if (!touchesUS) return WINTER_HOLIDAYS.test(monthDay) ? 1 + (fixed - 1) / 2 : 1;
+  const { y } = parseISODate(date);
+  const offset = (holiday: string) => daysBetween(holiday, date);
+  const movable =
+    THANKSGIVING_FARE[offset(nthWeekday(y, 11, 4, 4))] ?? LONG_WEEKEND_FARE[offset(lastWeekday(y, 5, 1))] ?? LONG_WEEKEND_FARE[offset(nthWeekday(y, 9, 1, 1))] ?? 1;
+  return fixed * movable;
+}
+
+/**
+ * The fare's last digit, drawn once per flight: fares end in 7, 9 or 4 far more often than not,
+ * as fare ladders do, and a flight keeps its ending along the lead-time curve ($187, $227, $329).
+ * Round hundreds happen only by coincidence (a 0 ending on a round tens value).
+ */
+const ENDING_WEIGHTS: ReadonlyArray<readonly [number, number]> = [[7, 30], [9, 27], [4, 17], [8, 8], [3, 6], [2, 4], [6, 3], [1, 2], [5, 2], [0, 1]];
+const ENDING_TOTAL = ENDING_WEIGHTS.reduce((s, [, w]) => s + w, 0);
+
+/** What a flight's fares look like, the same on every date and at every lead time. */
+interface FareShape {
+  /** Last digit of every fare of this flight. */
+  ending: number;
+  /** Days the lead-time curve is shifted by for this flight (−1.5 … 1.5), so flights don't move in lockstep. */
+  shift: number;
+  /** Exponent on the lead-time factor (0.85 … 1.15): how sharply this flight's fare rises close to departure. */
+  elasticity: number;
+}
+
+function fareShape(origin: string, destination: string, key: string): FareShape {
+  const [a, b, c] = hashString(`fare-shape|${origin}|${destination}|${key}`);
+  let r = (a / 4294967296) * ENDING_TOTAL;
+  let ending = ENDING_WEIGHTS[ENDING_WEIGHTS.length - 1][0];
+  for (const [digit, w] of ENDING_WEIGHTS) {
+    r -= w;
+    if (r < 0) {
+      ending = digit;
+      break;
+    }
+  }
+  return { ending, shift: (b / 4294967296) * 3 - 1.5, elasticity: 0.85 + (c / 4294967296) * 0.3 };
+}
+
+/**
+ * The nearest whole-dollar amount with the given last digit, at least $39 (the lowest amount with
+ * that ending from $39 up: $39, $44, $47 …). Monotonic in the amount, and a price point maps to itself.
+ */
+function pricePoint(amount: number, ending: number): number {
+  const lowest = 39 + ((ending + 1) % 10);
+  return Math.max(lowest, 10 * Math.floor((amount + 5 - ending) / 10) + ending);
+}
+
+/**
+ * Base fare: one-way economy at a typical booking lead time, from the route, the carrier, the date
+ * and the departure hour with a ±10% seeded jitter — never from the turbulence, the plane or "today".
  */
 function fareFor(day: RouteDay, airline: AirlineProfile, departMin: number, key: string): number {
   const d = day.distanceMi;
-  let fare = 50 + 40 * Math.sqrt(d / 100) + 0.035 * Math.max(0, d - 2000);
-  if (day.oceanic) fare *= 1.25;
+  let fare = 42 + 36 * Math.sqrt(d / 100) + 0.04 * Math.max(0, d - 2000);
+  if (day.oceanic) fare *= 1.4;
+  else if (!day.domestic) fare *= 1.1;
   const within = (set: ReadonlySet<string>) => set.has(day.origin.country) && set.has(day.destination.country);
   if (within(SOUTH_ASIA)) fare *= 0.55;
   else if (within(SOUTHEAST_ASIA)) fare *= 0.7;
-  if (airline.fareTier === "value") fare *= 0.82;
+  else if (within(AFRICA)) fare *= 0.8;
+  else if (within(LATIN_AMERICA)) fare *= 0.85;
+  if (airline.fareTier === "value") fare *= 0.84;
   else if (airline.fareTier === "premium") fare *= day.longHaul ? 1.15 : 1.04;
-  fare *= WEEKDAY_FARE[weekdayIndex(day.input.date)] * hourFare(departMin, day.longHaul);
+  const touchesUS = [day.origin.country, day.destination.country].some((c) => c === "US" || c === "PR");
+  fare *= WEEKDAY_FARE[weekdayIndex(day.input.date)] * holidayFare(day.input.date, touchesUS) * hourFare(departMin, day.longHaul);
   fare *= createRng(`fare|${day.route}|${day.input.date}|${key}`).float(0.9, 1.1);
-  return Math.max(39, Math.round(fare));
+  return pricePoint(fare, fareShape(day.origin.code, day.destination.code, key).ending);
+}
+
+/**
+ * How the fare moves with the days left before departure, as a factor on the base fare: last-minute
+ * high (0–3 days ×1.5–1.85), easing through the first two weeks (×1.2–1.35), near the base at three
+ * weeks, a sweet spot 3–8 weeks out (×0.95–0.98), the base again at about two months, and a little
+ * above it far out (×1.03–1.12). Linear between the knots.
+ */
+const LEAD_CURVE: ReadonlyArray<readonly [number, number]> = [
+  [0, 1.85], [1, 1.74], [2, 1.62], [3, 1.5], [4, 1.35], [7, 1.28], [13, 1.2], [14, 1.1], [20, 1.05], [21, 1.0], [28, 0.97],
+  [42, 0.95], [50, 0.96], [56, 0.98], [60, 1.0], [66, 1.0], [90, 1.03], [120, 1.07], [180, 1.09], [330, 1.12],
+];
+
+/** Lead time at which fareAt is the base fare (FlightOption.fareUsd): about two months out, where the curve is 1.0. */
+export const FARE_REFERENCE_LEAD_DAYS = 63;
+
+function leadFactor(days: number): number {
+  const last = LEAD_CURVE[LEAD_CURVE.length - 1];
+  if (days <= LEAD_CURVE[0][0]) return LEAD_CURVE[0][1];
+  if (days >= last[0]) return last[1];
+  for (let i = 1; i < LEAD_CURVE.length; i++) {
+    const [x1, y1] = LEAD_CURVE[i];
+    if (days > x1) continue;
+    const [x0, y0] = LEAD_CURVE[i - 1];
+    return y0 + ((days - x0) / (x1 - x0)) * (y1 - y0);
+  }
+  return last[1];
+}
+
+/**
+ * The fare to show for an option when its departure is `daysUntil` days away (0 or less: today, the
+ * last-minute fare): the base fare (fareUsd) moved along the lead-time curve, with each flight's own
+ * small shift and steepness so a day's fares don't move in lockstep, on the flight's price points, at
+ * least $39. Deterministic in the option and the lead time; never looks at the turbulence. The UI
+ * sorts "Cheapest", filters by price and fills the date strip with this, not with fareUsd.
+ */
+export function fareAt(option: FlightOption, daysUntil: number): number {
+  const f = option.flight;
+  const shape = fareShape(f.origin.code, f.destination.code, option.key);
+  const days = Number.isFinite(daysUntil) ? clamp(daysUntil, 0, LEAD_CURVE[LEAD_CURVE.length - 1][0]) : FARE_REFERENCE_LEAD_DAYS;
+  return pricePoint(option.fareUsd * leadFactor(days + shape.shift) ** shape.elasticity, shape.ending);
 }
 
 // ── Search ──────────────────────────────────────────────────────────────────

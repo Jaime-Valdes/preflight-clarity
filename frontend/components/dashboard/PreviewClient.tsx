@@ -1,7 +1,7 @@
 "use client";
 
 import { RotateCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { addDays, isISODate } from "@preflight/shared/dates";
 import { generateFlight, normalizeInput } from "@preflight/shared/fakeFlight";
 import { SCHEDULE_DAYS } from "@preflight/shared/forecast";
@@ -10,12 +10,15 @@ import type { DashboardMetrics, Flight, Variant } from "@preflight/shared/types"
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
+import { setContext } from "@/lib/analytics";
 import { useQueryParam, useTodayISO } from "@/lib/hooks";
 import { Dashboard, DashboardSkeleton } from "./Dashboard";
 
 const DEFAULT_ORIGIN = "JFK";
 const DEFAULT_DESTINATION = "LAX";
 const DEFAULT_DAYS_AHEAD = 47;
+/** The bar's height: the dashboard's sticky left column leaves this much room for it on laptops. */
+const BAR_STYLE = { "--page-top": "2rem" } as CSSProperties;
 
 type Generated = { ok: true; flight: Flight } | { ok: false; message: string };
 
@@ -42,6 +45,13 @@ export function PreviewClient() {
   const [result, setResult] = useState<DashboardMetrics | null>(null);
 
   const variant: Variant = variantParam?.trim().toUpperCase() === "B" ? "B" : "A";
+
+  // The dashboard tracks section and score-factor opens (docs/ANALYTICS.md); a team demo here is a
+  // test session, so those events carry is_test and fall out of the study's filters.
+  useEffect(() => {
+    setContext({ is_test: true, variant, participant: null });
+  }, [variant]);
+
   const origin = originParam?.trim() || DEFAULT_ORIGIN;
   const destination = destinationParam?.trim() || DEFAULT_DESTINATION;
   const requestedDate = dateParam?.trim() ?? "";
@@ -69,9 +79,9 @@ export function PreviewClient() {
   switchParams.set("v", otherVariant);
 
   return (
-    <>
-      <div className="bg-night-950 text-white">
-        <div className="mx-auto flex max-w-[440px] items-center justify-between gap-3 px-5 py-2 text-xs">
+    <div style={BAR_STYLE}>
+      <div className="h-8 bg-night-950 text-white">
+        <div className="mx-auto flex h-full max-w-[440px] items-center justify-between gap-3 px-5 text-xs lg:max-w-[1000px]">
           <span className="min-w-0 truncate">
             <span className="font-semibold">Preview</span>
             <span className="text-white/70">
@@ -118,7 +128,7 @@ export function PreviewClient() {
           onDone={setResult}
         />
       )}
-    </>
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import {
   ANXIETY_START_LABELS,
   WORRIES,
   WORRY_LABELS,
+  bookLikelihoodDistribution,
   checkFrequencyDistribution,
   flightsPerYearDistribution,
   formatPct,
@@ -20,7 +21,7 @@ import { BarRow, Block, EmptyNote, SERIES } from "./bits";
 /**
  * Single-choice distribution over the sessions that answered (same shape and
  * rules as the shared `*Distribution` helpers; local until stats.ts exports
- * ones for the two newer pre-survey questions).
+ * ones for the newer questions).
  */
 function singleChoice<T extends string>(
   records: readonly SessionRecord[],
@@ -81,10 +82,11 @@ function DistributionList({ title, note, data }: { title: string; note: string; 
   );
 }
 
-/** Post-survey single/multi-choice answers, plus the optional pre-survey context questions. */
+/** Post-survey single/multi-choice answers, plus the pre-survey context questions. */
 export function DistributionsBlock({ records, className }: { records: SessionRecord[]; className?: string }) {
   const check = useMemo(() => checkFrequencyDistribution(records), [records]);
   const replace = useMemo(() => wouldReplaceDistribution(records), [records]);
+  const booking = useMemo(() => bookLikelihoodDistribution(records), [records]);
   const timeframe = useMemo(() => timeframeDistribution(records), [records]);
   const flights = useMemo(() => flightsPerYearDistribution(records), [records]);
   const worries = useMemo(() => worriesMostDistribution(records), [records]);
@@ -96,7 +98,7 @@ export function DistributionsBlock({ records, className }: { records: SessionRec
       id="distributions"
       className={className}
       title="If this existed for real"
-      subtitle="How often they would check it, and what it might replace."
+      subtitle="How often they would check it, what it might replace, and whether it would make booking more likely."
     >
       <div className="grid gap-6 sm:grid-cols-2">
         <DistributionList title="Would check it…" note="Single choice. Share of those who answered." data={check} />
@@ -105,12 +107,20 @@ export function DistributionsBlock({ records, className }: { records: SessionRec
           note="Multi-select: shares are per respondent and don't add up to 100%."
           data={replace}
         />
+        <DistributionList
+          title="More likely to book a flight?"
+          note="Optional, asked since 2026-10-24. Share of those who answered."
+          data={booking}
+        />
       </div>
       {hasContext ? (
         <div className="border-t border-line/70 pt-4">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Pre-survey context</p>
           <div className="mt-2 grid gap-6 sm:grid-cols-2">
-            <DistributionList title="Next flight is…" note="Share of those who answered." data={timeframe} />
+            {/* Asked until 2026-10-24; newer sessions give a flight date instead, so the list only shows while someone answered it. */}
+            {timeframe.n > 0 ? (
+              <DistributionList title="Next flight is…" note="Older sessions only. Share of those who answered." data={timeframe} />
+            ) : null}
             <DistributionList title="They fly…" note="Share of those who answered." data={flights} />
             <DistributionList title="Worries them most…" note="Share of those who answered." data={worries} />
             <DistributionList title="Anxiety starts…" note="Share of those who answered." data={starts} />

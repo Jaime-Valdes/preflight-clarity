@@ -9,12 +9,14 @@
  * numbers / ids, full dashboard flights with the feasibility rules (crew from the
  * rules, fleet ages, one seat map per airline and model, no pilot profiles), shared
  * facts (airborne time, route history, weather by hour, bumps by air block), published
- * block times (one per flight number and season), fares, determinism, caching, A/B
+ * block times (one per flight number and season), fares (calibration against published
+ * one-way economy ranges, price points, the lead-time curve of fareAt, weekday and holiday
+ * demand, time of day, no link to the smoothness score), determinism, caching, A/B
  * safety and the speed budget. Exits non-zero on any
  * failure; prints the numbers the UI cares about.
  */
 import { createHash } from "node:crypto";
-import { dayOverview, findOption, hasNonstopService, optionKey, searchFlights, type SearchResults } from "../src/search";
+import { FARE_REFERENCE_LEAD_DAYS, dayOverview, fareAt, findOption, hasNonstopService, optionKey, searchFlights, type SearchResults } from "../src/search";
 import { departWindowOf, generateFlight, normalizeInput, routeDay, type RouteDay } from "../src/fakeFlight";
 import { AIRLINES, LISTED_NONSTOPS, ULTRA_LONG_MI, ZONES, getAirline, isRetiredFlightNumber } from "../src/airlines";
 import { cabinConfigFor, getAircraftModel } from "../src/aircraft";
@@ -461,7 +463,27 @@ const weatherByHour = new Map<string, string>();
 const idsSeen = new Map<string, string>();
 let seatFallbacks = 0;
 const byMarket: Record<Market, number[]> = { busy: [], ordinary: [], long: [] };
-const fareRows: Array<{ fare: number; dayMean: number; score: number; dayScore: number; distance: number; tier: string; weekday: number; long: boolean }> = [];
+const fareRows: Array<{
+  fare: number;
+  dayMean: number;
+  /** fareAt a day before departure, and the day's mean of it. */
+  fare1: number;
+  dayMean1: number;
+  score: number;
+  dayScore: number;
+  distance: number;
+  tier: string;
+  weekday: number;
+  departMin: number;
+  long: boolean;
+}> = [];
+/** Lead times (days) over which a flight's fare must not rise as departure gets further off, then not fall. */
+const LEAD_DOWN = [0, 1, 2, 3, 4, 5, 7, 10, 13, 14, 17, 20, 21, 28, 35, 42];
+const LEAD_UP = [42, 49, 56, 63, 90, 120, 180, 330];
+const endingCounts = new Array<number>(10).fill(0);
+let roundHundreds = 0;
+let lockstepDays = 0;
+let reorderedDays = 0;
 const spreads: number[] = [];
 let blockPairs = 0;
 let widePairs = 0;
@@ -596,21 +618,52 @@ function checkDay(q: FlightInput, res: SearchResults): void {
     }
   }
 
+  // Fares along the lead-time curve (fareAt): the base fare at the reference lead time, higher close to
+  // departure, never rising as departure gets further off inside six weeks and never falling beyond,
+  // whole dollars ≥ $39 on the flight's own price points, a number for any lead time.
+  const fares1 = opts.map((o) => fareAt(o, 1));
+  for (const o of opts) {
+    const down = LEAD_DOWN.map((d) => fareAt(o, d));
+    const up = LEAD_UP.map((d) => fareAt(o, d));
+    check([...down, ...up].every((f) => Number.isInteger(f) && f >= 39), `${tag}: ${o.key} fareAt not a whole number ≥ 39 (${down.join(", ")})`);
+    check(down.every((f, i) => i === 0 || f <= down[i - 1]), `${tag}: ${o.key} fare rises with more days to go inside six weeks (${down.join(", ")})`);
+    check(up.every((f, i) => i === 0 || f >= up[i - 1]), `${tag}: ${o.key} fare falls with more days to go beyond six weeks (${up.join(", ")})`);
+    check(fareAt(o, FARE_REFERENCE_LEAD_DAYS) === o.fareUsd, `${tag}: ${o.key} fareAt at the reference lead time is ${fareAt(o, FARE_REFERENCE_LEAD_DAYS)}, not the base fare ${o.fareUsd}`);
+    const surge = fareAt(o, 1) / fareAt(o, 35);
+    // ×1.74 a day out over ×0.95 at the sweet spot, raised to a steepness of up to 1.15, then rounded to price points (which weighs more on a $90 fare).
+    check(surge >= 1.3 && surge <= 2.4, `${tag}: ${o.key} a day out costs ${surge.toFixed(2)}× the sweet spot`);
+    check(fareAt(o, -5) === fareAt(o, 0) && fareAt(o, 1000) === fareAt(o, 330) && fareAt(o, Number.NaN) === o.fareUsd, `${tag}: ${o.key} fareAt off the ends of the curve`);
+    check([...down, ...up].every((f) => f % 10 === o.fareUsd % 10), `${tag}: ${o.key} fares change their ending along the curve`);
+    endingCounts[o.fareUsd % 10]++;
+    if (o.fareUsd % 100 === 0) roundHundreds++;
+  }
+  // Not in lockstep: each flight has its own shift and steepness, so the Cheapest order close to departure differs.
+  if (opts.length >= 3) {
+    lockstepDays++;
+    const order = (d: number) => [...opts].sort((a, b) => fareAt(a, d) - fareAt(b, d) || a.key.localeCompare(b.key)).map((o) => o.key).join(",");
+    if (order(2) !== order(FARE_REFERENCE_LEAD_DAYS)) reorderedDays++;
+    check(new Set(opts.map((o) => (fareAt(o, 2) / o.fareUsd).toFixed(2))).size >= 2, `${tag}: every fare moves in lockstep two days out`);
+  }
+
   // Fares and score spread for the statistics below.
   const dayFare = mean(opts.map((o) => o.fareUsd));
+  const dayFare1 = mean(fares1);
   const dayScore = mean(flights.map((f) => f.smoothness.score));
-  for (const o of opts) {
+  opts.forEach((o, i) => {
     fareRows.push({
       fare: o.fareUsd,
       dayMean: dayFare,
+      fare1: fares1[i],
+      dayMean1: dayFare1,
       score: o.flight.smoothness.score,
       dayScore,
       distance: o.flight.distanceMi,
       tier: getAirline(o.flight.airline.code)?.fareTier ?? "standard",
       weekday: weekdayIndex(norm.date),
+      departMin: timeToMinutes(o.flight.departTime),
       long: day.longHaul,
     });
-  }
+  });
   if (flights.length > 1) spreads.push(Math.max(...flights.map((f) => f.smoothness.score)) - Math.min(...flights.map((f) => f.smoothness.score)));
 
   // The day's overview is the day's results.
@@ -742,13 +795,15 @@ check(mean(summer.best) >= mean(summer.other), "summer: the history's best windo
 
 // ── Fares ───────────────────────────────────────────────────────────────────
 
+// Base fares (fareUsd) by distance band: whole dollars inside a plausible range for one-way economy,
+// rising with distance. The medians are printed for calibration.
 const bands: Array<[string, number, number, number, number]> = [
   // label, min distance, max distance, lowest plausible fare, highest plausible fare
-  ["< 500 mi", 0, 500, 39, 260],
-  ["500–1,500 mi", 500, 1500, 45, 420],
-  ["1,500–3,000 mi", 1500, 3000, 90, 600],
-  ["3,000–6,000 mi", 3000, 6000, 250, 1200],
-  ["6,000+ mi", 6000, 99999, 450, 1700],
+  ["< 500 mi", 0, 500, 39, 220],
+  ["500–1,500 mi", 500, 1500, 39, 330],
+  ["1,500–3,000 mi", 1500, 3000, 100, 600],
+  ["3,000–6,000 mi", 3000, 6000, 230, 1050],
+  ["6,000+ mi", 6000, 99999, 480, 1650],
 ];
 const bandMeans: number[] = [];
 const bandLines: string[] = [];
@@ -757,11 +812,24 @@ for (const [label, lo, hi, minFare, maxFare] of bands) {
   const fares = rows.map((r) => r.fare);
   if (rows.length === 0) continue;
   bandMeans.push(mean(fares));
-  bandLines.push(`${label} $${Math.min(...fares)}–$${Math.max(...fares)} (mean $${Math.round(mean(fares))}, ${rows.length})`);
+  bandLines.push(`${label} $${Math.min(...fares)}–$${Math.max(...fares)} (median $${quantile(fares, 0.5)}, mean $${Math.round(mean(fares))}, ${rows.length})`);
   const outside = rows.filter((r) => r.fare < minFare || r.fare > maxFare).length;
   check(outside === 0, `fares ${label}: ${outside} outside $${minFare}–$${maxFare}`);
 }
 check(bandMeans.every((m, i) => i === 0 || m > bandMeans[i - 1]), "fares don't rise with distance");
+// Calibration: the median base fare on benchmark routes over the sample's dates lands inside the
+// typical one-way economy ranges booking sites show (2025) — a synthesis that sits around the one-way
+// equivalent of the BTS average domestic itinerary fare (~$390), not a published per-route figure.
+const BENCHMARK_FARES: Array<[string, string, number, number]> = [
+  ["JFK", "LAX", 200, 320], ["LGA", "ORD", 90, 180], ["ATL", "MCO", 75, 140], ["SFO", "NRT", 520, 820], ["JFK", "LHR", 400, 650], ["LAX", "SYD", 780, 1150],
+];
+const benchmarkLines: string[] = [];
+for (const [origin, destination, lo, hi] of BENCHMARK_FARES) {
+  const fares = DATES.flatMap((date) => daysDone.get(JSON.stringify(normalizeInput({ origin, destination, date })))?.options.map((o) => o.fareUsd) ?? []);
+  const median = quantile(fares, 0.5);
+  check(fares.length > 0 && median >= lo && median <= hi, `${origin}-${destination}: median base fare $${median} outside the typical $${lo}–$${hi}`);
+  benchmarkLines.push(`${origin}–${destination} $${median} (typical $${lo}–${hi})`);
+}
 const rel = (rows: typeof fareRows) => mean(rows.map((r) => r.fare / r.dayMean));
 const valueRel = rel(fareRows.filter((r) => r.tier === "value"));
 const standardRel = rel(fareRows.filter((r) => r.tier === "standard"));
@@ -774,8 +842,37 @@ for (const r of fareRows) perRoute.set(String(r.distance), [...(perRoute.get(Str
 const routeMean = (r: (typeof fareRows)[number]) => mean(perRoute.get(String(r.distance)) ?? [r.fare]);
 const weekdayRel = (days: number[]) => mean(fareRows.filter((r) => days.includes(r.weekday)).map((r) => r.fare / routeMean(r)));
 check(weekdayRel([0, 5]) > weekdayRel([2, 3, 6]), `Fridays/Sundays not dearer than Tue/Wed/Sat (${weekdayRel([0, 5]).toFixed(2)} vs ${weekdayRel([2, 3, 6]).toFixed(2)})`);
-// Never correlated with the smoothness score: within each day (fare and score against the day's own means), and raw.
+// Time of day (short and medium haul): departures before 06:30 and after 21:00 below the day's mean, the 07:00–09:30 and 16:00–19:00 peaks above it.
+const shortRows = fareRows.filter((r) => !r.long);
+const offPeakRel = rel(shortRows.filter((r) => r.departMin < 6.5 * 60 || r.departMin >= 21 * 60));
+const peakRel = rel(shortRows.filter((r) => (r.departMin >= 7 * 60 && r.departMin < 9.5 * 60) || (r.departMin >= 16 * 60 && r.departMin < 19 * 60)));
+check(offPeakRel < peakRel * 0.92, `early and late departures not cheaper than the peaks (${offPeakRel.toFixed(2)} vs ${peakRel.toFixed(2)})`);
+// Holidays (routes touching the US): the Sunday after Thanksgiving well above ordinary Sundays, the holiday itself
+// quieter than the day before it, Christmas Day cheap, the Friday before the Fourth dearer than an ordinary Friday.
+// A route that doesn't touch the US doesn't notice Thanksgiving. Same season, so the same flights each day.
+const meanBase = (origin: string, destination: string, date: string) => mean(searchFlights({ origin, destination, date }).options.map((o) => o.fareUsd));
+const thanksgivingSunday = meanBase("JFK", "LAX", "2026-11-29") / mean(["2026-11-08", "2026-11-15"].map((date) => meanBase("JFK", "LAX", date)));
+check(thanksgivingSunday >= 1.15 && thanksgivingSunday <= 1.5, `the Sunday after Thanksgiving costs ${thanksgivingSunday.toFixed(2)}× an ordinary Sunday`);
+const thanksgivingDay = meanBase("JFK", "LAX", "2026-11-26") / meanBase("JFK", "LAX", "2026-11-25");
+check(thanksgivingDay < 0.9, `Thanksgiving Day costs ${thanksgivingDay.toFixed(2)}× the Wednesday before`);
+const christmasDay = meanBase("JFK", "LAX", "2026-12-25") / meanBase("JFK", "LAX", "2026-12-22");
+check(christmasDay < 0.95, `Christmas Day costs ${christmasDay.toFixed(2)}× December 22`);
+const fourthFriday = meanBase("JFK", "LAX", "2027-07-02") / meanBase("JFK", "LAX", "2027-07-16");
+check(fourthFriday > 1.03, `the Friday before the Fourth costs ${fourthFriday.toFixed(2)}× an ordinary Friday`);
+const abroadSunday = meanBase("LHR", "CDG", "2026-11-29") / meanBase("LHR", "CDG", "2026-11-15");
+check(abroadSunday >= 0.9 && abroadSunday <= 1.1, `Thanksgiving moves fares ×${abroadSunday.toFixed(2)} on a route that doesn't touch the US`);
+// Price points: fares end in 7, 9 or 4 far more often than not, every ending occurs, round hundreds only by coincidence.
+const faresCounted = endingCounts.reduce((a, b) => a + b, 0);
+const sevenNineFour = (endingCounts[7] + endingCounts[9] + endingCounts[4]) / faresCounted;
+check(sevenNineFour >= 0.6 && sevenNineFour <= 0.9, `${pct(endingCounts[7] + endingCounts[9] + endingCounts[4], faresCounted)} of fares end in 7, 9 or 4`);
+check(endingCounts.filter((n) => n > 0).length >= 8, `only ${endingCounts.filter((n) => n > 0).length} different fare endings`);
+check(roundHundreds <= faresCounted * 0.01, `${roundHundreds} of ${faresCounted} fares are round hundreds`);
+check(reorderedDays >= lockstepDays * 0.5, `the Cheapest order two days out differs from the base order on only ${pct(reorderedDays, lockstepDays)} of days`);
+// Never correlated with the smoothness score: within each day (fare and score against the day's own means), at a
+// day's notice (fareAt), the lead-time surge itself, and raw.
 const rWithin = pearson(fareRows.map((r) => r.fare / r.dayMean), fareRows.map((r) => r.score - r.dayScore));
+const rWithin1 = pearson(fareRows.map((r) => r.fare1 / r.dayMean1), fareRows.map((r) => r.score - r.dayScore));
+const rSurge = pearson(fareRows.map((r) => r.fare1 / r.fare), fareRows.map((r) => r.score - r.dayScore));
 // Across a route's days (what the date strip puts side by side): each day's lowest fare against its best score.
 const routeDays = new Map<string, Array<{ fare: number; score: number }>>();
 for (const res of daysDone.values()) {
@@ -798,6 +895,8 @@ const rStrip = pearson(stripFares, stripScores);
 // Raw, over every route: distance drives both fares and (through wide-bodies on long-haul) a little smoothness.
 const rRaw = pearson(fareRows.map((r) => r.fare), fareRows.map((r) => r.score));
 check(Math.abs(rWithin) < 0.1, `fares correlate with the score within a day (r = ${rWithin.toFixed(3)})`);
+check(Math.abs(rWithin1) < 0.1, `fares a day out correlate with the score within a day (r = ${rWithin1.toFixed(3)})`);
+check(Math.abs(rSurge) < 0.1, `the last-minute surge correlates with the score (r = ${rSurge.toFixed(3)})`);
 check(Math.abs(rStrip) < 0.15, `a day's lowest fare correlates with its best score (r = ${rStrip.toFixed(3)})`);
 
 // ── Determinism and the cache (bounded LRU) ─────────────────────────────────
@@ -812,6 +911,7 @@ check(searchFlights(lruProbe) === probe, "LRU: a recently used day was evicted b
 for (let d = 35; d <= 70; d++) searchFlights({ origin: "ATL", destination: "MCO", date: addDays("2027-05-01", d) });
 const rebuilt = searchFlights(lruProbe);
 check(rebuilt !== probe && JSON.stringify(rebuilt) === JSON.stringify(probe), "LRU: evicted day not rebuilt identically");
+check(rebuilt.options.every((o, i) => [2, 35, 200].every((d) => fareAt(o, d) === fareAt(probe.options[i], d))), "LRU: fareAt differs on a rebuilt day");
 let rebuiltDiffer = 0;
 for (const [key, json] of tableJson) {
   const [origin, destination, date] = key.split("|");
@@ -845,9 +945,16 @@ for (const [origin, destination] of [["BOS", "ORD"], ["LHR", "MAD"], ["SFO", "HN
 const hitStart = performance.now();
 for (let i = 0; i < 1000; i++) searchFlights({ origin: "SFO", destination: "SEA", date: "2027-08-06" });
 const hitUs = ((performance.now() - hitStart) * 1000) / 1000;
+// fareAt runs in sorts, filters and the date strip: many calls per render.
+const fareOptions = searchFlights({ origin: "SFO", destination: "SEA", date: "2027-08-06" }).options;
+const fareStart = performance.now();
+let fareSum = 0;
+for (let i = 0; i < 20000; i++) fareSum += fareAt(fareOptions[i % fareOptions.length], i % 120);
+const fareUs = ((performance.now() - fareStart) * 1000) / 20000;
 check(quantile(coldDayMs, 0.5) <= 15 && quantile(coldDayMs, 0.9) <= 15, `a cold day takes too long (median ${quantile(coldDayMs, 0.5).toFixed(1)} ms, p90 ${quantile(coldDayMs, 0.9).toFixed(1)} ms)`);
 check(Math.max(...coldWeekMs) <= 100, `a cold 7-day overview takes ${Math.max(...coldWeekMs).toFixed(0)} ms`);
 check(hitUs < 50, `a cached search takes ${hitUs.toFixed(1)} µs`);
+check(fareUs < 5 && fareSum > 0, `fareAt takes ${fareUs.toFixed(2)} µs`);
 
 // ── Nonstop service (docs/FEASIBILITY.md: no invented nonstops) ─────────────
 //
@@ -973,11 +1080,21 @@ function showDay(q: FlightInput): void {
   for (const o of res.options) {
     const f = o.flight;
     const arr = `${f.arriveTime}${f.arriveDayOffset ? (f.arriveDayOffset > 0 ? "+" : "") + f.arriveDayOffset : "  "}`;
-    console.log(`  ${f.departTime}→${arr} ${o.key.padEnd(7)} ${f.aircraft.model.padEnd(12)} ${f.aircraft.bodyType === "wide" ? "wide  " : "narrow"} ${String(f.smoothness.score).padStart(3)} ${f.smoothness.label.padEnd(20)} $${o.fareUsd}`);
+    console.log(
+      `  ${f.departTime}→${arr} ${o.key.padEnd(7)} ${f.aircraft.model.padEnd(12)} ${f.aircraft.bodyType === "wide" ? "wide  " : "narrow"} ${String(f.smoothness.score).padStart(3)} ${f.smoothness.label.padEnd(20)} base $${String(o.fareUsd).padEnd(4)} · a day out $${String(fareAt(o, 1)).padEnd(4)} · 5 weeks out $${fareAt(o, 35)}`,
+    );
   }
 }
 showDay({ origin: "JFK", destination: "LAX", date: "2026-11-26" });
 showDay({ origin: "JFK", destination: "LHR", date: "2026-11-27" });
+
+// One flight along the lead-time curve.
+const ladderOption = searchFlights({ origin: "JFK", destination: "LAX", date: "2026-12-01" }).options[0];
+const ladder = [0, 3, 7, 13, 21, 35, FARE_REFERENCE_LEAD_DAYS, 120, 330].map((d) => `$${fareAt(ladderOption, d)} at ${d === 0 ? "0 days (today)" : d === FARE_REFERENCE_LEAD_DAYS ? `${d} (the base fare)` : d}`);
+console.log(`\nFares by lead time · ${ladderOption.key} JFK→LAX 2026-12-01: ${ladder.join(" · ")} · the Cheapest order two days out differs from the base order on ${pct(reorderedDays, lockstepDays)} of ${lockstepDays} days`);
+console.log(`Fares by date · JFK→LAX: Sunday after Thanksgiving ×${thanksgivingSunday.toFixed(2)} vs ordinary Sundays · Thanksgiving Day ×${thanksgivingDay.toFixed(2)} vs the Wednesday before · Christmas Day ×${christmasDay.toFixed(2)} vs Dec 22 · Friday before the Fourth ×${fourthFriday.toFixed(2)} vs an ordinary Friday · LHR→CDG on Thanksgiving Sunday ×${abroadSunday.toFixed(2)}`);
+console.log(`Fare calibration (median base fare over the sample's dates vs published typical one-way economy ranges) · ${benchmarkLines.join(" · ")}`);
+console.log(`Fare endings · 7, 9 or 4 on ${pct(endingCounts[7] + endingCounts[9] + endingCounts[4], faresCounted)} of fares · ${endingCounts.filter((n) => n > 0).length} endings seen · ${roundHundreds} round hundreds in ${faresCounted} · early/late departures ×${offPeakRel.toFixed(2)} vs peak hours ×${peakRel.toFixed(2)} of the day's mean`);
 
 const range = (xs: number[]) => (xs.length > 0 ? `${Math.min(...xs)}–${Math.max(...xs)} (mean ${mean(xs).toFixed(1)}, ${xs.length} days)` : "—");
 console.log(`\nSample: ${days} route-days · ${flightsChecked} flights checked in ${(sampleMs / 1000).toFixed(1)} s`);
@@ -986,7 +1103,7 @@ console.log(`Scores · ${Math.min(...scoreAll)}–${Math.max(...scoreAll)} (mean
 console.log(`Air blocks · ${blockPairs} flight pairs share a block (${widePairs} wide-body vs narrow-body)`);
 console.log(`Fares · ${bandLines.join(" · ")}`);
 console.log(`Fares vs the day's mean · value carriers ${valueRel.toFixed(2)} · standard ${standardRel.toFixed(2)} · premium long-haul ${premiumLongRel.toFixed(2)} · Fri/Sun ${weekdayRel([0, 5]).toFixed(2)} vs Tue/Wed/Sat ${weekdayRel([2, 3, 6]).toFixed(2)}`);
-console.log(`Fare–score correlation · within a day r = ${rWithin.toFixed(3)} · across a route's days (date strip) r = ${rStrip.toFixed(3)} · raw over all routes r = ${rRaw.toFixed(3)} (distance drives both)`);
+console.log(`Fare–score correlation · within a day r = ${rWithin.toFixed(3)} (a day out r = ${rWithin1.toFixed(3)}, the surge itself r = ${rSurge.toFixed(3)}) · across a route's days (date strip) r = ${rStrip.toFixed(3)} · raw over all routes r = ${rRaw.toFixed(3)} (distance drives both)`);
 console.log(`Seat maps · one map per airline and model (${SEAT_GEOMETRY.size} cabins seen) · ${seatFallbacks} of ${flightsChecked} flights have under 3 open seats over the wing, so a pick sits just off it`);
 console.log(
   `Nonstop service · ${pct(servedPairs, totalPairs)} of ${totalPairs.toLocaleString("en-US")} ordered catalogue pairs (${servedPairs.toLocaleString("en-US")}) in ${Math.round(serviceMs)} ms · symmetric · fewest partners ${fewest.map((a) => `${a.code} ${partners.get(a.code) ?? 0}`).join(", ")} · ${ultraServed} pairs beyond ${ULTRA_LONG_MI.toLocaleString("en-US")} mi, all listed · ${servedDaysChecked} sampled days on served routes, ${emptyServedDays} empty`,
@@ -994,7 +1111,7 @@ console.log(
 console.log(`  served, e.g. ${servedExamples.join(", ")}`);
 console.log(`  not served, e.g. ${unservedExamples.join(", ")}`);
 console.log(`Timetable · ${pct(repeatKeys, repeatTotal)} of a Monday's flights fly Tue–Fri too, ${pct(repeatTimes, repeatTotal)} at the same time, landing at the same published time · ${seasonKeys} flight numbers keep one block time across a season`);
-console.log(`Speed · first search of this run ${firstCallMs.toFixed(1)} ms (after the A/B flights warmed up the JIT; a fresh browser tab adds ~10 ms of time-zone data and JIT warm-up once) · cold day median ${quantile(coldDayMs, 0.5).toFixed(1)} ms, p90 ${quantile(coldDayMs, 0.9).toFixed(1)} ms, max ${Math.max(...coldDayMs).toFixed(1)} ms · cold 7-day overview ${Math.round(mean(coldWeekMs))} ms (max ${Math.round(Math.max(...coldWeekMs))}) · cache hit ${hitUs.toFixed(1)} µs`);
+console.log(`Speed · first search of this run ${firstCallMs.toFixed(1)} ms (after the A/B flights warmed up the JIT; a fresh browser tab adds ~10 ms of time-zone data and JIT warm-up once) · cold day median ${quantile(coldDayMs, 0.5).toFixed(1)} ms, p90 ${quantile(coldDayMs, 0.9).toFixed(1)} ms, max ${Math.max(...coldDayMs).toFixed(1)} ms · cold 7-day overview ${Math.round(mean(coldWeekMs))} ms (max ${Math.round(Math.max(...coldWeekMs))}) · cache hit ${hitUs.toFixed(1)} µs · fareAt ${fareUs.toFixed(2)} µs`);
 
 if (failures > 0) {
   console.error(`\n${failures} search check(s) failed, ${warnings} warning(s).`);

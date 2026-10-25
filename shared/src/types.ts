@@ -41,6 +41,8 @@ export type WorryMost = "turbulence" | "takeoff_landing" | "not_in_control" | "s
 export type AnxietyStart = "at_booking" | "weeks_before" | "days_before" | "day_of" | "not_before";
 /** "In the past year, has fear of flying changed your travel plans?" `"no"` is exclusive. */
 export type TravelImpact = "no" | "ground_instead" | "paid_more" | "skipped_trip";
+/** "Would having this pre-flight information make you more likely to book a flight?" */
+export type BookLikelihood = "more_likely" | "no_difference" | "less_likely" | "not_sure";
 export type ReplaceOption =
   | "medication"
   | "videos"
@@ -59,9 +61,13 @@ export interface Ratings {
 }
 
 export interface PreSurvey extends Ratings {
-  /** Optional. IATA code if picked from the list, otherwise free text; "" if skipped. */
+  /**
+   * Optional route question, asked until 2026-10-24: IATA code if picked from the list, otherwise
+   * free text; "" if skipped. New sessions store "" — the route is `SessionRecord.flightInput`.
+   */
   routeOrigin: string;
   routeDestination: string;
+  /** "How far away is that flight?", asked until 2026-10-24; null on new sessions (the flight date answers it). */
   timeframe: Timeframe | null;
   /** Required on the "About your flying" screen (optional before 2026-10-22; null on older records). */
   flightsPerYear: FlightsPerYear | null;
@@ -79,11 +85,24 @@ export interface PostSurvey extends Ratings {
   checkFrequency: CheckFrequency | null;
   wouldReplace: ReplaceOption[];
   wouldReplaceText: string;
+  /** "What would you still feel anxious about?" (worded "scared of" until 2026-10-24; the field name stays). */
   stillScaredOf: string;
-  /** Variant A only: "If you could, would you switch to one of the other flights you looked at?" */
+  /**
+   * Variant A only, asked until 2026-10-24: "If you could, would you switch to one of the other
+   * flights you looked at?" Null since (and in variant B); absent on records from before it.
+   */
   wouldSwitch?: WouldSwitch | null;
-  /** "In the past year, has fear of flying changed your travel plans?" Absent on older records. */
+  /**
+   * "In the past year, has fear of flying changed your travel plans?" Asked on the "About your
+   * flying" screen since 2026-10-24 (on the post-survey from 2026-10-22 until then); kept under
+   * `post` so older records and the CSV / responses columns stay the same. Absent before 2026-10-22.
+   */
   travelImpact?: TravelImpact[];
+  /**
+   * "Would having this pre-flight information make you more likely to book a flight?" Optional,
+   * both variants (2026-10-24). Null when unanswered; absent on records from before it.
+   */
+  bookLikelihood?: BookLikelihood | null;
 }
 
 // ── Flight (generated — every value is fake but must look credible) ────────

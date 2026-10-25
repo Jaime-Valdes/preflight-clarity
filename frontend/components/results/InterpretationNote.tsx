@@ -9,7 +9,8 @@ const POINTS = [
   "Each participant chose their own route and date, so the flight they saw — and its smoothness score — varies between sessions. The score is kept per session so you can check whether reactions follow the forecast rather than the variant.",
   "Two self-reported 0–10 ratings taken minutes apart can move for reasons unrelated to the dashboard (settling in, wanting to be helpful). A drop is not proof the dashboard works; a rise is not proof it hurts.",
   "The breakdowns by what worries them most, when the anxiety starts and travel plans split an already small sample into smaller cells. A cell with fewer than five sessions says almost nothing, the answers behind it are self-reported, and sessions from before these questions existed are left out of them.",
-  "Sign-ups measure interest in a launch email, not use or willingness to pay. The study's sign-up rate counts real sessions that reached the debrief, where the form is identical in A and B; version C sign-ups have no session and no rate.",
+  "Sign-ups measure interest in a launch email, not use or willingness to pay. The study's sign-up rate counts real sessions that reached the debrief; the form is identical in A and B (on the briefing since 2026-10-24, and on the debrief); version C sign-ups have no session and no rate.",
+  "Sign-ups by section opened is a per-session cross-tab, not a cause: someone curious enough to open a section is also more likely to sign up, and the cells are small. The booking question asks about intent, not a booking.",
 ];
 
 /** Short, honest reading guide for the numbers above. */

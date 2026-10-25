@@ -13,6 +13,9 @@ import { TextArea } from "./TextArea";
 
 type PartChoice = DashboardPart | "none";
 
+/** At most this many parts per question (team decision 2026-10-24: a top 3, not "everything"). */
+export const MAX_PARTS = 3;
+
 function partOptions(variant: Variant, noneLabel: string): ChoiceOption<PartChoice>[] {
   return [
     ...partsForVariant(variant).map((part): ChoiceOption<PartChoice> => ({ value: part, label: PART_LABELS[part] })),
@@ -27,7 +30,7 @@ interface PostPartsScreenProps {
   onContinue: () => void;
 }
 
-/** Which parts helped, which (if any) made things worse. */
+/** Which parts helped or were worth most, which (if any) made things worse or were worth least — up to three each. */
 export function PostPartsScreen({ variant, post, onChange, onContinue }: PostPartsScreenProps) {
   const worseTextId = useId();
   const complete = post.feltBetter.length > 0 && post.feltWorse.length > 0;
@@ -44,25 +47,29 @@ export function PostPartsScreen({ variant, post, onChange, onContinue }: PostPar
         </div>
       }
     >
-      <StepHeader stage={4} eyebrow="After the briefing" title="What stood out" sub="Choose as many as apply." />
+      <StepHeader stage={4} eyebrow="After the briefing" title="What stood out" />
       <div className="flex flex-col gap-3">
         <Card className="animate-fade-up" style={fadeUp()}>
           <ChoiceGroup
             kind="multi"
-            label="Which part of the briefing, if any, made you feel better?"
+            label="Which parts made you feel better or did you find the most value in?"
+            hint={`Pick up to ${MAX_PARTS}.`}
             options={partOptions(variant, "None of these")}
             values={post.feltBetter}
             exclusive="none"
+            max={MAX_PARTS}
             onChange={(values) => onChange({ feltBetter: values })}
           />
         </Card>
         <Card className="animate-fade-up" style={fadeUp(60)}>
           <ChoiceGroup
             kind="multi"
-            label="Did anything make you feel more anxious?"
+            label="Which parts made you more anxious or did you find least valuable?"
+            hint={`Pick up to ${MAX_PARTS}.`}
             options={partOptions(variant, "Nothing")}
             values={post.feltWorse}
             exclusive="none"
+            max={MAX_PARTS}
             onChange={(values) => onChange({ feltWorse: values })}
           />
           <TextArea

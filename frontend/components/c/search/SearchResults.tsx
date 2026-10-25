@@ -12,7 +12,7 @@ import { Sheet } from "@/components/c/common/Sheet";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { keepClearOfTray } from "@/components/c/shell/CompareTray";
 import { useCompareList } from "@/lib/c/compare-store";
-import { TIME_BUCKET_LABELS } from "@/lib/c/format";
+import { formatFare, formatMinutes12 } from "@/lib/c/format";
 import { itemId, searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
@@ -32,13 +32,16 @@ import {
   airlineName,
   applyView,
   buildFacets,
+  campaignParams,
   defaultSortFor,
+  marksFor,
   parseView,
   resultsHref,
   SCORE_SORTS,
   SORT_ORDER_TEXT,
   viewForDay,
   withoutFilters,
+  type Mark,
   type ResultsView,
 } from "./view";
 
@@ -48,6 +51,9 @@ type Params = ReturnType<typeof useSearchParams>;
  * /c/search — results for one route and day. Reads the query string (inside
  * the page's <Suspense>), shows the skeleton until today's date is known on
  * the client, then either the results or a calm message with the search form.
+ * Only from, to, date and the sort / filter parameters are read; anything
+ * else in the link (utm_* tags and the like) is ignored here and kept on the
+ * page's own links (campaignParams).
  */
 export function SearchResults() {
   const params = useSearchParams();
@@ -83,6 +89,7 @@ function runSearch(origin: string, destination: string, date: string): Search {
 }
 
 const NO_OPTIONS: readonly FlightOption[] = [];
+const NO_MARKS: readonly Mark[] = [];
 
 /** Ids that clearing or removing a filter sends focus to (never <body>). */
 const FILTERS_TITLE_ID = "c-filters-title";
@@ -116,14 +123,14 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   const focusNext = useRef<string | null>(null);
   const { origin, destination, date } = day;
   // Time-aware (docs/VERSION_C.md): flight-specific turbulence only exists from 2 days before departure.
+  const daysUntil = daysToDeparture(today, date);
   const avail = availabilityAt(today, date);
   const scores = avail.turbulence;
   const { from: forecastFrom, lead: forecastLead } = marker("turbulence", date);
+  // Campaign tags in the link stay on this page's own links (filters, nearby dates).
+  const campaign = useMemo(() => campaignParams(params), [params]);
 
   const search = useMemo(() => runSearch(origin, destination, date), [origin, destination, date]);
-  const urlView = useMemo(() => parseView(params, scores), [params, scores]);
-  // Sort and filters live in the URL; the optimistic copy shows a change on this frame while the URL catches up.
-  const [view, setOptimisticView] = useOptimistic(urlView);
   // The date strip is computed after the day's own results (first paint first).
   const stripDay = parseDayKey(useDeferredValue(dayKey(day), ""));
 
@@ -137,8 +144,14 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   );
   const leftCount = dayOptions.length - options.length;
   const dayWord = date === today ? "today" : "this day";
-  const facets = useMemo(() => buildFacets(options), [options]);
-  const shown = useMemo(() => applyView(options, view), [options, view]);
+  // Fares are today's (fareAt: the booking lead time moves them), so the facets, the sort and the
+  // price cap all take the days until departure.
+  const facets = useMemo(() => buildFacets(options, daysUntil), [options, daysUntil]);
+  const urlView = useMemo(() => parseView(params, scores, facets.bounds), [params, scores, facets.bounds]);
+  // Sort and filters live in the URL; the optimistic copy shows a change on this frame while the URL catches up.
+  const [view, setOptimisticView] = useOptimistic(urlView);
+  const shown = useMemo(() => applyView(options, view, daysUntil), [options, view, daysUntil]);
+  const marks = useMemo(() => marksFor(shown, scores, daysUntil), [shown, scores, daysUntil]);
   const filterCount = activeFilterCount(view);
   const total = options.length;
   // No flights this day: is it the day, or does nobody fly this route nonstop at all?
@@ -164,15 +177,23 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 
   function changeView(next: ResultsView, focusId?: string) {
     if (focusId) focusNext.current = focusId;
-    track("c_results_view", { sort: next.sort, times: next.times.join(","), airlines: next.airlines.join(","), wide: next.wide, min_score: next.min ?? null });
+    track("c_results_view", {
+      sort: next.sort,
+      dep_from: next.depFrom,
+      dep_to: next.depTo,
+      max_price: next.maxPrice,
+      airlines: next.airlines.join(","),
+      wide: next.wide,
+      min_score: next.min ?? null,
+    });
     startTransition(() => {
       setOptimisticView(next);
-      router.replace(resultsHref(day, next), { scroll: false });
+      router.replace(resultsHref(day, next, campaign), { scroll: false });
     });
   }
 
   const clearFilters = (focusId?: string) => changeView(withoutFilters(view), focusId);
-  const hrefFor = (d: string) => resultsHref({ ...day, date: d }, viewForDay(view, availabilityAt(today, d).turbulence));
+  const hrefFor = (d: string) => resultsHref({ ...day, date: d }, viewForDay(view, availabilityAt(today, d).turbulence), campaign);
   const scoresNote = `From ${forecastFrom}, when the turbulence forecast for these flights comes out (${forecastLead}).`;
 
   if (routeEmpty) {
@@ -204,7 +225,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
       <div className="lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)] lg:items-start lg:gap-6">
         <aside
           aria-labelledby="c-filters-title"
-          className="hidden rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto lg:overscroll-contain"
+          className="hidden rounded-3xl bg-surface/60 p-5 ring-1 ring-line/60 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto lg:overscroll-contain"
         >
           <div className="mb-4 flex min-h-11 items-center justify-between gap-3">
             <h2 id={FILTERS_TITLE_ID} tabIndex={-1} className="rounded-md text-base font-bold text-ink-900">
@@ -360,6 +381,9 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                       <ResultCard
                         option={option}
                         item={item}
+                        daysUntil={daysUntil}
+                        marks={marks.get(option.key) ?? NO_MARKS}
+                        campaign={campaign}
                         scores={scores}
                         airframe={avail.airframe}
                         forecastFrom={forecastFrom}
@@ -593,11 +617,9 @@ function ActiveFilters({
   className?: string;
 }) {
   const chips: Array<{ key: string; label: string; next: ResultsView }> = [
-    ...view.times.map((t) => ({
-      key: `time-${t}`,
-      label: TIME_BUCKET_LABELS[t].label,
-      next: { ...view, times: view.times.filter((x) => x !== t) },
-    })),
+    ...(view.depFrom !== null ? [{ key: "dep-from", label: `From ${formatMinutes12(view.depFrom)}`, next: { ...view, depFrom: null } }] : []),
+    ...(view.depTo !== null ? [{ key: "dep-to", label: `Until ${formatMinutes12(view.depTo)}`, next: { ...view, depTo: null } }] : []),
+    ...(view.maxPrice !== null ? [{ key: "max-price", label: `Up to ${formatFare(view.maxPrice)}`, next: { ...view, maxPrice: null } }] : []),
     ...view.airlines.map((code) => ({
       key: `airline-${code}`,
       label: airlineName(code, facets),

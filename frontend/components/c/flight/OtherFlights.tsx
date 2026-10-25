@@ -16,7 +16,7 @@ import { MAX_COMPARE, flightHref, itemId, searchHref, type CompareItem, type Rou
 import { cn } from "@/lib/cn";
 import { CompareToggle } from "./CompareToggle";
 import { PendingNote } from "./PendingNote";
-import { LINK_BASE, LINK_BUTTON, LINK_TONE, dayOffsetMark, dayOffsetWords, monthDay } from "./copy";
+import { LINK_BASE, LINK_BUTTON, LINK_TONE, dayOffsetMark, dayOffsetWords, fareFor, monthDay } from "./copy";
 import { track } from "@/lib/analytics";
 
 /** How many other flights the page lists before "See all". */
@@ -30,6 +30,8 @@ interface OtherFlightsProps {
   currentKey: string;
   /** Whether flight-specific turbulence forecasts exist yet (within TURBULENCE_FORECAST_DAYS). */
   turbulence: boolean;
+  /** Days from today to the day (0 = today): the fares shown move with the booking lead time (fareFor). */
+  daysUntil: number;
   /** Anchor id, so the fare card can link here. */
   id: string;
   className?: string;
@@ -51,7 +53,7 @@ function byDeparture(a: FlightOption, b: FlightOption): number {
  * departure time without scores, and a marker says when the forecasts start.
  * Flights that have already left are not offered.
  */
-export function OtherFlights({ day, options, currentKey, turbulence, id, className }: OtherFlightsProps) {
+export function OtherFlights({ day, options, currentKey, turbulence, daysUntil, id, className }: OtherFlightsProps) {
   const list = useCompareList();
   const headingId = useId();
   const noteId = useId();
@@ -107,7 +109,15 @@ export function OtherFlights({ day, options, currentKey, turbulence, id, classNa
         <ul className="mt-3 flex flex-col gap-2.5">
           {shown.map((option) => (
             <li key={option.key}>
-              <OtherFlightRow option={option} day={day} list={list} noteId={noteId} showScore={turbulence} onToggle={toggle} />
+              <OtherFlightRow
+                option={option}
+                day={day}
+                daysUntil={daysUntil}
+                list={list}
+                noteId={noteId}
+                showScore={turbulence}
+                onToggle={toggle}
+              />
             </li>
           ))}
         </ul>
@@ -134,6 +144,7 @@ export function OtherFlights({ day, options, currentKey, turbulence, id, classNa
 interface OtherFlightRowProps {
   option: FlightOption;
   day: RouteDay;
+  daysUntil: number;
   list: CompareList;
   noteId: string;
   /** Only once flight-specific turbulence forecasts exist. */
@@ -141,7 +152,7 @@ interface OtherFlightRowProps {
   onToggle: (item: CompareItem, label: string) => void;
 }
 
-function OtherFlightRow({ option, day, list, noteId, showScore, onToggle }: OtherFlightRowProps) {
+function OtherFlightRow({ option, day, daysUntil, list, noteId, showScore, onToggle }: OtherFlightRowProps) {
   const f = option.flight;
   // The flight's own airports (a search from LGA can list JFK's long-haul flights): one flight, one compare item.
   const item: CompareItem = { origin: f.origin.code, destination: f.destination.code, date: day.date, key: option.key };
@@ -175,7 +186,7 @@ function OtherFlightRow({ option, day, list, noteId, showScore, onToggle }: Othe
           </div>
         </div>
         <p className="shrink-0 text-right text-base font-bold leading-snug text-ink-900 tabular-nums">
-          {formatFare(option.fareUsd)}
+          {formatFare(fareFor(option, daysUntil))}
         </p>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-0 sm:flex sm:shrink-0">

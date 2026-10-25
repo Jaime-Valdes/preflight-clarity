@@ -9,20 +9,35 @@ export function formatFare(usd: number): string {
   return USD.format(Math.round(usd));
 }
 
-/** "Morning" etc. for the departure-time filter, from "HH:MM" (Expedia-style buckets). */
-export type TimeBucket = "night" | "morning" | "afternoon" | "evening";
-export const TIME_BUCKETS: readonly TimeBucket[] = ["morning", "afternoon", "evening", "night"];
-export const TIME_BUCKET_LABELS: Record<TimeBucket, { label: string; range: string }> = {
-  morning: { label: "Morning", range: "5:00 AM – 11:59 AM" },
-  afternoon: { label: "Afternoon", range: "12:00 PM – 5:59 PM" },
-  evening: { label: "Evening", range: "6:00 PM – 11:59 PM" },
-  night: { label: "Night", range: "12:00 AM – 4:59 AM" },
-};
+/** Minutes after midnight → "6:30 AM" (1439 and up → "11:59 PM", the end of the day). */
+export function formatMinutes12(minutes: number): string {
+  const m = Math.max(0, Math.min(1439, Math.round(minutes)));
+  const h = Math.floor(m / 60);
+  const suffix = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m % 60).padStart(2, "0")} ${suffix}`;
+}
 
-export function timeBucket(hhmm: string): TimeBucket {
-  const hour = Number(hhmm.slice(0, 2));
-  if (hour < 5) return "night";
-  if (hour < 12) return "morning";
-  if (hour < 18) return "afternoon";
-  return "evening";
+/** The departure-window filter moves in half hours. */
+export const WINDOW_STEP_MIN = 30;
+
+/** Minutes after midnight rounded down to the half hour (5:40 → 5:30). */
+export function floorToStep(minutes: number, step = WINDOW_STEP_MIN): number {
+  return Math.floor(minutes / step) * step;
+}
+
+/** Minutes after midnight rounded up to the half hour (21:05 → 21:30), never past the end of the day. */
+export function ceilToStep(minutes: number, step = WINDOW_STEP_MIN): number {
+  return Math.min(1439, Math.ceil(minutes / step) * step);
+}
+
+/** The maximum-price filter moves in $10 steps. */
+export const PRICE_STEP = 10;
+
+export function floorToPrice(usd: number): number {
+  return Math.floor(usd / PRICE_STEP) * PRICE_STEP;
+}
+
+export function ceilToPrice(usd: number): number {
+  return Math.ceil(usd / PRICE_STEP) * PRICE_STEP;
 }

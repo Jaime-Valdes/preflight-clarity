@@ -102,7 +102,13 @@ export function FlightDetail({ day, option, options, today }: FlightDetailProps)
           <div className="min-w-0 lg:col-start-2 lg:row-span-3 lg:row-start-1">
             <div className="flex flex-col gap-4 lg:sticky lg:top-6">
               <SummaryCard flight={flight} ctx={ctx} className="animate-fade-up [animation-delay:60ms]" />
-              <FareCard option={option} item={item} othersHref={`#${OTHERS_ID}`} className="animate-fade-up [animation-delay:90ms]" />
+              <FareCard
+                option={option}
+                item={item}
+                daysUntil={daysUntil}
+                othersHref={`#${OTHERS_ID}`}
+                className="animate-fade-up [animation-delay:90ms]"
+              />
             </div>
           </div>
 
@@ -119,6 +125,7 @@ export function FlightDetail({ day, option, options, today }: FlightDetailProps)
             options={options}
             currentKey={option.key}
             turbulence={availability.turbulence}
+            daysUntil={daysUntil}
             className="mt-6 min-w-0 lg:col-start-1 lg:mt-4"
           />
 

@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { formatFare } from "@/lib/c/format";
 import { flightHref } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
-import { LINK_BASE, LINK_BUTTON, LINK_TONE, routeText, shortDate } from "../flight/copy";
+import { LINK_BASE, LINK_BUTTON, LINK_TONE, fareFor, routeText, shortDate } from "../flight/copy";
 import { PendingNote } from "../flight/PendingNote";
 import { isFlightColumn, unavailableNote, type Column, type FlightColumn, type UnavailableColumn } from "./facts";
 
@@ -106,7 +106,7 @@ function PickedFlight({ column, onRemove }: { column: FlightColumn; onRemove: (i
             )}
           </div>
         </div>
-        <p className="shrink-0 text-base font-bold text-ink-900 tabular-nums">{formatFare(column.option.fareUsd)}</p>
+        <p className="shrink-0 text-base font-bold text-ink-900 tabular-nums">{formatFare(fareFor(column.option, column.daysUntil))}</p>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Link href={flightHref(column.item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-3")}>

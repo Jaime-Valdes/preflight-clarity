@@ -6,6 +6,7 @@ import { availabilityFor } from "@preflight/shared/forecast";
 import type { Flight, SectionContext, SectionProps } from "@preflight/shared/types";
 import { cn } from "@/lib/cn";
 import { useTracker } from "@/lib/tracking";
+import { BenchmarkLine, benchmarkValue } from "@/components/c/flight/BenchmarkLine";
 import { Pill } from "@/components/ui/Pill";
 import { Stat } from "@/components/ui/Stat";
 import { BlockLabel } from "./trust/BlockLabel";
@@ -19,7 +20,9 @@ const AISLE_LABEL = { narrow: "Single-aisle cabin", wide: "Twin-aisle cabin" } a
 /**
  * "Your aircraft" — the scheduled model, the assigned airframe once it is known
  * (about a day before departure), the rules on inspections and the model's record.
- * No maintenance records: they aren't public (docs/FEASIBILITY.md).
+ * No maintenance records: they aren't public (docs/FEASIBILITY.md). Ages sit next
+ * to the global fleet average and the cabin-noise band next to the typical jet
+ * cabin (shared/src/benchmarks.ts), so the figures mean something on their own.
  */
 export function AircraftSection({ flight, ctx }: SectionProps) {
   const tracker = useTracker();
@@ -75,6 +78,7 @@ export function AircraftSection({ flight, ctx }: SectionProps) {
             <div className="mt-0.5 text-xs leading-snug text-ink-500">
               Delivered in <span className="tabular-nums">{aircraft.deliveredYear}</span> · can change before departure
             </div>
+            <BenchmarkLine benchmark="fleetAgeYears" value={aircraft.ageYears} className="mt-1.5" />
           </>
         ) : (
           <>
@@ -89,6 +93,7 @@ export function AircraftSection({ flight, ctx }: SectionProps) {
             <div className="mt-0.5 text-xs leading-snug text-ink-500">
               The exact plane is assigned about a day before departure.
             </div>
+            <BenchmarkLine benchmark="fleetAgeYears" value={aircraft.fleetAvgAgeYears} className="mt-1.5" />
           </>
         )}
       </div>
@@ -99,7 +104,17 @@ export function AircraftSection({ flight, ctx }: SectionProps) {
         <div className="mt-2 grid grid-cols-2 gap-2">
           <Stat label="Flying since" value={aircraft.modelInServiceSince} hint={`${aircraft.model} model`} />
           <Stat label="Worldwide" value={`about ${formatCount(aircraft.modelFleetSize)}`} hint={`${aircraft.model}s in service`} />
-          <Stat label="Cabin noise" value={noise.label} hint={`${capitalize(noise.range)}, louder near the engines`} />
+          {/* The noise is a band, not a reading (docs/FEASIBILITY.md): the typical cabin sits beside it, no verdict. */}
+          <Stat
+            label="Cabin noise"
+            value={noise.label}
+            hint={
+              <>
+                {capitalize(noise.range)}, louder near the engines.
+                <span className="mt-0.5 block tabular-nums">Typical jet cabin {benchmarkValue("cabinNoiseDb")}</span>
+              </>
+            }
+          />
           <Stat
             label="Cruise altitude"
             value={`${formatCount(aircraft.cruiseAltitudeFt)} ft`}

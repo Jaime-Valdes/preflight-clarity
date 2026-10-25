@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 interface MeterBarProps {
@@ -6,7 +7,8 @@ interface MeterBarProps {
   value: number;
   /** Text shown at the right end; defaults to "82%". */
   display?: string;
-  hint?: string;
+  /** Small line under the track: a note, or a benchmark line setting the figure against its industry average. */
+  hint?: ReactNode;
   tone?: "calm" | "breeze";
 }
 

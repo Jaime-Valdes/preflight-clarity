@@ -35,7 +35,8 @@ const COLUMNS: ReadonlyArray<{ key: "all" | Variant; label: string; hint: string
 /**
  * "In the past year, has fear of flying changed your travel plans?" — multi-select
  * ("No" is exclusive), so shares are per respondent and don't add up to 100%.
- * n = sessions that picked at least one option (older records have none).
+ * n = sessions that picked at least one option (older records have none). Asked
+ * before the dashboard since 2026-10-24, but still stored under `post`.
  */
 function travelImpactDistribution(records: readonly SessionRecord[]): Distribution<TravelImpact> {
   const picks = (r: SessionRecord): TravelImpact[] => (Array.isArray(r.post.travelImpact) ? r.post.travelImpact : []);
@@ -121,7 +122,7 @@ function TravelList({ data }: { data: Distribution<TravelImpact> }) {
         <h3 className="text-sm font-bold text-ink-900">Fear of flying changed their travel plans…</h3>
         <span className="text-xs text-ink-400 tabular-nums">n = {data.n}</span>
       </div>
-      <p className="mt-0.5 text-xs text-ink-500">Past year, post-survey. Multi-select: shares are per respondent and don’t add up to 100%.</p>
+      <p className="mt-0.5 text-xs text-ink-500">Past year; asked before the dashboard since 2026-10-24 (after it until then). Multi-select: shares are per respondent and don’t add up to 100%.</p>
       {data.n === 0 ? (
         <EmptyNote className="mt-3">No answers yet.</EmptyNote>
       ) : (

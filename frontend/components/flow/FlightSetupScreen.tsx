@@ -2,10 +2,10 @@
 
 import { ArrowRight, ArrowUpDown, CalendarDays } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { getAirport, resolveAirport } from "@preflight/shared/airports";
+import { getAirport } from "@preflight/shared/airports";
 import { addDays, daysBetween, formatLongDate, isISODate } from "@preflight/shared/dates";
 import { SCHEDULE_DAYS } from "@preflight/shared/forecast";
-import type { FlightInput, Timeframe } from "@preflight/shared/types";
+import type { FlightInput } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
@@ -20,32 +20,11 @@ export const MAX_DAYS_AHEAD = SCHEDULE_DAYS;
 export const AIRPORT_HELP = "Can’t find it? Pick the nearest major airport.";
 
 /**
- * The catalogue code for a pre-survey route answer ("JFK", or a typed city
- * such as "Lisbon" → LIS), or "" when it names no catalogue airport. The
- * pre-survey accepts free text (it is a survey answer); the flight setup only
- * takes airports that have flight data.
+ * A blank form. Since 2026-10-24 this screen also stands in for the old optional
+ * "route / how far away" survey questions, so nothing is prefilled: the date the
+ * participant picks is the answer to how far away the flight is.
  */
-export function catalogueCode(value: string): string {
-  if (!value.trim()) return "";
-  const airport = resolveAirport(value);
-  return airport.known ? airport.code : "";
-}
-
-/** Default departure offset (days) from the pre-survey timeframe. */
-export function defaultOffsetDays(timeframe: Timeframe | null): number {
-  switch (timeframe) {
-    case "lt1w":
-      return 5;
-    case "1to4w":
-      return 18;
-    case "1to3m":
-      return 47;
-    case "3mplus":
-      return 120;
-    default:
-      return 47;
-  }
-}
+export const EMPTY_SETUP: FlightInput = { origin: "", destination: "", date: "" };
 
 export interface SetupErrors {
   origin?: string;
@@ -92,7 +71,10 @@ interface FlightSetupScreenProps {
   onContinue: (input: FlightInput) => void;
 }
 
-/** Origin, destination and date for the flight the briefing will be about. */
+/**
+ * Origin, destination and date for the flight the briefing will be about — the
+ * flight they rated, real or imagined. Stage 2 of the flow.
+ */
 export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: FlightSetupScreenProps) {
   const dateId = useId();
   const dateHintId = useId();
@@ -136,7 +118,7 @@ export function FlightSetupScreen({ today, draft, onDraftChange, onContinue }: F
         stage={2}
         eyebrow="Your flight"
         title="Which flight should we look at?"
-        sub="The flight you just rated — your next real one, or the one you imagined. We'll put together a briefing for an example flight on that route."
+        sub="The flight you rated — your next real one, or the one you imagined. We'll build a briefing for an example flight on that route."
       />
       <div className="flex flex-col gap-3">
         <Card className="animate-fade-up" style={fadeUp()}>

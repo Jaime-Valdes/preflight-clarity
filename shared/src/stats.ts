@@ -26,6 +26,7 @@ import type {
   WorryMost,
   AnxietyStart,
   TravelImpact,
+  BookLikelihood,
 } from "./types";
 
 // ── Vocabulary ──────────────────────────────────────────────────────────────
@@ -89,7 +90,8 @@ export const REPLACE_LABELS: Record<ReplaceOption, string> = {
   medication: "Medication",
   videos: "Videos",
   turbulence_apps: "Turbulence apps",
-  choosing_flights: "Choosing flights carefully",
+  // Reworded 2026-10-24 (was "Choosing flights carefully"); the value stays for older records.
+  choosing_flights: "Researching flights carefully",
   nothing: "Nothing",
 };
 
@@ -149,6 +151,16 @@ export const WOULD_SWITCH_LABELS: Record<WouldSwitch, string> = {
   no: "No",
   not_sure: "Not sure",
   didnt_look: "Didn’t look at other flights",
+};
+
+/** "Would having this pre-flight information make you more likely to book a flight?" (both variants, from 2026-10-24). */
+export const BOOK_LIKELIHOODS: readonly BookLikelihood[] = ["more_likely", "no_difference", "less_likely", "not_sure"];
+
+export const BOOK_LIKELIHOOD_LABELS: Record<BookLikelihood, string> = {
+  more_likely: "Yes, more likely",
+  no_difference: "No difference",
+  less_likely: "Less likely",
+  not_sure: "Not sure",
 };
 
 /** Parts a participant can name in the post-survey, in dashboard order, plus the explicit "none". */
@@ -626,6 +638,57 @@ export function alertStats(records: readonly SessionRecord[]): {
   return { overall: alertStatsFor(records), byVariant: byVariant(records, alertStatsFor) };
 }
 
+// ── Sign-ups by section opened ─────────────────────────────────────────────
+
+export interface SignupCell {
+  /** Sessions in this group. */
+  n: number;
+  /** …of which signed up for the product (the record's `waitlist`). */
+  signups: number;
+  /** signups / n as a whole percentage, 0–100 (rounded like the Interest block's rate); null when n is 0. */
+  pct: number | null;
+}
+
+export interface SectionSignupRate {
+  section: SectionId;
+  /** The section's title. */
+  label: string;
+  /** Sessions that expanded the section at least once. */
+  opened: SignupCell;
+  /** Sessions whose dashboard showed the section but never expanded it. */
+  notOpened: SignupCell;
+}
+
+function signupCell(records: readonly SessionRecord[]): SignupCell {
+  const n = records.length;
+  const signups = records.filter((r) => r.waitlist === true).length;
+  return { n, signups, pct: n > 0 ? Math.round((100 * signups) / n) : null };
+}
+
+/**
+ * Does opening a section go with signing up? Per section (dashboard order): the real
+ * (non-test) completed sessions whose dashboard showed it, split by whether they expanded
+ * it at least once, with each half's sign-up count and rate. Signed up = the record's
+ * `waitlist` (set by the dashboard card or the debrief form), which also covers a session
+ * whose sign-up row was merged into an earlier one with the same email. The real-and-
+ * completed filter is applied here whatever the caller passed, because team tests would
+ * inflate a business signal. The halves are small and self-selected — opening a section is
+ * not what makes someone sign up — so show both n alongside the rates.
+ */
+export function signupRateBySection(records: readonly SessionRecord[]): SectionSignupRate[] {
+  const sessions = records.filter((r) => !r.isTest && isCompleted(r) && r.dashboard !== null);
+  return SECTIONS.map(({ id, title }) => {
+    const shown = sessions.filter((r) => sectionsShown(r).includes(id));
+    const openedIt = (r: SessionRecord) => (r.dashboard?.sections[id]?.opens ?? 0) > 0;
+    return {
+      section: id,
+      label: title,
+      opened: signupCell(shown.filter(openedIt)),
+      notOpened: signupCell(shown.filter((r) => !openedIt(r))),
+    };
+  });
+}
+
 // ── Distributions ───────────────────────────────────────────────────────────
 
 export interface DistributionBucket<T extends string = string> {
@@ -681,7 +744,18 @@ export function wouldReplaceDistribution(records: readonly SessionRecord[]): Dis
   };
 }
 
-/** Pre-survey: how far away the next flight is (optional question). */
+/**
+ * Post-survey "would this make you more likely to book a flight?" (optional, both variants, from
+ * 2026-10-24) — single choice, share of those who answered. Older sessions never saw it.
+ */
+export function bookLikelihoodDistribution(records: readonly SessionRecord[]): Distribution<BookLikelihood> {
+  return singleChoice(records, BOOK_LIKELIHOODS, BOOK_LIKELIHOOD_LABELS, (r) => {
+    const answer = r.post.bookLikelihood;
+    return answer && BOOK_LIKELIHOODS.includes(answer) ? answer : null;
+  });
+}
+
+/** Pre-survey: how far away the next flight is (optional question, asked until 2026-10-24). */
 export function timeframeDistribution(records: readonly SessionRecord[]): Distribution<Timeframe> {
   return singleChoice(records, TIMEFRAMES, TIMEFRAME_LABELS, (r) => r.pre.timeframe);
 }
@@ -741,7 +815,7 @@ export interface ExplorationStats {
   alternativesOpened: number;
   /** Sum over sessions: flights added through the what-if sheet. */
   whatIfs: number;
-  /** "Would you switch to one of the other flights you looked at?" — among those who answered. */
+  /** "Would you switch to one of the other flights you looked at?" (asked until 2026-10-24) — among those who answered. */
   wouldSwitch: Distribution<WouldSwitch>;
 }
 
@@ -793,7 +867,7 @@ export function explorationStats(records: readonly SessionRecord[]): {
   return { overall: explorationStatsFor(records), byVariant: byVariant(records, explorationStatsFor) };
 }
 
-/** Post-survey "would you switch?" (variant A, optional) — single choice, share of those who answered. */
+/** Post-survey "would you switch?" (variant A, optional, asked until 2026-10-24) — single choice, share of those who answered. */
 export function wouldSwitchDistribution(records: readonly SessionRecord[]): Distribution<WouldSwitch> {
   return singleChoice(records, WOULD_SWITCH_OPTIONS, WOULD_SWITCH_LABELS, (r) => {
     const answer = r.post.wouldSwitch;

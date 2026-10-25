@@ -20,6 +20,7 @@ import {
   MAX_TEXT_CHARS,
   parseSessionRecord,
 } from "@preflight/shared/record";
+import { SECTION_IDS } from "@preflight/shared/sections";
 import {
   emailKey,
   MAX_CONTEXT_CHARS,
@@ -30,7 +31,14 @@ import {
   signupsToCsv,
   sortSignupsNewestFirst,
 } from "@preflight/shared/signup";
-import { explorationStats } from "@preflight/shared/stats";
+import {
+  BOOK_LIKELIHOOD_LABELS,
+  BOOK_LIKELIHOODS,
+  bookLikelihoodDistribution,
+  explorationStats,
+  REPLACE_LABELS,
+  signupRateBySection,
+} from "@preflight/shared/stats";
 import type {
   DashboardEvent,
   ExplorationMetrics,
@@ -233,6 +241,7 @@ function fixture(): SessionRecord {
       stillScaredOf: "Long stretches of bumps over the ocean, and the feeling of not knowing when they end.",
       travelImpact: ["paid_more", "skipped_trip"],
       wouldSwitch: "not_sure",
+      bookLikelihood: "more_likely",
     },
     email: "participant@example.com",
     firstName: "Sam",
@@ -579,12 +588,12 @@ group("parseSessionRecord", () => {
       email: "",
       firstName: "",
     };
-    // Records from before the participant label / exploration / sign-up fields parse with "" / null / false.
+    // Records from before the participant label / exploration / sign-up / newer survey fields parse with "" / null / [] / false.
     assert.deepEqual(expectOk(minimal), {
       ...minimal,
       participant: "",
       pre: { ...minimal.pre, worriesMost: null, anxietyStarts: null },
-      post: { ...minimal.post, wouldSwitch: null, travelImpact: [] },
+      post: { ...minimal.post, wouldSwitch: null, travelImpact: [], bookLikelihood: null },
       waitlist: false,
       interview: false,
     });
@@ -615,6 +624,18 @@ group("parseSessionRecord", () => {
     for (const v of ["maybe", 1, true, {}, null]) {
       assert.equal(expectOk(loose((r) => (r.post.wouldSwitch = v))).post.wouldSwitch, null);
     }
+  });
+
+  test("bookLikelihood is an enum or null; a record from before the question parses as null", () => {
+    for (const v of ["more_likely", "no_difference", "less_likely", "not_sure"] as const) {
+      assert.equal(expectOk(loose((r) => (r.post.bookLikelihood = v))).post.bookLikelihood, v);
+    }
+    for (const v of ["yes", "More likely", "", 1, true, {}, ["more_likely"], null]) {
+      assert.equal(expectOk(loose((r) => (r.post.bookLikelihood = v))).post.bookLikelihood, null);
+    }
+    const old = expectOk(loose((r) => delete r.post.bookLikelihood));
+    assert.equal(old.post.bookLikelihood, null);
+    assert.deepEqual({ ...old, post: { ...old.post, bookLikelihood: "more_likely" } }, fixture(), "nothing else changes");
   });
 
   test("participant label keeps letters, digits, space and - _ . @ only, ≤ 40 chars", () => {
@@ -700,6 +721,7 @@ group("parseSessionRecord", () => {
       delete r.participant;
       r.dashboard.exploration = null;
       delete r.post.wouldSwitch;
+      delete r.post.bookLikelihood;
       delete r.waitlist;
       delete r.interview;
     });
@@ -723,6 +745,10 @@ group("parseSessionRecord", () => {
     assert.equal(col(records[0], "preferred_flight"), "c0ffee12");
     assert.equal(col(records[0], "ended_on_flight"), "c0ffee12");
     assert.equal(col(records[0], "would_switch"), "not_sure");
+    assert.equal(CSV_COLUMNS[CSV_COLUMNS.indexOf("would_switch") + 1], "book_likelihood", "the booking question follows would_switch");
+    assert.equal(col(records[0], "book_likelihood"), "more_likely");
+    assert.equal(col(records[1], "book_likelihood"), "", "blank when the question was never asked (parsed null)");
+    assert.equal(col({ ...records[1], post: { ...records[1].post, bookLikelihood: undefined } }, "book_likelihood"), "", "and when the field is absent");
     assert.equal(col(records[0], "what_if_s"), "9");
     assert.equal(col(records[0], "waitlist"), "true");
     assert.equal(col(records[0], "interview"), "true");
@@ -731,6 +757,88 @@ group("parseSessionRecord", () => {
     for (const name of ["participant", "flights_explored", "switches", "compares", "alternatives_opened", "what_ifs", "what_if_s", "preferred_flight", "ended_on_flight", "would_switch"]) {
       assert.equal(col(records[1], name), "", `${name} is blank without exploration`);
     }
+  });
+});
+
+// ── Stats: post-survey labels, booking likelihood, sign-ups by section ──────
+
+/** `base` with a dashboard that showed `order` and expanded exactly the sections in `open`. */
+function withOpens(base: SessionRecord, open: readonly SectionId[], order: readonly SectionId[] = SECTIONS): SessionRecord {
+  const sections: Partial<Record<SectionId, SectionStats>> = {};
+  for (const id of order) {
+    const opened = open.includes(id);
+    sections[id] = { opens: opened ? 2 : 0, openMs: opened ? 5000 : 0, firstOpenAtMs: opened ? 1000 : null };
+  }
+  return { ...base, dashboard: { ...base.dashboard!, sectionOrder: [...order], sections } };
+}
+
+group("stats", () => {
+  test("labels: 'researching flights carefully'; the booking-likelihood vocabulary", () => {
+    assert.equal(REPLACE_LABELS.choosing_flights, "Researching flights carefully");
+    assert.deepEqual(BOOK_LIKELIHOODS, ["more_likely", "no_difference", "less_likely", "not_sure"]);
+    assert.deepEqual(Object.keys(BOOK_LIKELIHOOD_LABELS), [...BOOK_LIKELIHOODS]);
+    assert.deepEqual(Object.values(BOOK_LIKELIHOOD_LABELS), ["Yes, more likely", "No difference", "Less likely", "Not sure"]);
+  });
+
+  test("bookLikelihoodDistribution: share of those who answered; unanswered and older records are left out", () => {
+    const answered = (n: number, bookLikelihood: SessionRecord["post"]["bookLikelihood"]): SessionRecord => ({
+      ...fixture(),
+      sessionId: session(n),
+      post: { ...fixture().post, bookLikelihood },
+    });
+    const old = expectOk(loose((r) => delete r.post.bookLikelihood));
+    const d = bookLikelihoodDistribution([fixture(), answered(2, null), answered(3, "not_sure"), answered(4, "more_likely"), old]);
+    assert.equal(d.n, 3);
+    assert.deepEqual(
+      d.buckets.map((b) => [b.value, b.label, b.count]),
+      [["more_likely", "Yes, more likely", 2], ["no_difference", "No difference", 0], ["less_likely", "Less likely", 0], ["not_sure", "Not sure", 1]],
+    );
+    assert.equal(d.buckets[0].pct, 2 / 3);
+    assert.equal(d.buckets[1].pct, 0);
+    assert.deepEqual(bookLikelihoodDistribution([]), { n: 0, buckets: BOOK_LIKELIHOODS.map((value) => ({ value, label: BOOK_LIKELIHOOD_LABELS[value], count: 0, pct: null })) });
+    // An unvalidated local record with a stray value is not an answer.
+    const stray = { ...answered(5, null), post: { ...fixture().post, bookLikelihood: "yes" as unknown as "not_sure" } };
+    assert.equal(bookLikelihoodDistribution([stray]).n, 0);
+  });
+
+  test("signupRateBySection: real completed sessions, split by whether they opened each section", () => {
+    const records: SessionRecord[] = [
+      withOpens({ ...fixture(), sessionId: session(1), waitlist: true }, ["turbulence", "pilot", "seat"]), // A, signed up
+      withOpens({ ...fixture(), sessionId: session(2), waitlist: false }, ["turbulence"]), // A, no sign-up
+      withOpens({ ...fixture(), sessionId: session(3), waitlist: false }, []), // A, opened nothing
+      withOpens({ ...fixture(), sessionId: session(4), variant: "B", waitlist: true }, [], ["turbulence"]), // B, signed up without opening anything
+      withOpens({ ...fixture(), sessionId: session(5), isTest: true, waitlist: true }, ["turbulence", "aircraft"]), // team test: excluded
+      withOpens({ ...fixture(), sessionId: session(6), completedAt: null, step: "dashboard", waitlist: true }, ["turbulence"]), // not completed: excluded
+      { ...fixture(), sessionId: session(7), dashboard: null, waitlist: true }, // no dashboard: excluded
+    ];
+    const rates = signupRateBySection(records);
+    assert.deepEqual(rates.map((r) => r.section), [...SECTION_IDS], "every section, in dashboard order");
+    const by = Object.fromEntries(rates.map((r) => [r.section, r]));
+    assert.deepEqual(by.turbulence, {
+      section: "turbulence",
+      label: "Turbulence forecast",
+      opened: { n: 2, signups: 1, pct: 50 },
+      notOpened: { n: 2, signups: 1, pct: 50 },
+    });
+    assert.deepEqual(by.pilot, {
+      section: "pilot",
+      label: "Who flies your plane",
+      opened: { n: 1, signups: 1, pct: 100 },
+      notOpened: { n: 2, signups: 0, pct: 0 },
+    });
+    assert.deepEqual(by.aircraft.opened, { n: 0, signups: 0, pct: null }, "nobody opened it: no rate");
+    assert.deepEqual(by.aircraft.notOpened, { n: 3, signups: 1, pct: 33 }, "variant B never showed it");
+    assert.deepEqual(by.seat.opened, { n: 1, signups: 1, pct: 100 });
+    assert.deepEqual(by.alerts.notOpened, { n: 3, signups: 1, pct: 33 });
+    // A record from before the sign-up existed (no waitlist flag) counts as not signed up.
+    const legacy = withOpens({ ...fixture(), sessionId: session(8), waitlist: undefined, interview: undefined }, ["turbulence"]);
+    assert.deepEqual(signupRateBySection([legacy])[0].opened, { n: 1, signups: 0, pct: 0 });
+    // Nothing to count: every cell is empty and no rate is invented.
+    for (const r of signupRateBySection([])) {
+      assert.deepEqual(r.opened, { n: 0, signups: 0, pct: null });
+      assert.deepEqual(r.notOpened, { n: 0, signups: 0, pct: null });
+    }
+    assert.deepEqual(signupRateBySection([records[4], records[5], records[6]]), signupRateBySection([]), "tests, unfinished and dashboard-less sessions never count");
   });
 });
 
@@ -1100,13 +1208,13 @@ group("signup stats and CSV", () => {
     assert.equal(stats.interview, 1);
     assert.deepEqual(stats.bySource, { study: 1, c: 2 });
     assert.deepEqual(stats.byPlacement, { debrief: 1, c_compare: 2 });
-    assert.deepEqual(stats.study.all, { signups: 1, reachedDebrief: 1, pct: 100 }, "a signed-up session reached the debrief even without its record");
+    assert.deepEqual(stats.study.all, { signups: 1, sawForm: 1, pct: 100 }, "a signed-up session reached the debrief even without its record");
   });
 
   test("stats: the study rate per variant counts real sessions once and never passes 100%", () => {
     const records: SessionRecord[] = [
       fixture(), // A, debrief, signed up (the fixture's record says waitlist: true, like the debrief save does)
-      { ...fixture(), sessionId: session(2), variant: "A", step: "post", completedAt: null, waitlist: false }, // A, never reached the debrief
+      { ...fixture(), sessionId: session(2), variant: "A", step: "post", completedAt: null, waitlist: false }, // A, stopped after the briefing: saw its card
       { ...fixture(), sessionId: session(3), variant: "B", step: "debrief", waitlist: false }, // B, no sign-up
       { ...fixture(), sessionId: session(4), variant: "B", step: "post", completedAt: null, waitlist: false }, // B, signed up but the debrief save never landed
       { ...fixture(), sessionId: session(5), variant: "B", step: "debrief", isTest: true }, // team test
@@ -1121,13 +1229,29 @@ group("signup stats and CSV", () => {
       { ...signupFixture(), id: session(16), source: "c", placement: "c_home", sessionId: null, variant: null, email: "c@example.com" },
     ];
     const stats = signupStats(signups, records);
-    assert.deepEqual(stats.study.A, { signups: 1, reachedDebrief: 1, pct: 100 });
-    assert.deepEqual(stats.study.B, { signups: 1, reachedDebrief: 2, pct: 50 });
-    assert.deepEqual(stats.study.all, { signups: 2, reachedDebrief: 3, pct: 67 });
-    assert.deepEqual(signupStats([], records).study.A, { signups: 1, reachedDebrief: 1, pct: 100 }, "no rows: the fixture's record still says waitlist");
+    assert.deepEqual(stats.study.A, { signups: 1, sawForm: 2, pct: 50 });
+    assert.deepEqual(stats.study.B, { signups: 1, sawForm: 2, pct: 50 });
+    assert.deepEqual(stats.study.all, { signups: 2, sawForm: 4, pct: 50 });
+    assert.deepEqual(signupStats([], records).study.A, { signups: 1, sawForm: 2, pct: 50 }, "no rows: the fixture's record still says waitlist");
     const declined = records.map((r) => ({ ...r, waitlist: false }));
-    assert.deepEqual(signupStats([], declined).study.A, { signups: 0, reachedDebrief: 1, pct: 0 });
+    assert.deepEqual(signupStats([], declined).study.A, { signups: 0, sawForm: 2, pct: 0 });
     assert.equal(signupStats([], []).study.all.pct, null);
+  });
+
+  test("stats: the briefing's sign-up card counts dropouts who saw it, signed up or not", () => {
+    const records: SessionRecord[] = [
+      { ...fixture(), sessionId: session(1), waitlist: true }, // debrief, signed up
+      { ...fixture(), sessionId: session(2), waitlist: false }, // debrief, declined
+      { ...fixture(), sessionId: session(3), step: "dashboard", completedAt: null, waitlist: true }, // signed up on the card, then stopped
+      { ...fixture(), sessionId: session(4), step: "dashboard", completedAt: null, waitlist: false }, // saw the card, no sign-up, stopped
+      { ...fixture(), sessionId: session(5), step: "setup", completedAt: null, waitlist: false }, // never saw a form
+      { ...fixture(), sessionId: session(6), step: "pre", completedAt: null, waitlist: false },
+      { ...fixture(), sessionId: session(7), step: "dashboard", completedAt: null, waitlist: true, isTest: true }, // team test
+    ];
+    assert.deepEqual(signupStats([], records).study.A, { signups: 2, sawForm: 4, pct: 50 });
+    const row: Signup = { ...signupFixture(), id: session(13), sessionId: session(3), placement: "dashboard", email: "card@example.com" };
+    assert.deepEqual(signupStats([row], records).study.A, { signups: 2, sawForm: 4, pct: 50 }, "the card's row is the same session: counted once");
+    assert.deepEqual(signupStats([], [records[4], records[5]]).study.A, { signups: 0, sawForm: 0, pct: null }, "nobody saw a form yet");
   });
 
   test("stats: a session whose record says waitlist counts even without a sign-up row", () => {
@@ -1140,9 +1264,9 @@ group("signup stats and CSV", () => {
       { ...fixture(), sessionId: session(5), variant: "A", waitlist: true, isTest: true }, // team test
     ];
     const oneRow: Signup[] = [{ ...signupFixture(), id: session(12), sessionId: session(2), variant: "B", email: "two@example.com" }];
-    assert.deepEqual(signupStats(oneRow, records).study.B, { signups: 3, reachedDebrief: 3, pct: 100 });
-    assert.deepEqual(signupStats(oneRow, records).study.A, { signups: 0, reachedDebrief: 1, pct: 0 });
-    assert.deepEqual(signupStats([], records).study.B, { signups: 3, reachedDebrief: 3, pct: 100 }, "no rows at all: the records carry the fact");
+    assert.deepEqual(signupStats(oneRow, records).study.B, { signups: 3, sawForm: 3, pct: 100 });
+    assert.deepEqual(signupStats(oneRow, records).study.A, { signups: 0, sawForm: 1, pct: 0 });
+    assert.deepEqual(signupStats([], records).study.B, { signups: 3, sawForm: 3, pct: 100 }, "no rows at all: the records carry the fact");
     assert.equal(signupStats(oneRow, records).total, 1, "the totals still count rows");
   });
 });

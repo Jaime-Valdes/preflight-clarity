@@ -18,7 +18,7 @@ import {
   MAX_PARTICIPANT_CHARS,
   parseTimestamp,
 } from "./record";
-import type { SessionRecord, Signup, SignupPlacement, SignupSource, Variant } from "./types";
+import type { SessionRecord, Signup, SignupPlacement, SignupSource, Step, Variant } from "./types";
 
 export { MAX_EMAIL_CHARS, MAX_FIRST_NAME_CHARS, MAX_PARTICIPANT_CHARS };
 export const MAX_CONTEXT_CHARS = 120;
@@ -150,11 +150,14 @@ export function signupsToCsv(signups: readonly Signup[]): string {
 // ── Stats ───────────────────────────────────────────────────────────────────
 
 export interface SignupRate {
-  /** Sign-ups from real (non-test) sessions that reached the debrief. */
+  /** Sign-ups from real (non-test) sessions that saw the form. */
   signups: number;
-  /** Real sessions that reached the debrief (the people who saw the form). */
-  reachedDebrief: number;
-  /** 0–100, or null when nobody reached the debrief. */
+  /**
+   * Real sessions that saw the form: the briefing's card (step dashboard or
+   * later) or the debrief. Before 2026-10-24 the only form was on the debrief.
+   */
+  sawForm: number;
+  /** 0–100, or null when nobody saw the form. */
   pct: number | null;
 }
 
@@ -169,22 +172,26 @@ export interface SignupStats {
   study: { all: SignupRate; A: SignupRate; B: SignupRate };
 }
 
-function rate(signups: number, reachedDebrief: number): SignupRate {
-  return { signups, reachedDebrief, pct: reachedDebrief > 0 ? Math.round((100 * signups) / reachedDebrief) : null };
+function rate(signups: number, sawForm: number): SignupRate {
+  return { signups, sawForm, pct: sawForm > 0 ? Math.round((100 * signups) / sawForm) : null };
 }
+
+/** Steps whose screen shows the sign-up form (the briefing's card, then the debrief). */
+const FORM_STEPS: ReadonlySet<Step> = new Set<Step>(["dashboard", "post", "debrief"]);
 
 /**
  * Headline numbers over the sign-ups given (filter test sign-ups out first if
  * the totals should exclude them). `records` are the study sessions, to count
- * who saw the form: real sessions that reached the debrief. A real session
+ * who saw the form: real sessions that reached the briefing (its sign-up card)
+ * or the debrief, whether or not they finished. A real session
  * counts as signed up when its own record says so (`waitlist`): the stores
  * keep one sign-up row per email and source, so when two sessions sign up with
  * the same email only the later one has a row, and a sign-up whose POST never
  * landed (rate limit, offline, schema not applied) still exists in the record.
  * A sign-up row counts toward a variant (once per session) through its session
  * record when that is known, else through its own variant and test flag; a
- * session with a sign-up reached the debrief by definition, even when its last
- * saved step says otherwise, so the rate never passes 100%.
+ * session with a sign-up saw the form by definition, even when its last saved
+ * step says otherwise, so the rate never passes 100%.
  */
 export function signupStats(signups: readonly Signup[], records: readonly SessionRecord[]): SignupStats {
   const bySource: Record<SignupSource, number> = { study: 0, c: 0 };
@@ -204,7 +211,7 @@ export function signupStats(signups: readonly Signup[], records: readonly Sessio
   for (const r of records) {
     bySession.set(r.sessionId, r);
     if (r.isTest) continue;
-    if (r.step === "debrief" || r.completedAt) reached[r.variant].add(r.sessionId);
+    if (FORM_STEPS.has(r.step) || r.completedAt) reached[r.variant].add(r.sessionId);
     if (r.waitlist === true) {
       signedUp[r.variant].add(r.sessionId);
       reached[r.variant].add(r.sessionId);

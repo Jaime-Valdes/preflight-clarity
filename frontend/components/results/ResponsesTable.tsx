@@ -5,6 +5,7 @@ import { Fragment, useState } from "react";
 import { PART_LABELS, SECTIONS } from "@preflight/shared/sections";
 import {
   ANXIETY_START_LABELS,
+  BOOK_LIKELIHOOD_LABELS,
   CHECK_FREQUENCY_LABELS,
   DEVICE_LABELS,
   FLIGHTS_PER_YEAR_LABELS,
@@ -72,10 +73,22 @@ const ADDED_VIA_LABEL: Record<string, string> = {
   whatif_route: "another route",
 };
 
+/**
+ * The optional route and timeframe questions, asked until 2026-10-24. Since
+ * then the flight set up (the Flight field) is the route and its date says how
+ * far away it is, so this is "" for new sessions and the line is left out.
+ */
+function oldRouteLine(record: SessionRecord): string {
+  const { routeOrigin, routeDestination, timeframe } = record.pre;
+  const route = routeOrigin || routeDestination ? `${routeOrigin || "?"} → ${routeDestination || "?"}` : "";
+  return [route, timeframe ? TIMEFRAME_LABELS[timeframe] : ""].filter(Boolean).join(" · ");
+}
+
 function Details({ record }: { record: SessionRecord }) {
   const { pre, post, flight, dashboard, device } = record;
   const exploration = dashboard?.exploration ?? null;
   const shown = dashboard ? sectionsShown(record) : [];
+  const travel = Array.isArray(post.travelImpact) ? post.travelImpact : [];
   const chips = (values: ReadonlyArray<string>, tone: "calm" | "sand") =>
     values.length === 0 ? (
       <span className="text-ink-400">—</span>
@@ -112,12 +125,9 @@ function Details({ record }: { record: SessionRecord }) {
             <span className="text-ink-400">Not set up</span>
           )}
         </Field>
-        <Field label="Pre-survey extras">
-          {pre.routeOrigin || pre.routeDestination ? `${pre.routeOrigin || "?"} → ${pre.routeDestination || "?"}` : "No route given"}
-          <span className="block text-xs text-ink-500">
-            {pre.timeframe ? TIMEFRAME_LABELS[pre.timeframe] : "timeframe not given"} ·{" "}
-            {pre.flightsPerYear ? FLIGHTS_PER_YEAR_LABELS[pre.flightsPerYear] : "flights per year not given"}
-          </span>
+        <Field label="Flies">
+          {pre.flightsPerYear ? FLIGHTS_PER_YEAR_LABELS[pre.flightsPerYear] : "—"}
+          {oldRouteLine(record) ? <span className="block text-xs text-ink-500">Pre-survey route · {oldRouteLine(record)}</span> : null}
         </Field>
         <Field label="Worries most">{pre.worriesMost ? (WORRY_LABELS[pre.worriesMost] ?? pre.worriesMost) : "—"}</Field>
         <Field label="Anxiety starts">{pre.anxietyStarts ? (ANXIETY_START_LABELS[pre.anxietyStarts] ?? pre.anxietyStarts) : "—"}</Field>
@@ -136,15 +146,13 @@ function Details({ record }: { record: SessionRecord }) {
           {post.wouldReplace.length ? post.wouldReplace.map((o) => REPLACE_LABELS[o]).join(", ") : "—"}
           {post.wouldReplaceText ? <span className="block text-xs text-ink-500">“{post.wouldReplaceText}”</span> : null}
         </Field>
-        <Field label="Still scared of">{post.stillScaredOf ? `“${post.stillScaredOf}”` : "—"}</Field>
-        <Field label="Travel plans">
-          {Array.isArray(post.travelImpact) && post.travelImpact.length > 0
-            ? post.travelImpact.map((o) => TRAVEL_IMPACT_LABELS[o] ?? o).join(", ")
-            : "—"}
+        <Field label="Still anxious about">{post.stillScaredOf ? `“${post.stillScaredOf}”` : "—"}</Field>
+        <Field label="More likely to book">
+          {post.bookLikelihood ? (BOOK_LIKELIHOOD_LABELS[post.bookLikelihood] ?? post.bookLikelihood) : "—"}
         </Field>
-        {record.variant === "A" ? (
-          <Field label="Would switch">{post.wouldSwitch ? WOULD_SWITCH_LABELS[post.wouldSwitch] ?? post.wouldSwitch : "—"}</Field>
-        ) : null}
+        <Field label="Travel plans">{travel.length > 0 ? travel.map((o) => TRAVEL_IMPACT_LABELS[o] ?? o).join(", ") : "—"}</Field>
+        {/* Asked in variant A until 2026-10-24; only sessions that answered still show it. */}
+        {post.wouldSwitch ? <Field label="Would switch">{WOULD_SWITCH_LABELS[post.wouldSwitch] ?? post.wouldSwitch}</Field> : null}
         <Field label="First name">{record.firstName || "—"}</Field>
         <Field label="Email">{record.email || "—"}</Field>
       </dl>

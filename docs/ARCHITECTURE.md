@@ -77,7 +77,7 @@ Web app (`frontend/`):
 
 | Route | What |
 | --- | --- |
-| `/` | Participant flow — one client state machine: welcome → pre-survey → flight setup → dashboard → post-survey → debrief. `?v=A` / `?v=B` force a variant; `?test=1` marks a team test session. |
+| `/` | Participant flow — one client state machine: welcome → pre-survey (three sliders, then "About your flying") → your flight (route + date) → dashboard → post-survey (sliders, what stood out, last few questions) → debrief. `?v=A` / `?v=B` force a variant; `?test=1` marks a team test session. |
 | `/preview?origin=JFK&destination=LAX&date=2026-11-26&v=A` | Team demo of the dashboard alone. No surveys, saves nothing. |
 | `/results?key=<ADMIN_KEY>` | Results: table, CSV export, pre-vs-post averages (overall and by variant), anxiety dropped/same/rose, calming vs anxiety-inducing section counts. |
 | `/api/*` | Proxy to the backend (see above). The frontend has **no** route handlers of its own. |
@@ -219,7 +219,7 @@ Mood: an aviation app crossed with a wellness app. Calm, premium, soft colours, 
 - **No nudging**: never say or imply the dashboard will reduce anxiety. No praise for answers, no "great!", no progress rewards tied to answers. Multi-selects include an explicit "None" / "Nothing" option with equal visual weight.
 - **Honest data framing**: the consent and debrief screens say all data is illustrative; the dashboard carries a small, quiet "Prototype · illustrative data" footer.
 - **Every session is saved** progressively (upsert by `sessionId` with an increasing `seq`): after the pre-survey, flight setup, dashboard (plus checkpoints and a `sendBeacon` on page hide), post-survey and debrief.
-- **The product sign-up appears only on the debrief**, after every answer is saved, identical in A and B (docs/INTEREST.md). Never on the dashboard or before the post-survey, never required to continue, and its copy makes no claim about anxiety or safety.
+- **The product sign-up has two placements** (docs/INTEREST.md): a card at the bottom of the dashboard, after every section and before the done footer, and the debrief. Both are identical in A and B, never required to continue, and their copy makes no claim about anxiety or safety. (Decision of 2026-10-24: the dashboard card is shown before the post-survey, so it is identical in both arms by design; the A-vs-B contrast stays clean.)
 
 ## Data model
 

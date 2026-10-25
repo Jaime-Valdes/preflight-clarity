@@ -1,22 +1,26 @@
 "use client";
 
-import { ArrowRight, Check, Plus } from "lucide-react";
+import { ArrowRight, Check, Clock3, Plane, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { formatTime12 } from "@preflight/shared/dates";
 import type { FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
+import { possessive } from "@/components/dashboard/trust/format";
 import { Card } from "@/components/ui/Card";
 import { useCompareList } from "@/lib/c/compare-store";
 import { formatFare } from "@/lib/c/format";
 import { MAX_COMPARE, compareHref, itemId, type CompareItem } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
-import { LINK_BUTTON, dayOffsetMark } from "./copy";
+import { BenchmarkLine } from "./BenchmarkLine";
+import { LINK_BUTTON, dayOffsetMark, fareFor } from "./copy";
 import { track } from "@/lib/analytics";
 
 interface FareCardProps {
   option: FlightOption;
   item: CompareItem;
+  /** Days from today to departure (0 = today): the fare shown moves with the booking lead time (fareFor). */
+  daysUntil: number;
   /** In-page link to the "Other flights this day" list. */
   othersHref: string;
   className?: string;
@@ -27,9 +31,11 @@ type FocusTarget = { target: "add" | "remove" };
 /**
  * Version C flight page: the illustrative fare and the compare actions —
  * "Add to compare", or "In compare ✓" with "Remove" and a link to the compare
- * page. Nothing can be booked; the copy says so quietly.
+ * page — and two figures set against their industry benchmarks (on-time
+ * record, fleet age) so they mean something at a glance. Nothing can be
+ * booked; the copy says so quietly.
  */
-export function FareCard({ option, item, othersHref, className }: FareCardProps) {
+export function FareCard({ option, item, daysUntil, othersHref, className }: FareCardProps) {
   const list = useCompareList();
   const id = itemId(item);
   const inList = list.has(id);
@@ -89,9 +95,41 @@ export function FareCard({ option, item, othersHref, className }: FareCardProps)
         <span className="text-xs text-ink-500">One-way · economy · 1 traveller</span>
       </div>
       <p className="mt-1.5 text-[32px] font-bold leading-none tracking-tight text-ink-900 tabular-nums">
-        {formatFare(option.fareUsd)}
+        {formatFare(fareFor(option, daysUntil))}
       </p>
       <p className="mt-2 text-xs leading-snug text-ink-500">Illustrative price. Nothing can be booked here.</p>
+
+      {/* Two facts anyone can look up any time, each next to its benchmark (shared/src/benchmarks.ts). */}
+      <ul className="mt-4 flex flex-col gap-2.5 border-t border-line/70 pt-4">
+        <li className="flex items-start gap-2.5">
+          <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-calm-50 text-calm-700">
+            <Clock3 className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-semibold leading-snug text-ink-900">
+              <span className="tabular-nums">{flight.airlineStats.onTimePct}%</span> on time
+              <span className="font-normal text-ink-500">
+                {" "}
+                · across the airline, last 12 months · <span className="tabular-nums">{flight.airlineStats.onTimeRoutePct}%</span> on this
+                route
+              </span>
+            </span>
+            <BenchmarkLine benchmark="onTimePct" value={flight.airlineStats.onTimePct} className="mt-0.5" />
+          </span>
+        </li>
+        <li className="flex items-start gap-2.5">
+          <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-breeze-50 text-breeze-700">
+            <Plane className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-semibold leading-snug text-ink-900">
+              Fleet age <span className="tabular-nums">{flight.aircraft.fleetAvgAgeYears.toFixed(1)}</span> years
+              <span className="font-normal text-ink-500"> · {possessive(flight.airline.name)} {flight.aircraft.model} fleet</span>
+            </span>
+            <BenchmarkLine benchmark="fleetAgeYears" value={flight.aircraft.fleetAvgAgeYears} className="mt-0.5" />
+          </span>
+        </li>
+      </ul>
 
       <div className="mt-4">
         {inList ? (

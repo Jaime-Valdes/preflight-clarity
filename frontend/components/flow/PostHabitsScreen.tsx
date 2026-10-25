@@ -2,8 +2,8 @@
 
 import { Check } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
-import { TRAVEL_IMPACT_LABELS, TRAVEL_IMPACTS } from "@preflight/shared/stats";
-import type { CheckFrequency, PostSurvey, ReplaceOption, TravelImpact, Variant, WouldSwitch } from "@preflight/shared/types";
+import { BOOK_LIKELIHOOD_LABELS, BOOK_LIKELIHOODS } from "@preflight/shared/stats";
+import type { BookLikelihood, CheckFrequency, PostSurvey, ReplaceOption } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
@@ -23,51 +23,44 @@ export const REPLACE_OPTIONS: readonly ChoiceOption<ReplaceOption>[] = [
   { value: "medication", label: "Medication" },
   { value: "videos", label: "Educational videos" },
   { value: "turbulence_apps", label: "Turbulence apps (like Turbli)" },
-  { value: "choosing_flights", label: "Choosing flights carefully" },
+  // Reworded 2026-10-24 (was "Choosing flights carefully"); the stored value is unchanged.
+  { value: "choosing_flights", label: "Researching flights carefully" },
   { value: "nothing", label: "Nothing" },
 ];
 
-/** Same labels as the results breakdown (shared/src/stats.ts); "No" clears the others. */
-export const TRAVEL_IMPACT_OPTIONS: readonly ChoiceOption<TravelImpact>[] = TRAVEL_IMPACTS.map((value) => ({
+/** Same labels as the results breakdown (shared/src/stats.ts), so the two never drift. */
+export const BOOK_LIKELIHOOD_OPTIONS: readonly ChoiceOption<BookLikelihood>[] = BOOK_LIKELIHOODS.map((value) => ({
   value,
-  label: TRAVEL_IMPACT_LABELS[value],
+  label: BOOK_LIKELIHOOD_LABELS[value],
 }));
 
-export const WOULD_SWITCH_OPTIONS: readonly ChoiceOption<WouldSwitch>[] = [
-  { value: "yes", label: "Yes" },
-  { value: "no", label: "No" },
-  { value: "not_sure", label: "Not sure" },
-  { value: "didnt_look", label: "I didn\u2019t look at other flights" },
-];
-
 interface PostHabitsScreenProps {
-  variant: Variant;
   post: PostSurvey;
   onChange: (patch: Partial<PostSurvey>) => void;
   onFinish: () => void;
 }
 
-/** How they'd use it, what it might replace, what they'd still be scared of, whether the fear changed their plans. */
-export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabitsScreenProps) {
+/** How they'd use it, what it might replace, what they'd still feel anxious about, whether it would make them more likely to book. */
+export function PostHabitsScreen({ post, onChange, onFinish }: PostHabitsScreenProps) {
   const replaceTextId = useId();
-  const scaredId = useId();
+  const anxiousId = useId();
   const complete = post.checkFrequency !== null && post.wouldReplace.length > 0;
-  // Variant A: the optional switch question sits last, below the fold. If Finish is tapped before it
-  // was ever on screen, bring it into view once instead of finishing, so a blank answer means "skipped",
+  // The optional booking question sits last, below the fold. If Finish is tapped before it was ever
+  // on screen, bring it into view once instead of finishing, so a blank answer means "skipped",
   // not "never seen". A second tap always finishes; no answer is required.
-  const switchLabelRef = useRef<HTMLParagraphElement>(null);
-  const switchSeen = useRef(false);
+  const bookLabelRef = useRef<HTMLParagraphElement>(null);
+  const bookSeen = useRef(false);
   /** performance.now() when Finish scrolled to the question: a tap within ~600 ms is the tail of a double tap. */
   const broughtIntoViewAt = useRef<number | null>(null);
 
   useEffect(() => {
-    const el = switchLabelRef.current;
+    const el = bookLabelRef.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
     // The question counts as seen once it is fully visible above the pinned Finish bar.
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {
-          switchSeen.current = true;
+          bookSeen.current = true;
           io.disconnect();
         }
       },
@@ -79,10 +72,10 @@ export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabi
 
   function finish() {
     if (broughtIntoViewAt.current !== null && performance.now() - broughtIntoViewAt.current < 600) return;
-    if (variant === "A" && post.wouldSwitch == null && !switchSeen.current) {
-      switchSeen.current = true;
+    if (post.bookLikelihood == null && !bookSeen.current) {
+      bookSeen.current = true;
       broughtIntoViewAt.current = performance.now();
-      const label = switchLabelRef.current;
+      const label = bookLabelRef.current;
       // The label's parent is the whole question with its options.
       label?.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
       label?.focus({ preventScroll: true });
@@ -137,8 +130,8 @@ export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabi
         </Card>
         <Card className="animate-fade-up" style={fadeUp(120)}>
           <TextArea
-            id={scaredId}
-            label="What would you still be scared of?"
+            id={anxiousId}
+            label="What would you still feel anxious about?"
             hint="Optional. Anything at all."
             value={post.stillScaredOf}
             onChange={(v) => onChange({ stillScaredOf: v })}
@@ -148,28 +141,15 @@ export function PostHabitsScreen({ variant, post, onChange, onFinish }: PostHabi
         </Card>
         <Card className="animate-fade-up" style={fadeUp(180)}>
           <ChoiceGroup
-            kind="multi"
-            label="In the past year, has fear of flying changed your travel plans?"
-            hint="Optional. Choose as many as apply."
-            options={TRAVEL_IMPACT_OPTIONS}
-            values={post.travelImpact ?? []}
-            exclusive="no"
-            onChange={(values) => onChange({ travelImpact: values })}
+            kind="single"
+            labelRef={bookLabelRef}
+            label="Would having this pre-flight information make you more likely to book a flight?"
+            hint="Optional."
+            options={BOOK_LIKELIHOOD_OPTIONS}
+            value={post.bookLikelihood ?? null}
+            onChange={(v) => onChange({ bookLikelihood: v })}
           />
         </Card>
-        {variant === "A" ? (
-          <Card className="animate-fade-up" style={fadeUp(240)}>
-            <ChoiceGroup
-              kind="single"
-              labelRef={switchLabelRef}
-              label="If you could, would you switch to one of the other flights you looked at?"
-              hint="Optional."
-              options={WOULD_SWITCH_OPTIONS}
-              value={post.wouldSwitch ?? null}
-              onChange={(v) => onChange({ wouldSwitch: v })}
-            />
-          </Card>
-        ) : null}
       </div>
     </Screen>
   );

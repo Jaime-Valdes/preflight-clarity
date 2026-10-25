@@ -1,4 +1,5 @@
 import { formatShortDate } from "@preflight/shared/dates";
+import { fareAt, type FlightOption } from "@preflight/shared/search";
 import type { Flight } from "@preflight/shared/types";
 import type { RouteDay } from "@/lib/c/model";
 
@@ -30,6 +31,15 @@ export function routeText(origin: string, destination: string): string {
 /** "DL 2165 · JFK → LAX · Nov 26" — what the sign-up card records as the visitor's context (docs/INTEREST.md). */
 export function flightContext(flight: Pick<Flight, "flightNumber">, day: RouteDay): string {
   return `${flight.flightNumber} · ${routeText(day.origin, day.destination)} · ${monthDay(day.date)}`;
+}
+
+/**
+ * The illustrative fare shown for a flight `daysUntil` days before it leaves: the cached base
+ * fare (FlightOption.fareUsd) moved by the booking lead time (fareAt). Every fare on the flight
+ * and compare pages goes through here, so they always agree with the results page.
+ */
+export function fareFor(option: FlightOption, daysUntil: number): number {
+  return fareAt(option, daysUntil);
 }
 
 /** "Today" · "Tomorrow" · "In 42 days" */

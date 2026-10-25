@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef } from "react";
 import { addDays, formatLongDate } from "@preflight/shared/dates";
 import { TURBULENCE_FORECAST_DAYS } from "@preflight/shared/forecast";
-import { dayOverview, searchFlights, type DayOverview } from "@preflight/shared/search";
+import { fareAt, searchFlights, type DayOverview } from "@preflight/shared/search";
 import { availabilityAt, daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { formatFare } from "@/lib/c/format";
 import { clampDate, MAX_DAYS_AHEAD, type RouteDay } from "@/lib/c/model";
@@ -39,11 +39,13 @@ interface DateStripProps {
 }
 
 /**
- * Nearby dates: weekday and date, that day's lowest fare, and — only for days
- * whose turbulence forecast is out (within 2 days of today) — the best
- * smoothness score; other days show how many nonstop flights there are. Each
- * day is a link. Computed one tile at a time after the day's own results, so
- * the first paint isn't held up.
+ * Nearby dates: weekday and date, that day's lowest fare today (fareAt: the
+ * booking lead time moves fares), and — only for days whose turbulence
+ * forecast is out (within 2 days of today) — the best smoothness score; other
+ * days show how many nonstop flights there are. Each day is a link. Quieter
+ * than the result cards (no shadow, a thin ring), with the chosen day in navy.
+ * Computed one tile at a time after the day's own results, so the first paint
+ * isn't held up.
  */
 export function DateStrip({ day, stripDay, today, nowMs, hrefFor }: DateStripProps) {
   const scrollerRef = useRef<HTMLUListElement>(null);
@@ -80,13 +82,14 @@ export function DateStrip({ day, stripDay, today, nowMs, hrefFor }: DateStripPro
                 date={date}
                 current={date === day.date}
                 scores={availabilityAt(today, date).turbulence}
+                daysUntil={daysToDeparture(today, date)}
                 nowMs={daysToDeparture(today, date) <= 1 ? nowMs : null}
                 href={hrefFor(date)}
               />
             ))
           : Array.from({ length: DAYS }, (_, i) => (
               <li key={i} aria-hidden className="min-w-[5.5rem] flex-1 lg:min-w-0">
-                <div className="h-[6.25rem] animate-pulse rounded-2xl bg-surface ring-1 ring-inset ring-line/80" />
+                <div className="h-[6.25rem] animate-pulse rounded-2xl bg-surface/60 ring-1 ring-inset ring-line/60" />
               </li>
             ))}
       </ul>
@@ -99,22 +102,25 @@ export function DateStrip({ day, stripDay, today, nowMs, hrefFor }: DateStripPro
   );
 }
 
-/** The day's count, lowest fare and best score; with `nowMs`, only over the flights that haven't left yet (`left`: how many have). */
+/**
+ * The day's count, lowest fare today (`daysUntil` sets the booking lead time) and best score;
+ * with `nowMs`, only over the flights that haven't left yet (`left`: how many have).
+ */
 function safeOverview(
   origin: string,
   destination: string,
   date: string,
+  daysUntil: number,
   nowMs: number | null,
 ): (DayOverview & { left: number }) | null {
   try {
-    if (nowMs === null) return { ...dayOverview({ origin, destination, date }, date), left: 0 };
     const all = searchFlights({ origin, destination, date }).options;
-    const options = all.filter((o) => !hasLeft(o.flight, nowMs));
+    const options = nowMs === null ? all : all.filter((o) => !hasLeft(o.flight, nowMs));
     return {
       date,
       left: all.length - options.length,
       count: options.length,
-      lowestFareUsd: options.reduce((min, o) => Math.min(min, o.fareUsd), options.length > 0 ? Infinity : 0),
+      lowestFareUsd: options.reduce((min, o) => Math.min(min, fareAt(o, daysUntil)), options.length > 0 ? Infinity : 0),
       bestScore: options.reduce((max, o) => Math.max(max, o.flight.smoothness.score), 0),
     };
   } catch {
@@ -129,13 +135,18 @@ interface DayTileProps {
   current: boolean;
   /** The day's turbulence forecast is out, so its best score can be shown. */
   scores: boolean;
+  /** Whole days from today: today's fare for that day (fareAt). */
+  daysUntil: number;
   /** Set for today (and tomorrow, for far-off time zones): flights that have left don't count. */
   nowMs: number | null;
   href: string;
 }
 
-function DayTile({ origin, destination, date, current, scores, nowMs, href }: DayTileProps) {
-  const overview = useMemo(() => safeOverview(origin, destination, date, nowMs), [origin, destination, date, nowMs]);
+function DayTile({ origin, destination, date, current, scores, daysUntil, nowMs, href }: DayTileProps) {
+  const overview = useMemo(
+    () => safeOverview(origin, destination, date, daysUntil, nowMs),
+    [origin, destination, date, daysUntil, nowMs],
+  );
   const has = overview !== null && overview.count > 0;
   return (
     <li className="min-w-[5.5rem] flex-1 snap-start lg:min-w-0">
@@ -146,8 +157,8 @@ function DayTile({ origin, destination, date, current, scores, nowMs, href }: Da
         className={cn(
           "flex h-[6.25rem] flex-col items-center justify-center rounded-2xl px-1.5 text-center ring-1 ring-inset transition-colors",
           current
-            ? "bg-night-900 text-white shadow-lift ring-night-900"
-            : "bg-surface text-ink-900 ring-line hover:bg-canvas hover:ring-line-strong",
+            ? "bg-night-900 text-white ring-night-900"
+            : "bg-surface/60 text-ink-700 ring-line/70 hover:bg-surface hover:ring-line-strong",
         )}
       >
         <span className="sr-only">{formatLongDate(date)}</span>
@@ -167,7 +178,7 @@ function DayTile({ origin, destination, date, current, scores, nowMs, href }: Da
               <span
                 className={cn(
                   "mt-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none tabular-nums",
-                  current ? "bg-white/15 text-calm-100" : "bg-calm-50 text-calm-700",
+                  current ? "bg-white/15 text-calm-100" : "bg-canvas text-ink-700",
                 )}
               >
                 <span className="sr-only">, best smoothness score </span>

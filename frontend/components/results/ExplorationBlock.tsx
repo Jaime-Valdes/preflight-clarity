@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { explorationStats, formatMs, formatNumber, formatPct } from "@preflight/shared/stats";
 import type { SessionRecord } from "@preflight/shared/types";
-import { BarRow, Block, EmptyNote, SERIES, Tile } from "./bits";
+import { BarRow, Block, SERIES, Tile } from "./bits";
 
 /** "2 of 5" under a share, or a quiet note when nobody is in the slice. */
 function ofN(count: number, n: number): string {
@@ -64,15 +64,14 @@ export function ExplorationBlock({ records, className }: { records: SessionRecor
         />
       </div>
 
-      <div className="min-w-0">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-sm font-bold text-ink-900">Would switch to another flight they looked at</h3>
-          <span className="shrink-0 text-xs text-ink-400 tabular-nums">n = {wouldSwitch.n}</span>
-        </div>
-        <p className="mt-0.5 text-xs text-ink-500">Optional post-survey question. Share of those who answered.</p>
-        {wouldSwitch.n === 0 ? (
-          <EmptyNote className="mt-3">No answers yet.</EmptyNote>
-        ) : (
+      {/* Asked until 2026-10-24 (replaced by the booking question); shown only while older sessions carry an answer. */}
+      {wouldSwitch.n > 0 ? (
+        <div className="min-w-0">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-sm font-bold text-ink-900">Would switch to another flight they looked at</h3>
+            <span className="shrink-0 text-xs text-ink-400 tabular-nums">n = {wouldSwitch.n}</span>
+          </div>
+          <p className="mt-0.5 text-xs text-ink-500">Optional post-survey question until 2026-10-24. Share of those who answered.</p>
           <div className="mt-2 divide-y divide-line/60">
             {wouldSwitch.buckets.map((b) => (
               <BarRow
@@ -90,8 +89,8 @@ export function ExplorationBlock({ records, className }: { records: SessionRecor
               />
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      ) : null}
     </Block>
   );
 }

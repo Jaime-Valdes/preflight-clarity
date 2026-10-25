@@ -104,8 +104,9 @@ export function searchHref(day: RouteDay, extra: Record<string, string | undefin
   return `/c/search${query({ from: day.origin, to: day.destination, date: day.date, ...extra })}`;
 }
 
-export function flightHref(item: CompareItem): string {
-  return `/c/flight${query({ from: item.origin, to: item.destination, date: item.date, f: item.key })}`;
+/** /c/flight for one flight; `extra` adds parameters to keep (campaign tags — empty values are dropped). */
+export function flightHref(item: CompareItem, extra: Record<string, string | undefined> = {}): string {
+  return `/c/flight${query({ ...extra, from: item.origin, to: item.destination, date: item.date, f: item.key })}`;
 }
 
 export function compareHref(items: readonly CompareItem[]): string {

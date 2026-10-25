@@ -1,17 +1,22 @@
 "use client";
 
-import { Armchair, CalendarClock, CloudSun, Gauge, Plane, ShieldCheck, UserRound, Wind, X } from "lucide-react";
+import { Armchair, CalendarClock, CloudSun, Gauge, Info, Plane, ShieldCheck, UserRound, Wind, X } from "lucide-react";
 import Link from "next/link";
-import { useMemo, type FocusEvent, type ReactNode } from "react";
+import { useMemo, useState, type FocusEvent, type ReactNode } from "react";
 import { addDays, formatDuration, formatOffset, formatTime12 } from "@preflight/shared/dates";
+import { BENCHMARKS } from "@preflight/shared/benchmarks";
 import type { WeatherReport } from "@preflight/shared/types";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
-import { ScoreBadge } from "@/components/c/common/ScoreBadge";
+import { ScoreBadge, scoreTone } from "@/components/c/common/ScoreBadge";
+import { ScoreSheet } from "@/components/c/common/ScoreSheet";
+import { cabinNoiseBand } from "@/components/dashboard/trust/format";
 import { formatFare } from "@/lib/c/format";
 import { flightHref } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
+import { TONE_CLASSES, type Tone } from "@/lib/theme";
 import { marker, type PendingItem } from "@/components/c/common/availability";
-import { LINK_BASE, LINK_TONE, daysAwayLabel, dayOffsetMark, dayOffsetWords, routeText, shortDate } from "../flight/copy";
+import { BenchmarkLine, benchmarkValue } from "../flight/BenchmarkLine";
+import { LINK_BASE, LINK_TONE, daysAwayLabel, dayOffsetMark, dayOffsetWords, fareFor, routeText, shortDate } from "../flight/copy";
 import {
   SERIES,
   STRONGEST_BUMPS,
@@ -52,6 +57,13 @@ const LABEL = `${STICKY} bg-surface align-top`;
 const CELL = "px-2.5 align-top min-[400px]:px-3 sm:px-4";
 const ROW_LINE = "border-t border-line/70";
 
+/** The tinted tile behind a score, by the calm scale (scoreTone) — a column's focal point. */
+const SCORE_TILE: Record<ReturnType<typeof scoreTone>, string> = {
+  calm: "bg-calm-50 ring-calm-100 hover:bg-calm-100",
+  breeze: "bg-breeze-50 ring-breeze-100 hover:bg-breeze-100",
+  sand: "bg-sand-50 ring-sand-100 hover:bg-sand-100",
+};
+
 /**
  * When a control inside the sideways-scrolling table gets keyboard focus, bring all of it into view: the
  * browser leaves a partly visible one cut off at the edge, or under the sticky row labels (the scroller's
@@ -78,10 +90,14 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
   const pendingTurbulence = useMemo(() => flights.filter((c) => !c.avail.turbulence), [flights]);
   const anyForecast = forecasted.length > 0;
   const anyWeather = flights.some((c) => c.avail.weather);
-  const cheapest = leaders(flights, (c) => c.option.fareUsd, "min");
+  // Fares as shown: the base fare moved by each flight's own lead time (they can be on different dates).
+  const cheapest = leaders(flights, (c) => fareFor(c.option, c.daysUntil), "min");
   const smoothest = leaders(forecasted, (c) => c.flight.smoothness.score, "max");
   const fastest = leaders(flights, (c) => c.flight.blockMin, "min");
   const tags = useMemo(() => flightTags(flights, names), [flights, names]);
+  // The flight whose "How the smoothness score works" sheet is open (its column id), if any.
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+  const sheetColumn = sheetFor ? (forecasted.find((c) => c.id === sheetFor) ?? null) : null;
 
   const series = useMemo<TimelineSeries[]>(
     () =>
@@ -155,12 +171,24 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
       </tr>
     ));
 
-  /** Group title in the label column, and a small key per flight so a column stays recognisable far down the table. */
-  const groupHead = (title: string, icon: ReactNode) => (
+  /**
+   * Group title in the label column (with a tinted icon from sm up — the same tones as the flight page's
+   * sections), and a small key per flight so a column stays recognisable far down the table.
+   */
+  const groupHead = (title: string, icon: ReactNode, tone: Tone) => (
     <tr>
       <th scope="rowgroup" className={cn(STICKY, "border-t border-line bg-canvas pb-2.5 pt-4 align-top")}>
-        <span className="flex items-center gap-1.5 text-xs font-bold leading-tight text-ink-900 sm:text-[13px] [&_svg]:hidden [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-ink-400 sm:[&_svg]:block">
-          {icon}
+        <span className="flex items-center gap-2 text-xs font-bold leading-tight text-ink-900 sm:text-[13px]">
+          <span
+            aria-hidden
+            className={cn(
+              "hidden size-6 shrink-0 items-center justify-center rounded-lg sm:flex [&_svg]:size-3.5",
+              TONE_CLASSES[tone].bg,
+              TONE_CLASSES[tone].text,
+            )}
+          >
+            {icon}
+          </span>
           {title}
         </span>
       </th>
@@ -240,23 +268,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
               </td>
             ))}
           </tr>
-          <tr>
-            <th scope="row" className={cn(LABEL, "pb-3 text-xs font-semibold text-ink-500")}>
-              Fare
-            </th>
-            {columns.map((c) => (
-              <td key={c.id} className={cn(CELL, "pb-3")}>
-                {isFlightColumn(c) ? (
-                  <>
-                    <span className="block text-xl font-bold leading-tight text-ink-900 tabular-nums">{formatFare(c.option.fareUsd)}</span>
-                    {cheapest.has(c.id) ? <Marker>Cheapest</Marker> : null}
-                  </>
-                ) : (
-                  <NotAvailable />
-                )}
-              </td>
-            ))}
-          </tr>
+          {/* The column's focal point: the score on a tinted tile (calm scale), a button that explains the score. */}
           <tr>
             <th scope="row" className={cn(LABEL, "pb-3 text-xs font-semibold text-ink-500")}>
               Score
@@ -267,13 +279,49 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
                   <PendingCell item="turbulence" date={c.item.date} subject="Score" />
                 ) : isFlightColumn(c) ? (
                   <>
-                    <ScoreBadge
-                      score={c.flight.smoothness.score}
-                      label={c.flight.smoothness.label}
-                      size="sm"
-                      className="[&>span:last-child]:text-[13px]"
-                    />
+                    <button
+                      type="button"
+                      aria-haspopup="dialog"
+                      onClick={() => setSheetFor(c.id)}
+                      className={cn(
+                        "flex w-full min-w-0 flex-col items-start gap-1.5 rounded-2xl px-2.5 py-2.5 text-left ring-1 ring-inset transition-colors",
+                        SCORE_TILE[scoreTone(c.flight.smoothness.score)],
+                      )}
+                    >
+                      <ScoreBadge
+                        score={c.flight.smoothness.score}
+                        label={c.flight.smoothness.label}
+                        size="sm"
+                        // The narrowest columns (340 px phones) stack the label under the ring so "Mostly smooth" isn't cut off.
+                        className="max-[399px]:flex-col max-[399px]:items-start max-[399px]:gap-1 [&>span:last-child]:text-[13px] [&>span:last-child]:text-ink-900"
+                      />
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-ink-500">
+                        <Info aria-hidden className="size-3.5 shrink-0" />
+                        How it works<span className="sr-only"> for {nameOf(c)}</span>
+                      </span>
+                    </button>
                     {smoothest.has(c.id) ? <Marker className="mt-2">Smoothest</Marker> : null}
+                    <BenchmarkLine benchmark="smoothnessScore" value={c.flight.smoothness.score} className="mt-2" />
+                  </>
+                ) : (
+                  <NotAvailable />
+                )}
+              </td>
+            ))}
+          </tr>
+          <tr>
+            <th scope="row" className={cn(LABEL, "pb-3 text-xs font-semibold text-ink-500")}>
+              Fare
+            </th>
+            {columns.map((c) => (
+              <td key={c.id} className={cn(CELL, "pb-3")}>
+                {isFlightColumn(c) ? (
+                  <>
+                    <span className="block text-2xl font-bold leading-tight tracking-tight text-ink-900 tabular-nums">
+                      {formatFare(fareFor(c.option, c.daysUntil))}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-ink-500">one way · illustrative</span>
+                    {cheapest.has(c.id) ? <Marker>Cheapest</Marker> : null}
                   </>
                 ) : (
                   <NotAvailable />
@@ -312,7 +360,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         </tbody>
 
         <tbody>
-          {groupHead("Smoothness", <Gauge />)}
+          {groupHead("Smoothness", <Gauge />, "calm")}
           {row("On this route", (c) => {
             const typical = routeTypical(c.flight);
             return <Value main={typical.main} sub={typical.sub} />;
@@ -352,7 +400,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         </tbody>
 
         <tbody>
-          {groupHead("Turbulence timeline", <Wind />)}
+          {groupHead("Turbulence timeline", <Wind />, "calm")}
           <tr>
             <td colSpan={n + 1} className="p-0">
               {/* Spans the whole table but stays the width of the visible area, so it never scrolls away sideways. */}
@@ -376,7 +424,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         </tbody>
 
         <tbody>
-          {groupHead("Schedule", <CalendarClock />)}
+          {groupHead("Schedule", <CalendarClock />, "breeze")}
           {row("Departs", (c) => (
             <Value main={formatTime12(c.flight.departTime)} sub={`${c.flight.origin.code} · ${shortDate(c.item.date)}`} />
           ))}
@@ -395,7 +443,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         </tbody>
 
         <tbody>
-          {groupHead("Aircraft", <Plane />)}
+          {groupHead("Aircraft", <Plane />, "breeze")}
           {row("Type", (c) => (
             <Value
               main={c.flight.aircraft.fullName}
@@ -410,7 +458,8 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
           ))}
           {row("Age", (c) => {
             const a = c.flight.aircraft;
-            // This airframe's own age only once it is assigned (about a day ahead); the fleet's any time.
+            // This airframe's own age only once it is assigned (about a day ahead); the fleet's any time. Either
+            // way the figure shown is the one set against the global fleet average.
             return c.avail.airframe ? (
               <Value
                 main={yearsText(a.ageYears)}
@@ -420,11 +469,13 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
                     {yearsText(a.fleetAvgAgeYears)}
                   </>
                 }
+                benchmark={<BenchmarkLine benchmark="fleetAgeYears" value={a.ageYears} />}
               />
             ) : (
               <Value
                 main={`About ${yearsText(a.fleetAvgAgeYears)}`}
                 sub={`Fleet average for this type · ${rangeText(a.fleetAgeRange)}`}
+                benchmark={<BenchmarkLine benchmark="fleetAgeYears" value={a.fleetAvgAgeYears} />}
               />
             );
           })}
@@ -434,20 +485,54 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         </tbody>
 
         <tbody>
-          {groupHead("Airline", <ShieldCheck />)}
+          {groupHead("Airline", <ShieldCheck />, "calm")}
           {row("On time", (c) => (
             <Value
               main={`${c.flight.airlineStats.onTimePct}%`}
               sub={`${c.flight.airlineStats.onTimeRoutePct}% on this route · last 12 months`}
+              benchmark={<BenchmarkLine benchmark="onTimePct" value={c.flight.airlineStats.onTimePct} />}
             />
           ))}
           {row("Safety score", (c) => (
             <Value main={`${c.flight.airlineStats.safetyScore} / 100`} sub={c.flight.airlineStats.safetyLabel} />
           ))}
+          {/* Comfort, each figure next to the typical economy cabin (shared/src/benchmarks.ts). */}
+          {row("Legroom", (c) => (
+            <Value
+              main={`${c.flight.airlineStats.seatPitchIn} in`}
+              sub="Seat pitch in economy"
+              benchmark={<BenchmarkLine benchmark="seatPitchIn" value={c.flight.airlineStats.seatPitchIn} />}
+            />
+          ))}
+          {row("Seat width", (c) => (
+            <Value
+              main={`${c.flight.airlineStats.seatWidthIn} in`}
+              sub="Economy seats"
+              benchmark={<BenchmarkLine benchmark="seatWidthIn" value={c.flight.airlineStats.seatWidthIn} />}
+            />
+          ))}
+          {row("Cabin noise", (c) => {
+            // A band with an approximate range, never one exact reading (docs/FEASIBILITY.md). The band's label is
+            // already the comparison, so the typical cabin's figure sits in the sub line rather than a second verdict.
+            const noise = cabinNoiseBand(c.flight.airlineStats.cabinNoiseDb);
+            return (
+              <Value
+                main={noise.label}
+                sub={`${noise.range[0]!.toUpperCase()}${noise.range.slice(1)} · ${BENCHMARKS.cabinNoiseDb.label} ${benchmarkValue("cabinNoiseDb")}`}
+              />
+            );
+          })}
+          {row("Comfort", (c) => (
+            <Value
+              main={`${c.flight.airlineStats.comfortScore.toFixed(1)} / 10`}
+              sub="Seats, cabin and service, from passenger reviews"
+              benchmark={<BenchmarkLine benchmark="comfortScore" value={c.flight.airlineStats.comfortScore} />}
+            />
+          ))}
         </tbody>
 
         <tbody>
-          {groupHead("Who flies it", <UserRound />)}
+          {groupHead("Who flies it", <UserRound />, "dusk")}
           {row("Pilots", (c) => {
             const line = crewLine(c.flight.crew, c.flight.aircraft.model);
             return <Value main={line.main} sub={line.sub} />;
@@ -463,7 +548,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         </tbody>
 
         <tbody>
-          {groupHead("Weather", <CloudSun />)}
+          {groupHead("Weather", <CloudSun />, "breeze")}
           {anyWeather
             ? gatedRows(
                 [
@@ -477,7 +562,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
         </tbody>
 
         <tbody>
-          {groupHead("Best seat", <Armchair />)}
+          {groupHead("Best seat", <Armchair />, "calm")}
           {row("Smoothest rows", (c) => {
             const zone = smoothestZone(c.flight);
             return <Value main={zone.main} sub={zone.sub} />;
@@ -492,6 +577,9 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
           })}
         </tbody>
       </table>
+
+      {/* Opened from a score tile; the same sheet the result cards open, so one score has one explanation. */}
+      {sheetColumn ? <ScoreSheet flight={sheetColumn.flight} daysUntil={sheetColumn.daysUntil} onClose={() => setSheetFor(null)} /> : null}
     </div>
   );
 }
@@ -528,13 +616,25 @@ function ColumnHead({ column, slot }: { column: Column; slot: number }) {
   );
 }
 
-function Value({ main, sub, marker }: { main: ReactNode; sub?: ReactNode; marker?: string | null }) {
+function Value({
+  main,
+  sub,
+  marker,
+  benchmark,
+}: {
+  main: ReactNode;
+  sub?: ReactNode;
+  marker?: string | null;
+  /** A BenchmarkLine setting the figure against its industry average. */
+  benchmark?: ReactNode;
+}) {
   return (
     <>
       <span className="block text-[13px] font-semibold leading-snug text-ink-900 tabular-nums [overflow-wrap:anywhere] sm:text-sm">
         {main}
       </span>
       {sub ? <span className="mt-0.5 block text-xs leading-snug text-ink-500 [overflow-wrap:anywhere]">{sub}</span> : null}
+      {benchmark ? <span className="mt-1 block">{benchmark}</span> : null}
       {marker ? <Marker>{marker}</Marker> : null}
     </>
   );

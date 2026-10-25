@@ -13,7 +13,9 @@ richer exploring phase. Decisions already made with the team (2026-10-14):
 - **Forecast alerts are about the participant's own flight.** There is one alert setting
   (`dashboard.alert`); on an explored option the switch shows it but can't change it.
 - **One optional post-survey question is added**: "If you could, would you switch to one of the
-  other flights you looked at?" — Yes / No / Not sure / I didn't look at other flights.
+  other flights you looked at?" — Yes / No / Not sure / I didn't look at other flights. (Asked until
+  2026-10-24; replaced by the booking question, `post.bookLikelihood`, in both variants. The
+  `wouldSwitch` field stays in the record for the sessions that answered it.)
 
 Research framing: everything here is the brief's **control** dimension ("comparing flights,
 choosing a smoother time"). Nothing may nudge: no "better choice" language, no praise for
@@ -219,14 +221,61 @@ checkpoint gets its close logged (detail `"reload"`); the sheet itself starts cl
   restores every flight's open sections (`tracker.openSectionsByFlight()`). Held options and the
   chosen seat are not restored.
 
+### Polish of 2026-10-24 (both variants unless noted)
+
+- **Section order**: `shared/src/sections.ts` — Turbulence, Aircraft, Best seat, Airline safety &
+  comfort, then Who flies your plane, Weather, Sounds, Compare, Alerts (B: turbulence only). The
+  dashboard renders `VARIANT_SECTIONS[variant]`; each record keeps the order it showed.
+- **Laptop layout**: `Screen` has a `wide` prop (the column widens to ~1000 px from `lg`, 1024 px,
+  and starts a little higher; the footer's content stays centred at the phone width). Inside it the
+  dashboard is two columns from `lg` (`LAYOUT` in `Dashboard.tsx`): left, sticky — the preview
+  banner, the flight strip, the header and the summary card; right — the sections (the intro line
+  is phone-only there), the sign-up card and the prototype footnote. The left column is padded by
+  the page gutter and pulled left by as much, so the strip's edge-to-edge scroller and the header's
+  notches stay inside it. It is sized to the space above the done footer (`100dvh − 7rem −
+  var(--page-top)`; a page with a bar above the dashboard, like `/preview`, sets `--page-top` to
+  the bar's height) and scrolls on its own if it is taller; while the score factors are open it
+  stops sticking (`lg:static`) and the page scrolls instead, so the factor list is never clipped.
+  The section list is tighter on laptops (`LAYOUT.list`: no top margin, 6 px gap, collapsed headers
+  at `py-2.5` through an arbitrary variant — `SectionCard`'s own padding is phone-first and shared
+  with version C), so variant A's nine headers and the factors toggle fit above the footer from
+  1024×768 and 1366×768 up. Phones are unchanged; the skeleton and `/preview` use the same layout;
+  the sheets (what-if, compare, sign-up) stay a centred 440 px column.
+- **"What goes into this score"** (`SummaryCard`, `showFactors`): a disclosure whose toggle sits in
+  the score row's text block (under "Higher is smoother", so it costs no height and is in view on a
+  laptop before the column would need scrolling) and whose list opens under the row, collapsed by
+  default, listing the factors the illustrative model uses — route history for the month, expected
+  bumpy stretches, aircraft size, time of day, weather at both ends, forecast confidence — each
+  with a calm up / down / neutral marker (`summary/scoreFactors.ts`, pure) and a 13 px explanation.
+  Honest wording: it describes the model, nothing more. Every open logs `score_factors_open` in the
+  tracker and in PostHog (`{ variant }`); `/preview` registers `is_test: true` (and the variant)
+  first, so team demos fall out of the study's filters. Version C's flight page keeps the plain card
+  (prop off).
+- **Analytics**: `track("dashboard_section_open", { section, variant })` from the participant's own
+  toggle only — never from a flight switch or a reload restore, which go through `viaSwitch`.
+- **Sign-up card**: `DashboardProps.signup?: { signedUp, onSubmit }`. When present (the study;
+  `/preview` passes none) the dashboard renders version C's `InterestCard` after the last section,
+  before the "I'm done exploring" footer, with placement `"dashboard"` and the same copy in A and B
+  (docs/INTEREST.md). The card and sheet are generalized with a `study` prop: the sheet validates and
+  hands `{ email, firstName, interview }` to `onSubmit` (the flow saves it to the record and the
+  sign-ups list, marks `pfc.interest.v1` and tracks `interest_signup`); the card tracks
+  `interest_cta_view { source: "study", placement: "dashboard" }` once per mount, only while the form
+  is offered and with the debrief card's definition of a view (40 % of the card on screen, so the
+  two placements compare; version C keeps counting from the first pixel), and shows "You're on the
+  list." when `signedUp` or after its own submit. The debrief then shows the done state instead of
+  the form. The sheet's Done button sits where "I'm done exploring" is on a phone, so the card
+  reports every close through `StudySignup.onSheetClose` and the dashboard applies the same
+  `OVERLAY_SETTLE_MS` double-tap guard it uses for the what-if and compare sheets. The tracker and
+  the record are unchanged.
+
 ## Flow contract (frontend/components/flow/)
 
 - Post-survey ratings screen: a neutral chip "Your flight · LAX → JFK · Sat, Oct 31" above the
   questions; wording of the three questions unchanged. Shown in **both** variants on purpose, so the
   post-survey is the same instrument in A and B (only B sessions saved before 2026-10-14 lack it).
-- Post-survey habits screen (variant A only): "If you could, would you switch to one of the other
-  flights you looked at?" — Yes / No / Not sure / I didn't look at other flights (optional).
-  Variant B stores `null`.
+- Post-survey habits screen (variant A only, until 2026-10-24): "If you could, would you switch to
+  one of the other flights you looked at?" — Yes / No / Not sure / I didn't look at other flights
+  (optional). Variant B stored `null`. No longer asked; old sessions keep their answer.
 - Saves unchanged; the record's `dashboard.exploration` comes from the tracker.
 
 ## Backend, stats, CSV, results

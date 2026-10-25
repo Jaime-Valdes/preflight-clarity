@@ -30,9 +30,11 @@ import type {
   SectionProps,
   Variant,
 } from "@preflight/shared/types";
+import { InterestCard, type StudySignup } from "@/components/c/interest/InterestCard";
 import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { SectionCard } from "@/components/ui/SectionCard";
+import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { useTodayISO } from "@/lib/hooks";
 import type { Tone } from "@/lib/theme";
@@ -63,6 +65,13 @@ export interface DashboardProps {
   onCheckpoint?: (metrics: DashboardMetrics) => void;
   /** Called once when the participant taps "I'm done exploring". */
   onDone: (metrics: DashboardMetrics) => void;
+  /**
+   * The study's "Want this for your real flights?" sign-up card at the end of the briefing
+   * (docs/INTEREST.md, placement "dashboard"; identical in A and B). The host saves a valid
+   * submit and tracks interest_signup; the dashboard tracks interest_cta_view. Absent (the
+   * team's /preview): no card.
+   */
+  signup?: StudySignup;
 }
 
 interface SectionUi {
@@ -172,7 +181,7 @@ export function Dashboard(props: DashboardProps) {
   return <LiveDashboard {...props} today={today} />;
 }
 
-function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, today }: DashboardProps & { today: string }) {
+function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, signup, today }: DashboardProps & { today: string }) {
   const sectionIds = VARIANT_SECTIONS[variant];
   // Free exploration is variant A only; variant B stays one flight, exactly as before.
   const exploring = variant === "A";
@@ -213,6 +222,8 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
   /** A flight shown by anything but its strip chip: focus moves to that chip after the commit (a new object per request). */
   const [chipFocus, setChipFocus] = useState<{ id: string } | null>(null);
   const [done, setDone] = useState(false);
+  /** "What goes into this score" is expanded: on laptops the left column stops sticking so the list is never clipped. */
+  const [factorsOpen, setFactorsOpen] = useState(false);
   const finishedRef = useRef(false);
   const checkpointRef = useRef(onCheckpoint);
   const sectionEls = useRef(new Map<SectionId, HTMLDivElement>());
@@ -318,6 +329,9 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
       });
       tracker.setSectionOpen(id, next);
       if (!next) return;
+      // Product analytics (docs/ANALYTICS.md): the participant's own opens only — a section that comes
+      // back into view on a flight switch or a reload goes through the tracker with viaSwitch, not here.
+      track("dashboard_section_open", { section: id, variant });
       // If the header sits low on the screen, bring the opening section up gently —
       // once its body has expanded, so the page is tall enough to scroll to it.
       window.setTimeout(() => {
@@ -329,8 +343,25 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
         window.scrollBy({ top: top - 16, behavior: reduceMotion ? "auto" : "smooth" });
       }, SCROLL_AFTER_MS);
     },
-    [tracker, activeId],
+    [tracker, activeId, variant],
   );
+
+  /** "What goes into this score" expanded (the summary card's disclosure; logged like a section open). */
+  const onFactorsToggle = useCallback(
+    (open: boolean) => {
+      setFactorsOpen(open);
+      if (!open) return;
+      tracker.event("score_factors_open");
+      track("score_factors_open", { variant });
+    },
+    [tracker, variant],
+  );
+
+  /** The sign-up sheet's Done sits where "I'm done exploring" is: same double-tap guard as the what-if and compare sheets. */
+  const onSheetClose = useCallback(() => {
+    overlayClosedAt.current = performance.now();
+  }, []);
+  const study = useMemo<StudySignup | undefined>(() => (signup ? { ...signup, onSheetClose } : undefined), [signup, onSheetClose]);
 
   // ── Free exploration (variant A) ──────────────────────────────────────────
 
@@ -453,6 +484,7 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
     <TrackerContext.Provider value={tracker}>
       <ExploreContext.Provider value={explore}>
         <Screen
+          wide
           footer={
             <Button block onClick={handleDone} disabled={done}>
               I&rsquo;m done exploring
@@ -462,69 +494,90 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
           <h1 tabIndex={-1} data-focus-start className="sr-only outline-none">
             {explore && activeIndex > 0 ? "Flight briefing" : "Your flight briefing"}
           </h1>
-          <PreviewBanner today={briefingDays === 0} className="-mt-2 mb-3 animate-fade-up" />
-          {explore ? (
-            <>
-              <FlightStrip
-                entries={explored}
-                activeId={activeId}
-                onSelect={explore.switchTo}
-                onAdd={explore.openWhatIf}
-                onCompare={explore.compare}
-                className="mb-3 animate-fade-up"
-              />
-              <p role="status" className="sr-only">
-                {announcement}
-              </p>
-            </>
-          ) : null}
-          <Fragment key={shown.id}>
-            <DashboardHeader
-              flight={shown}
-              daysUntil={daysUntil}
-              briefingDaysUntil={briefingDays}
-              label={explore ? exploreLabel(activeIndex) : undefined}
-              example
-              className="animate-fade-up"
-            />
-            <SummaryCard flight={shown} ctx={ctx} className="mt-4 animate-fade-up [animation-delay:60ms]" />
-
-            <p className="mt-6 px-1 text-[13px] leading-snug text-ink-500 animate-fade-up [animation-delay:120ms]">
-              {explore && activeIndex > 0
-                ? `A flight you’re exploring: ${routeLabel(shown)}, ${chipDate(shown.input.date)}. Explore as much or as little as you like.`
-                : "Your flight briefing. Explore as much or as little as you like."}
-            </p>
-
-            <div className="mt-3 flex flex-col gap-3 animate-fade-up [animation-delay:160ms]">
-              {sectionIds.map((id) => {
-                const ui = SECTION_UI[id];
-                return (
-                  <div
-                    key={id}
-                    ref={(el) => {
-                      if (el) sectionEls.current.set(id, el);
-                      else sectionEls.current.delete(id);
-                    }}
-                  >
-                    <SectionCard
-                      title={sectionMeta(id).title}
-                      icon={ui.icon}
-                      tone={ui.tone}
-                      teaser={safeTeaser(ui, shown, ctx, !explore || activeIndex === 0)}
-                      open={openIds.has(id)}
-                      onToggle={(next) => toggleSection(id, next)}
-                    >
-                      <SectionBoundary>
-                        <ui.Body flight={shown} ctx={ctx} />
-                      </SectionBoundary>
-                    </SectionCard>
-                  </div>
-                );
-              })}
+          <div className={LAYOUT.row}>
+            {/* Laptops: the flight and its score stay put on the left while the sections scroll on the right. */}
+            <div className={cn(LAYOUT.aside, factorsOpen ? LAYOUT.asideOpen : LAYOUT.asideSticky)}>
+              <PreviewBanner today={briefingDays === 0} className="-mt-2 mb-3 animate-fade-up" />
+              {explore ? (
+                <>
+                  <FlightStrip
+                    entries={explored}
+                    activeId={activeId}
+                    onSelect={explore.switchTo}
+                    onAdd={explore.openWhatIf}
+                    onCompare={explore.compare}
+                    className="mb-3 animate-fade-up"
+                  />
+                  <p role="status" className="sr-only">
+                    {announcement}
+                  </p>
+                </>
+              ) : null}
+              <Fragment key={shown.id}>
+                <DashboardHeader
+                  flight={shown}
+                  daysUntil={daysUntil}
+                  briefingDaysUntil={briefingDays}
+                  label={explore ? exploreLabel(activeIndex) : undefined}
+                  example
+                  className="animate-fade-up"
+                />
+                <SummaryCard
+                  flight={shown}
+                  ctx={ctx}
+                  showFactors
+                  onFactorsToggle={onFactorsToggle}
+                  className="mt-4 animate-fade-up [animation-delay:60ms]"
+                />
+              </Fragment>
             </div>
-          </Fragment>
 
-          <p className="mt-7 text-center text-[11px] text-ink-500">Prototype · all flight data is illustrative</p>
+            <div className={LAYOUT.main}>
+              <Fragment key={shown.id}>
+                {/* Laptops: the left column already names the flight, and the room goes to the section list. */}
+                <p className="mt-6 px-1 text-[13px] leading-snug text-ink-500 animate-fade-up [animation-delay:120ms] lg:hidden">
+                  {explore && activeIndex > 0
+                    ? `A flight you’re exploring: ${routeLabel(shown)}, ${chipDate(shown.input.date)}. Explore as much or as little as you like.`
+                    : "Your flight briefing. Explore as much or as little as you like."}
+                </p>
+
+                <div className={cn("mt-3 flex flex-col gap-3 animate-fade-up [animation-delay:160ms]", LAYOUT.list)}>
+                  {sectionIds.map((id) => {
+                    const ui = SECTION_UI[id];
+                    return (
+                      <div
+                        key={id}
+                        ref={(el) => {
+                          if (el) sectionEls.current.set(id, el);
+                          else sectionEls.current.delete(id);
+                        }}
+                      >
+                        <SectionCard
+                          title={sectionMeta(id).title}
+                          icon={ui.icon}
+                          tone={ui.tone}
+                          teaser={safeTeaser(ui, shown, ctx, !explore || activeIndex === 0)}
+                          open={openIds.has(id)}
+                          onToggle={(next) => toggleSection(id, next)}
+                        >
+                          <SectionBoundary>
+                            <ui.Body flight={shown} ctx={ctx} />
+                          </SectionBoundary>
+                        </SectionCard>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Fragment>
+
+              {/* The study's sign-up card (docs/INTEREST.md): after every section, before the done footer; same in A and B. */}
+              {signup ? (
+                <InterestCard placement="dashboard" context="" study={study} stack className="mt-5 animate-fade-up [animation-delay:200ms]" />
+              ) : null}
+
+              <p className="mt-7 text-center text-[11px] text-ink-500">Prototype · all flight data is illustrative</p>
+            </div>
+          </div>
         </Screen>
 
         {explore && whatIfOpen ? (
@@ -551,6 +604,28 @@ function LiveDashboard({ flight, variant, initialMetrics, onCheckpoint, onDone, 
     </TrackerContext.Provider>
   );
 }
+
+/**
+ * Phones: one column. Laptops (lg, 1024 px and wider, inside Screen's ~1000 px column): two columns —
+ * the banner, strip, header and score on the left, sticky, so the sections on the right are in view
+ * without scrolling. The left column is padded by the page gutter (and pulled left by as much) so the
+ * strip's edge-to-edge scroller and the header's notches stay inside it. Sticky, it is sized to the
+ * space between its top and the done footer (top-5 + the ~5.25 rem footer; a page with a bar above
+ * the dashboard, like /preview, sets --page-top to that bar's height) and scrolls on its own should
+ * it ever be taller; while the score factors are open it stops sticking and the page scrolls
+ * instead, so the whole list is readable. The section list sits tighter on laptops (smaller gap,
+ * shorter collapsed headers — SectionCard's padding is phone-first and shared with version C) so all
+ * nine of variant A's headers fit above the footer on a 768 px-tall screen.
+ */
+const LAYOUT = {
+  row: "lg:flex lg:items-start lg:gap-6",
+  aside: "lg:-ml-5 lg:w-[480px] lg:shrink-0 lg:self-start lg:px-5",
+  asideSticky:
+    "lg:sticky lg:top-4 lg:max-h-[calc(100dvh-7rem-var(--page-top,0px))] lg:overflow-y-auto lg:overscroll-contain lg:pb-1 lg:[scrollbar-width:thin]",
+  asideOpen: "lg:static",
+  main: "lg:min-w-0 lg:flex-1",
+  list: "lg:mt-0 lg:gap-1.5 lg:[&_h2>button]:py-2.5",
+};
 
 /** Identical in A and B: the study shows the briefing as it will look the day before the flight. */
 function PreviewBanner({ today, className }: { today: boolean; className?: string }) {
@@ -590,33 +665,37 @@ class SectionBoundary extends Component<{ children: ReactNode }, { failed: boole
 export function DashboardSkeleton({ variant }: { variant: Variant }) {
   const rows = VARIANT_SECTIONS[variant];
   return (
-    <Screen footer={<div aria-hidden className="h-14 rounded-full bg-ink-300/40" />}>
-      <div role="status" aria-label="Preparing your briefing" className="animate-pulse">
-        <div className="mb-3 h-[42px] rounded-2xl bg-surface/70 ring-1 ring-inset ring-line" />
-        <div className="h-[318px] rounded-3xl bg-night-900/90" />
-        <div className="mt-4 rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80">
-          <div className="flex items-center gap-4">
-            <div className="size-[104px] shrink-0 rounded-full border-[9px] border-calm-100" />
-            <div className="flex-1">
-              <div className="h-2.5 w-24 rounded-full bg-line" />
-              <div className="mt-3 h-4 w-32 rounded-full bg-line" />
-              <div className="mt-3 h-2.5 w-40 rounded-full bg-line/80" />
-            </div>
-          </div>
-          <div className="mt-5 h-3 w-full rounded-full bg-line/80" />
-          <div className="mt-2 h-3 w-2/3 rounded-full bg-line/80" />
-        </div>
-        <div className="mt-6 h-3 w-56 rounded-full bg-line/80" />
-        <div className="mt-4 flex flex-col gap-3">
-          {rows.map((id) => (
-            <div key={id} className="flex items-center gap-3.5 rounded-3xl bg-surface px-4 py-4 shadow-soft ring-1 ring-line/80">
-              <div className="size-11 shrink-0 rounded-2xl bg-canvas" />
+    <Screen wide footer={<div aria-hidden className="h-14 rounded-full bg-ink-300/40" />}>
+      <div role="status" aria-label="Preparing your briefing" className={cn("animate-pulse", LAYOUT.row)}>
+        <div className={cn(LAYOUT.aside, LAYOUT.asideSticky)}>
+          <div className="mb-3 h-[42px] rounded-2xl bg-surface/70 ring-1 ring-inset ring-line" />
+          <div className="h-[318px] rounded-3xl bg-night-900/90" />
+          <div className="mt-4 rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80">
+            <div className="flex items-center gap-4">
+              <div className="size-[104px] shrink-0 rounded-full border-[9px] border-calm-100" />
               <div className="flex-1">
-                <div className="h-3 w-36 rounded-full bg-line" />
-                <div className="mt-2 h-2.5 w-48 rounded-full bg-line/80" />
+                <div className="h-2.5 w-24 rounded-full bg-line" />
+                <div className="mt-3 h-4 w-32 rounded-full bg-line" />
+                <div className="mt-3 h-2.5 w-40 rounded-full bg-line/80" />
               </div>
             </div>
-          ))}
+            <div className="mt-5 h-3 w-full rounded-full bg-line/80" />
+            <div className="mt-2 h-3 w-2/3 rounded-full bg-line/80" />
+          </div>
+        </div>
+        <div className={LAYOUT.main}>
+          <div className="mt-6 h-3 w-56 rounded-full bg-line/80 lg:hidden" />
+          <div className="mt-4 flex flex-col gap-3 lg:mt-0 lg:gap-1.5">
+            {rows.map((id) => (
+              <div key={id} className="flex items-center gap-3.5 rounded-3xl bg-surface px-4 py-4 shadow-soft ring-1 ring-line/80 lg:py-2.5">
+                <div className="size-11 shrink-0 rounded-2xl bg-canvas" />
+                <div className="flex-1">
+                  <div className="h-3 w-36 rounded-full bg-line" />
+                  <div className="mt-2 h-2.5 w-48 rounded-full bg-line/80" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </Screen>

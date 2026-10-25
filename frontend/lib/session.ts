@@ -9,6 +9,7 @@ import type {
   Ratings,
   SessionRecord,
   Step,
+  TravelImpact,
   Variant,
   VariantSource,
   WouldSwitch,
@@ -35,7 +36,6 @@ export type FlowScreen =
   | "welcome"
   | "pre"
   | "preFlying"
-  | "preDetails"
   | "setup"
   | "preparing"
   | "dashboard"
@@ -48,7 +48,6 @@ const SCREEN_ORDER: readonly FlowScreen[] = [
   "welcome",
   "pre",
   "preFlying",
-  "preDetails",
   "setup",
   "preparing",
   "dashboard",
@@ -63,7 +62,7 @@ export function screenIndex(screen: FlowScreen): number {
 }
 
 /** Screens the browser Back button may move between (answers are kept). */
-const BACKABLE: ReadonlySet<FlowScreen> = new Set(["welcome", "pre", "preFlying", "preDetails", "setup", "preparing"]);
+const BACKABLE: ReadonlySet<FlowScreen> = new Set(["welcome", "pre", "preFlying", "setup", "preparing"]);
 
 /** Whether Back/Forward may move from `from` to `to`. Later screens stay put. */
 export function canTraverse(from: FlowScreen, to: FlowScreen): boolean {
@@ -81,7 +80,6 @@ export function stepForScreen(screen: FlowScreen): Step {
       return "welcome";
     case "pre":
     case "preFlying":
-    case "preDetails":
       return "pre";
     case "setup":
     case "preparing":
@@ -104,7 +102,6 @@ export function stageForScreen(screen: FlowScreen): number | null {
   switch (screen) {
     case "pre":
     case "preFlying":
-    case "preDetails":
       return 1;
     case "setup":
     case "preparing":
@@ -166,6 +163,8 @@ export function emptyPre(): PreSurvey {
     anxiety: null,
     control: null,
     predictability: null,
+    // The optional route / timeframe questions were dropped on 2026-10-24 (the flight setup's
+    // route and date answer them); kept empty so older records and the CSV columns still line up.
     routeOrigin: "",
     routeDestination: "",
     timeframe: null,
@@ -187,8 +186,11 @@ export function emptyPost(): PostSurvey {
     wouldReplace: [],
     wouldReplaceText: "",
     stillScaredOf: "",
+    // No longer asked (2026-10-24); kept for older sessions.
     wouldSwitch: null,
+    // Asked on the "About your flying" screen since 2026-10-24; the field stays under `post` for continuity.
     travelImpact: [],
+    bookLikelihood: null,
   };
 }
 
@@ -218,9 +220,17 @@ export function ratingsComplete(r: Ratings): boolean {
   return r.anxiety !== null && r.control !== null && r.predictability !== null;
 }
 
-/** The three required picks on the "About your flying" screen. */
-export function flyingComplete(pre: PreSurvey): boolean {
-  return pre.flightsPerYear !== null && pre.worriesMost != null && pre.anxietyStarts != null;
+/**
+ * The four required picks on the "About your flying" screen. The travel-plans answer is
+ * stored as `post.travelImpact` (where it lived when the question was in the post-survey).
+ */
+export function flyingComplete(pre: PreSurvey, travelImpact: readonly TravelImpact[] | undefined): boolean {
+  return (
+    pre.flightsPerYear !== null &&
+    pre.worriesMost != null &&
+    pre.anxietyStarts != null &&
+    (travelImpact?.length ?? 0) > 0
+  );
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
@@ -231,7 +241,6 @@ export type FlowAction =
   | { type: "pre"; patch: Partial<PreSurvey> }
   | { type: "preDone" }
   | { type: "preFlyingDone" }
-  | { type: "preDetailsDone" }
   | { type: "setupDraft"; draft: FlightInput }
   | { type: "setupDone"; input: FlightInput }
   | { type: "flightReady"; flight: FlightSummary }
@@ -257,9 +266,7 @@ export function reduceFlow(state: FlowState, action: FlowAction): FlowState {
     case "preDone":
       return ratingsComplete(state.pre) ? { ...state, screen: "preFlying" } : state;
     case "preFlyingDone":
-      return flyingComplete(state.pre) ? { ...state, screen: "preDetails" } : state;
-    case "preDetailsDone":
-      return { ...state, screen: "setup" };
+      return flyingComplete(state.pre, state.post.travelImpact) ? { ...state, screen: "setup" } : state;
     case "setupDraft":
       return { ...state, setupDraft: action.draft };
     case "setupDone":
@@ -335,9 +342,10 @@ export function buildRecord(state: FlowState): SessionRecord | null {
     dashboard: state.dashboard,
     post: {
       ...state.post,
-      // The switch question is variant A only; B always stores null.
+      // The switch question was variant A only (no longer asked); B always stores null.
       wouldSwitch: s.variant === "A" ? normalizeWouldSwitch(state.post.wouldSwitch) : null,
       travelImpact: state.post.travelImpact ?? [],
+      bookLikelihood: state.post.bookLikelihood ?? null,
     },
     email: state.email,
     firstName: state.firstName ?? "",
@@ -357,6 +365,12 @@ function normalizeWouldSwitch(value: unknown): WouldSwitch | null {
 
 const SCREENS: ReadonlySet<string> = new Set(SCREEN_ORDER);
 
+/** Screens that no longer exist, mapped to where such a session resumes. */
+const RETIRED_SCREENS: Readonly<Record<string, FlowScreen>> = {
+  // The optional-details screen was folded into the flight setup (2026-10-24).
+  preDetails: "setup",
+};
+
 export function loadFlowState(): FlowState | null {
   try {
     const raw = window.sessionStorage.getItem(FLOW_STORAGE_KEY);
@@ -364,14 +378,15 @@ export function loadFlowState(): FlowState | null {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
     const candidate = parsed as Partial<FlowState>;
-    if (candidate.version !== 1 || typeof candidate.screen !== "string" || !SCREENS.has(candidate.screen)) {
-      return null;
-    }
+    if (candidate.version !== 1 || typeof candidate.screen !== "string") return null;
+    const screen = RETIRED_SCREENS[candidate.screen] ?? candidate.screen;
+    if (!SCREENS.has(screen)) return null;
     const base = initialFlowState();
     const state: FlowState = {
       ...base,
       ...candidate,
       version: 1,
+      screen: screen as FlowScreen,
       pre: { ...base.pre, ...(candidate.pre ?? {}) },
       post: { ...base.post, ...(candidate.post ?? {}) },
       // Sessions saved before the ?p= label existed have no participant field.
@@ -385,8 +400,6 @@ export function loadFlowState(): FlowState | null {
     if (state.completedAt) state.screen = "debrief";
     else if (state.screen === "debrief") state.screen = "postHabits";
     if ((state.screen === "preparing" || state.screen === "dashboard") && !state.flightInput) state.screen = "setup";
-    // Saved before the required "About your flying" screen existed and still in stage 1: resume there.
-    if (state.screen === "preDetails" && !flyingComplete(state.pre)) state.screen = "preFlying";
     return state;
   } catch {
     return null;

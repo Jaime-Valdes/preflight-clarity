@@ -1,23 +1,34 @@
 "use client";
 
-import { Armchair, CalendarClock, Check, ChevronRight, Clock3, Plane, Plus } from "lucide-react";
+import { CalendarClock, Check, ChevronRight, Clock3, Plane, PlaneTakeoff, Plus } from "lucide-react";
 import Link from "next/link";
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import { formatDuration, formatTime12 } from "@preflight/shared/dates";
-import type { FlightOption } from "@preflight/shared/search";
+import { fareAt, type FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
-import { ScoreBadge } from "@/components/c/common/ScoreBadge";
+import { BenchmarkTag } from "@/components/c/common/BenchmarkTag";
+import { SCORE_SURFACE, scoreTone } from "@/components/c/common/ScoreBadge";
+import { ScoreBadgeButton } from "@/components/c/common/ScoreSheet";
 import { Sparkline } from "@/components/c/common/Sparkline";
 import { Pill } from "@/components/ui/Pill";
+import { track } from "@/lib/analytics";
 import { formatFare } from "@/lib/c/format";
 import { MAX_COMPARE, flightHref, type CompareItem } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
+import { TONE_CLASSES, type Tone } from "@/lib/theme";
 import { stretchesText, timelineLabel } from "./describe";
+import type { Mark } from "./view";
 
 interface ResultCardProps {
   option: FlightOption;
   /** The flight as a compare-list item (route, date, key). */
   item: CompareItem;
+  /** Whole days until departure: sets today's fare (fareAt) and what the score sheet can show. */
+  daysUntil: number;
+  /** What this flight leads the list on (computed over the flights shown; ties marked unless they cover much of the list). */
+  marks: readonly Mark[];
+  /** Query parameters the Details link keeps (campaign tags from the link that opened the results). */
+  campaign?: Record<string, string | undefined>;
   inCompare: boolean;
   /** The compare list is full and this flight isn't in it. */
   compareLocked: boolean;
@@ -35,22 +46,34 @@ interface ResultCardProps {
   forecastLead: string;
 }
 
+const MARK_LABEL: Record<Mark, { label: string; tone: Tone }> = {
+  smoothest: { label: "Smoothest", tone: "calm" },
+  cheapest: { label: "Cheapest", tone: "dusk" },
+  fastest: { label: "Fastest", tone: "breeze" },
+};
+
 function dayOffset(offset: number): string | null {
   if (offset === 0) return null;
   return offset > 0 ? `+${offset}` : `−${Math.abs(offset)}`;
 }
 
 /**
- * One flight in the results: airline, times, the scheduled aircraft, the
- * smoothness score with a mini turbulence timeline (once the forecast is out —
- * a calm "from …" marker before that), two quiet facts anyone can look up any
- * time (on-time record on the route; aircraft size and the airline's fleet
- * age), the illustrative fare, and two separate actions — Compare (a toggle)
- * and Details (a link). The card itself is not a link.
+ * One flight in the results. The eye goes to one thing: the smoothness score
+ * on its tinted block (teal / sky / sand by the score; a button that opens
+ * "how the score works"), with the mini turbulence timeline under it — or,
+ * before the forecast for this flight exists, when it will. Then the fare,
+ * the times, and two quiet facts set against industry benchmarks (on-time
+ * record on the route vs the US average; the aircraft's age vs the global
+ * fleet). "Smoothest / Cheapest / Fastest" pills mark what the flight leads
+ * the list on. Two separate actions — Compare (a toggle) and Details (a
+ * link). The card itself is not a link.
  */
 export function ResultCard({
   option,
   item,
+  daysUntil,
+  marks,
+  campaign,
   inCompare,
   compareLocked,
   onToggleCompare,
@@ -59,13 +82,15 @@ export function ResultCard({
   forecastFrom,
   forecastLead,
 }: ResultCardProps) {
-  const { flight, fareUsd } = option;
+  const { flight } = option;
   const titleId = useId();
   const noteId = useId();
   const depart = formatTime12(flight.departTime);
   const arrive = formatTime12(flight.arriveTime);
   const offset = dayOffset(flight.arriveDayOffset);
-  const fare = formatFare(fareUsd);
+  const fare = formatFare(fareAt(option, daysUntil));
+  const tone = scoreTone(flight.smoothness.score);
+  const age = airframe ? flight.aircraft.ageYears : flight.aircraft.fleetAvgAgeYears;
 
   return (
     <article aria-labelledby={titleId} className="rounded-3xl bg-surface p-4 shadow-soft ring-1 ring-line/80 sm:p-5">
@@ -79,12 +104,30 @@ export function ResultCard({
               {flight.airline.name}
               <span className="sr-only">
                 , {flight.flightNumber}, departs {depart}
+                {marks.length ? `, ${marks.map((m) => MARK_LABEL[m].label.toLowerCase()).join(", ")} of these flights` : ""}
               </span>
             </h3>
-            <p className="mt-0.5 text-xs text-ink-500">{flight.flightNumber}</p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-500">
+              <span className="tabular-nums">{flight.flightNumber}</span>
+              {marks.length ? (
+                <span aria-hidden className="contents">
+                  {marks.map((mark) => {
+                    const t = TONE_CLASSES[MARK_LABEL[mark].tone];
+                    return (
+                      <span
+                        key={mark}
+                        className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset", t.bg, t.text, t.ring)}
+                      >
+                        {MARK_LABEL[mark].label}
+                      </span>
+                    );
+                  })}
+                </span>
+              ) : null}
+            </p>
           </div>
           <p className="shrink-0 text-right md:hidden">
-            <span className="block text-xl font-bold leading-none text-ink-900 tabular-nums">{fare}</span>
+            <span className="block text-2xl font-bold leading-none text-ink-900 tabular-nums">{fare}</span>
             <span className="mt-1 block text-[11px] text-ink-500">one way</span>
           </p>
         </div>
@@ -97,9 +140,9 @@ export function ResultCard({
           <div className="min-w-0 text-center">
             <p className="whitespace-nowrap text-xs font-semibold text-ink-700 tabular-nums">{formatDuration(flight.blockMin)}</p>
             <div aria-hidden className="my-1 flex items-center gap-1 text-ink-300">
-              <span className="h-px flex-1 bg-line-strong" />
+              <span className="h-px flex-1 bg-line" />
               <Plane className="size-3 rotate-45" />
-              <span className="h-px flex-1 bg-line-strong" />
+              <span className="h-px flex-1 bg-line" />
             </div>
             <p className="text-[11px] text-ink-500">Nonstop</p>
           </div>
@@ -117,11 +160,27 @@ export function ResultCard({
           </p>
         </div>
 
-        {/* Smoothness: score and label, then the turbulence timeline across the full width —
-            or, before the forecast for this flight exists, when it will. */}
+        {/* Smoothness: the score (a button to "how it works") on a block in its tone, then the turbulence
+            timeline across the full width — or, before the forecast for this flight exists, when it will. */}
         {scores ? (
-          <div className="rounded-2xl bg-canvas/70 p-3 ring-1 ring-inset ring-line/70 md:col-start-2 md:row-span-3 md:row-start-1 md:self-center">
-            <ScoreBadge score={flight.smoothness.score} label={flight.smoothness.label} detail={stretchesText(flight)} />
+          <div
+            className={cn(
+              "rounded-2xl p-3 ring-1 ring-inset md:col-start-2 md:row-span-3 md:row-start-1 md:self-center",
+              SCORE_SURFACE[tone],
+            )}
+          >
+            <ScoreBadgeButton
+              flight={flight}
+              daysUntil={daysUntil}
+              detail={
+                <>
+                  <span className="sr-only">, </span>
+                  {stretchesText(flight)}
+                </>
+              }
+              onOpen={() => track("c_score_sheet", { from: "results", key: option.key, score: flight.smoothness.score })}
+              className="w-[calc(100%+0.75rem)]"
+            />
             <Sparkline
               points={flight.turbulence.points}
               width={240}
@@ -130,7 +189,7 @@ export function ResultCard({
               label={timelineLabel(flight)}
               className="mt-3"
             />
-            <p aria-hidden className="mt-1 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-ink-400">
+            <p aria-hidden className="mt-1 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-ink-500">
               <span>Takeoff</span>
               <span>Landing</span>
             </p>
@@ -163,36 +222,37 @@ export function ResultCard({
             </span>
             {flight.aircraft.bodyType === "wide" ? <Pill tone="breeze">Wide-body</Pill> : null}
           </div>
-          <ul className="mt-2 flex flex-col gap-1 text-xs text-ink-500 sm:flex-row sm:flex-wrap sm:gap-x-4">
-            <li className="flex items-start gap-1.5">
-              <Clock3 aria-hidden className="mt-px size-3.5 shrink-0 text-ink-400" />
-              <span>
-                <span className="tabular-nums">{flight.airlineStats.onTimeRoutePct}%</span> on time on this route · last 12 months
-              </span>
-            </li>
-            <li className="flex items-start gap-1.5">
-              <Armchair aria-hidden className="mt-px size-3.5 shrink-0 text-ink-400" />
-              <span>
-                About <span className="tabular-nums">{flight.aircraft.typicalSeats}</span> seats ·{" "}
+          <ul className="mt-2.5 flex flex-col gap-2 text-xs text-ink-500">
+            <Fact icon={<Clock3 />} tone="breeze">
+              <span className="text-ink-700">
+                <span className="font-semibold tabular-nums">{flight.airlineStats.onTimePct}%</span> on time
+              </span>{" "}
+              · <span className="tabular-nums">{flight.airlineStats.onTimeRoutePct}%</span> on this route · last 12 months
+              <BenchmarkTag benchmark="onTimePct" value={flight.airlineStats.onTimePct} className="mt-1 block w-fit" />
+            </Fact>
+            <Fact icon={<PlaneTakeoff />} tone="dusk">
+              <span className="text-ink-700">
                 {airframe ? (
                   <>
-                    <span className="whitespace-nowrap">{flight.aircraft.tailNumber}</span> ·{" "}
-                    <span className="tabular-nums">{flight.aircraft.ageYears.toFixed(1)}</span> years old
+                    <span className="whitespace-nowrap tabular-nums">{flight.aircraft.tailNumber}</span> ·{" "}
+                    <span className="font-semibold tabular-nums">{age.toFixed(1)}</span> years old
                   </>
                 ) : (
                   <>
-                    fleet average <span className="tabular-nums">{flight.aircraft.fleetAvgAgeYears.toFixed(1)}</span> years old
+                    Fleet average <span className="font-semibold tabular-nums">{age.toFixed(1)}</span> years old
                   </>
                 )}
-              </span>
-            </li>
+              </span>{" "}
+              · about <span className="tabular-nums">{flight.aircraft.typicalSeats}</span> seats
+              <BenchmarkTag benchmark="fleetAgeYears" value={age} className="mt-1 block w-fit" />
+            </Fact>
           </ul>
         </div>
 
         {/* Fare and actions */}
         <div className="flex flex-wrap items-center gap-2 border-t border-line/70 pt-3 md:col-start-3 md:row-span-3 md:row-start-1 md:flex-col md:flex-nowrap md:items-stretch md:justify-center md:border-l md:border-t-0 md:pl-5 md:pt-0 lg:pl-4 xl:pl-5">
           <p className="mb-1 hidden text-right md:block">
-            <span className="block text-2xl font-bold leading-none text-ink-900 tabular-nums">{fare}</span>
+            <span className="block text-[26px] font-bold leading-none text-ink-900 tabular-nums">{fare}</span>
             <span className="mt-1 block text-[11px] text-ink-500">one way · illustrative</span>
           </p>
           <button
@@ -222,7 +282,7 @@ export function ResultCard({
             </p>
           ) : null}
           <Link
-            href={flightHref(item)}
+            href={flightHref(item, campaign)}
             className="ml-auto inline-flex h-11 items-center justify-center gap-0.5 rounded-full pl-4 pr-3 text-sm font-semibold text-breeze-700 transition-colors hover:bg-breeze-50 md:ml-0"
           >
             Details
@@ -232,5 +292,25 @@ export function ResultCard({
         </div>
       </div>
     </article>
+  );
+}
+
+const FACT_TONE: Record<"breeze" | "dusk", string> = {
+  breeze: "bg-breeze-50 text-breeze-700",
+  dusk: "bg-dusk-50 text-dusk-700",
+};
+
+/** One quiet fact with a tinted icon tile. */
+function Fact({ icon, tone, children }: { icon: ReactNode; tone: "breeze" | "dusk"; children: ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span
+        aria-hidden
+        className={cn("mt-px flex size-5 shrink-0 items-center justify-center rounded-md [&_svg]:size-3", FACT_TONE[tone])}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 leading-snug">{children}</span>
+    </li>
   );
 }

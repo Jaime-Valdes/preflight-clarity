@@ -3,10 +3,10 @@
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setContext, track } from "@/lib/analytics";
-import { addDays, daysBetween, formatShortDate, isISODate, toISODate } from "@preflight/shared/dates";
+import { daysBetween, formatShortDate, isISODate, toISODate } from "@preflight/shared/dates";
 import { generateFlight, normalizeInput } from "@preflight/shared/fakeFlight";
 import { previewDaysUntil, summarizeFlight } from "@preflight/shared/forecast";
-import type { DashboardMetrics, Flight, FlightInput, FlightSummary } from "@preflight/shared/types";
+import type { DashboardMetrics, Flight, FlightInput, FlightSummary, SignupPlacement } from "@preflight/shared/types";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -32,8 +32,7 @@ import {
 import { saveSession, saveSignup } from "@/lib/storage";
 import { INTEREST_KEY } from "@/components/c/interest/signupState";
 import { DebriefScreen, type DebriefSignup } from "./DebriefScreen";
-import { FlightSetupScreen, catalogueCode, defaultOffsetDays } from "./FlightSetupScreen";
-import { OptionalDetailsScreen } from "./OptionalDetailsScreen";
+import { EMPTY_SETUP, FlightSetupScreen } from "./FlightSetupScreen";
 import { PostHabitsScreen } from "./PostHabitsScreen";
 import { PostPartsScreen } from "./PostPartsScreen";
 import { PreFlyingScreen } from "./PreFlyingScreen";
@@ -45,8 +44,8 @@ import { WelcomeScreen } from "./WelcomeScreen";
 /*
  * The participant flow: one client-side state machine.
  *
- *   welcome → pre-survey (ratings → about your flying → optional details) →
- *   flight setup → preparing → dashboard → post-survey (ratings → parts → habits) → debrief
+ *   welcome → pre-survey (ratings → about your flying) → your flight (setup) →
+ *   preparing → dashboard → post-survey (ratings → parts → habits) → debrief
  *
  * State lives in `FlowState` (lib/session.ts), is persisted to sessionStorage
  * after every change (so a reload resumes), and is saved to the backend at
@@ -310,13 +309,14 @@ function StudyFlowClient() {
   );
 
   /**
-   * Debrief sign-up (docs/INTEREST.md): the record keeps email/name/waitlist/interview,
-   * and the same details go to the sign-ups list as one Signup row. The browser is also
-   * marked as signed up (`pfc.interest.v1`, shared with version C), so a participant who
-   * goes on to /c sees "You're on the list" there instead of a second form.
+   * Product sign-up (docs/INTEREST.md), from the card at the bottom of the dashboard or the
+   * debrief: the record keeps email/name/waitlist/interview, and the same details go to the
+   * sign-ups list as one Signup row with where the form was. The browser is also marked as
+   * signed up (`pfc.interest.v1`, shared with version C), so a participant who goes on to /c
+   * sees "You're on the list" there instead of a second form.
    */
-  const onSignup = useCallback(
-    ({ email, firstName, interview }: DebriefSignup) => {
+  const submitSignup = useCallback(
+    (placement: SignupPlacement, { email, firstName, interview }: DebriefSignup) => {
       const current = latest.current.session;
       commit({ type: "email", email, firstName, waitlist: true, interview }, { save: true });
       if (!current) return;
@@ -326,7 +326,7 @@ function StudyFlowClient() {
         id: newSessionId(),
         createdAt,
         source: "study",
-        placement: "debrief",
+        placement,
         email,
         firstName,
         waitlist: true,
@@ -343,10 +343,13 @@ function StudyFlowClient() {
       } catch {
         // Storage blocked: the study's own "on the list" state still comes from the session record.
       }
-      track("interest_signup", { source: "study", placement: "debrief", interview });
+      track("interest_signup", { source: "study", placement, interview });
     },
     [commit],
   );
+
+  const onDebriefSignup = useCallback((s: DebriefSignup) => submitSignup("debrief", s), [submitSignup]);
+  const onDashboardSignup = useCallback((s: DebriefSignup) => submitSignup("dashboard", s), [submitSignup]);
 
   const startOver = useCallback(() => {
     leaving.current = true;
@@ -380,7 +383,6 @@ function StudyFlowClient() {
           stage={1}
           eyebrow="Before you start"
           title="Three quick questions"
-          sub="There are no right answers — go with your first instinct."
           questions={PRE_QUESTIONS}
           ratings={state.pre}
           onChange={(patch) => commit({ type: "pre", patch })}
@@ -395,7 +397,9 @@ function StudyFlowClient() {
       return (
         <PreFlyingScreen
           pre={state.pre}
+          travelImpact={state.post.travelImpact ?? []}
           onChange={(patch) => commit({ type: "pre", patch })}
+          onTravelImpactChange={(values) => commit({ type: "post", patch: { travelImpact: values } })}
           onContinue={() => {
             commit({ type: "preFlyingDone" }, { save: true });
             window.scrollTo({ top: 0 });
@@ -403,30 +407,12 @@ function StudyFlowClient() {
         />
       );
 
-    case "preDetails":
-      return (
-        <OptionalDetailsScreen
-          pre={state.pre}
-          onChange={(patch) => commit({ type: "pre", patch })}
-          onContinue={() => {
-            commit({ type: "preDetailsDone" }, { save: true });
-            window.scrollTo({ top: 0 });
-          }}
-        />
-      );
-
-    case "setup": {
-      // Pre-survey route answers may be free text; only catalogue airports prefill the setup.
-      const draft: FlightInput = state.setupDraft ?? {
-        origin: catalogueCode(state.pre.routeOrigin),
-        destination: catalogueCode(state.pre.routeDestination),
-        date: addDays(today, defaultOffsetDays(state.pre.timeframe)),
-      };
+    case "setup":
       return (
         <FlightSetupScreen
           key={prepAttempt}
           today={today}
-          draft={draft}
+          draft={state.setupDraft ?? EMPTY_SETUP}
           onDraftChange={(next) => commit({ type: "setupDraft", draft: next })}
           onContinue={(input) => {
             setPrepFailed(false);
@@ -435,7 +421,6 @@ function StudyFlowClient() {
           }}
         />
       );
-    }
 
     case "preparing":
       if (prepFailed) return <GenerationFailed onRetry={retryPrepare} onChangeFlight={changeFlight} />;
@@ -453,6 +438,7 @@ function StudyFlowClient() {
           initialMetrics={state.dashboard}
           onCheckpoint={onCheckpoint}
           onDone={onDashboardDone}
+          signup={{ signedUp: state.emailSent, onSubmit: onDashboardSignup }}
         />
       );
     }
@@ -491,7 +477,6 @@ function StudyFlowClient() {
     case "postHabits":
       return (
         <PostHabitsScreen
-          variant={session?.variant ?? "A"}
           post={state.post}
           onChange={(patch) => commit({ type: "post", patch })}
           onFinish={() => {
@@ -505,7 +490,7 @@ function StudyFlowClient() {
       return (
         <DebriefScreen
           signedUp={state.emailSent}
-          onSignup={onSignup}
+          onSignup={onDebriefSignup}
           isTest={session?.isTest ?? false}
           onStartOver={startOver}
         />

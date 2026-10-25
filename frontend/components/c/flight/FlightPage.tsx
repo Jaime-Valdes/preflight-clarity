@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { addDays, formatTime12 } from "@preflight/shared/dates";
 import { findOption, searchFlights, type FlightOption } from "@preflight/shared/search";
-import { availabilityAt, hasLeft } from "@/components/c/common/availability";
+import { availabilityAt, daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import {
@@ -220,6 +220,7 @@ function Departed({ day, option, options, today, next }: DepartedProps) {
         options={options}
         currentKey={option.key}
         turbulence={turbulence}
+        daysUntil={daysToDeparture(today, day.date)}
         className="mx-auto w-full max-w-[600px] min-w-0"
       />
       <InterestCard placement="c_flight" context={flightContext(f, day)} className="mx-auto mt-6 w-full max-w-[600px]" />

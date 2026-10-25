@@ -145,7 +145,7 @@ export function ResultsDashboard({ records, signups, signupsNote, storage, banne
         <DistributionsBlock records={filtered} />
         <ExplorationBlock records={filtered} className="lg:col-span-2" />
         <OpenTextBlock answers={texts} className="lg:col-span-2" />
-        <InterestBlock stats={interest} note={signupsNote} className="lg:col-span-2" />
+        <InterestBlock stats={interest} records={base} note={signupsNote} className="lg:col-span-2" />
         <SignupsTable signups={shownSignups} className="lg:col-span-2" />
         <ResponsesTable records={filtered} className="lg:col-span-2" />
         <InterpretationNote className="lg:col-span-2" />

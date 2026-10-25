@@ -34,6 +34,12 @@ interface MultiProps<T extends string> extends BaseProps<T> {
   onChange: (values: T[]) => void;
   /** Picking this option clears the others, and picking any other clears it ("None of these"). */
   exclusive?: T;
+  /**
+   * At most this many picks (the exclusive option doesn't count — it stands alone anyway). Once
+   * reached, the unpicked options read as disabled and a quiet "Up to n" note appears; unpicking
+   * one frees a slot. Picked options can always be unpicked.
+   */
+  max?: number;
 }
 
 type ChoiceGroupProps<T extends string> = SingleProps<T> | MultiProps<T>;
@@ -50,6 +56,14 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
   const isMulti = props.kind === "multi";
   // Radio group: one Tab stop (the checked option, else the first) and arrow keys move + select.
   const anyChecked = props.kind === "single" && options.some((o) => o.value === props.value);
+  const max = props.kind === "multi" ? props.max : undefined;
+  const atMax =
+    props.kind === "multi" && max !== undefined && props.values.filter((v) => v !== props.exclusive).length >= max;
+
+  /** Unpicked, non-exclusive options are blocked once the cap is reached. */
+  function blocked(value: T): boolean {
+    return atMax && props.kind === "multi" && value !== props.exclusive && !props.values.includes(value);
+  }
 
   function onRadioKeyDown(e: KeyboardEvent<HTMLButtonElement>, i: number) {
     if (props.kind !== "single") return;
@@ -81,6 +95,7 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
       return;
     }
     const { values, exclusive } = props;
+    if (blocked(value)) return;
     if (values.includes(value)) {
       props.onChange(values.filter((v) => v !== value));
     } else if (exclusive !== undefined && value === exclusive) {
@@ -113,12 +128,15 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
       >
         {options.map((opt, i) => {
           const checked = isChecked(opt.value);
+          const isBlocked = blocked(opt.value);
           return (
             <button
               key={opt.value}
               type="button"
               role={isMulti ? "checkbox" : "radio"}
               aria-checked={checked}
+              // aria-disabled (not disabled): the option stays focusable so the state is discoverable.
+              aria-disabled={isBlocked ? true : undefined}
               tabIndex={isMulti ? undefined : checked || (!anyChecked && i === 0) ? 0 : -1}
               onKeyDown={isMulti ? undefined : (e) => onRadioKeyDown(e, i)}
               onClick={() => toggle(opt.value)}
@@ -127,6 +145,7 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
                 checked
                   ? "bg-night-900 text-white shadow-soft"
                   : "bg-surface text-ink-900 ring-1 ring-inset ring-line-strong hover:bg-canvas active:bg-line/60",
+                isBlocked && "cursor-default opacity-50 hover:bg-surface active:bg-surface",
               )}
             >
               <span
@@ -151,6 +170,11 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
           );
         })}
       </div>
+      {max !== undefined ? (
+        <p className="mt-2 h-4 text-[13px] leading-snug text-ink-500" aria-live="polite">
+          {atMax ? `Up to ${max} — unpick one to choose another.` : ""}
+        </p>
+      ) : null}
     </div>
   );
 }

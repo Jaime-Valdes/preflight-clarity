@@ -119,6 +119,8 @@ export const CSV_COLUMNS: readonly string[] = [
   "preferred_flight",
   "ended_on_flight",
   "would_switch",
+  // "more likely to book a flight?" (asked from 2026-10-24; blank on older records)
+  "book_likelihood",
   // post-survey answers
   "felt_better",
   "felt_worse",
@@ -226,6 +228,7 @@ export function recordToRow(record: SessionRecord): Cell[] {
     x?.preferredFlightId ?? null,
     x?.endedOnFlightId ?? null,
     post.wouldSwitch ?? null,
+    post.bookLikelihood ?? null,
 
     joinList(post.feltBetter),
     joinList(post.feltWorse),

@@ -53,7 +53,7 @@ export function OpenTextBlock({ answers, className }: { answers: OpenTextAnswers
       subtitle="Free-text answers from the post-survey, newest first. Quoted exactly as typed."
     >
       <div className="grid gap-6 lg:grid-cols-3">
-        <TextList title="What they'd still be scared of" items={answers.stillScaredOf} />
+        <TextList title="What they'd still feel anxious about" items={answers.stillScaredOf} />
         <TextList title="What made them more anxious" items={answers.feltWorse} />
         <TextList title="What it would replace" items={answers.wouldReplace} />
       </div>

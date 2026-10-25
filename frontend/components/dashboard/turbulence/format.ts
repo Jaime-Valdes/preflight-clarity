@@ -81,7 +81,8 @@ export function typicalSmoothLine(history: Pick<RouteHistory, "smoothPct" | "mon
   return `About ${history.smoothPct}% of ${history.month} flights on this route are smooth`;
 }
 
-const PHASE_WHEN: Record<FlightPhase, string> = {
+/** Where in the flight a phase sits, with the preposition built in: "during the climb". */
+export const PHASE_WHEN: Record<FlightPhase, string> = {
   takeoff: "just after takeoff",
   climb: "during the climb",
   cruise: "at cruising altitude",

@@ -3,6 +3,7 @@
 import { Armchair, Check, Coffee, MessageSquare, Plug, Sandwich, Sparkles, Star, Tv, Utensils, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Flight, SectionContext, SectionProps } from "@preflight/shared/types";
+import { BenchmarkLine, benchmarkValue } from "@/components/c/flight/BenchmarkLine";
 import { Pill } from "@/components/ui/Pill";
 import { Stat } from "@/components/ui/Stat";
 import { BlockLabel } from "./trust/BlockLabel";
@@ -36,7 +37,9 @@ function oversightLabel(regulator: string): string {
 /**
  * "Airline safety & comfort" — safety score hero with its basis, on-time meters
  * (last 12 months), comfort facts and amenities. Every figure is airline- or
- * model-level data that exists any time before the flight.
+ * model-level data that exists any time before the flight, and each one that has
+ * an industry benchmark (shared/src/benchmarks.ts) sits next to it — "2 points
+ * below the US industry average (78%)" — so the number means something.
  */
 export function AirlineSection({ flight }: SectionProps) {
   const stats = flight.airlineStats;
@@ -68,10 +71,19 @@ export function AirlineSection({ flight }: SectionProps) {
       <div>
         <BlockLabel>On-time arrivals</BlockLabel>
         <div className="mt-2 flex flex-col gap-3 rounded-2xl bg-canvas/70 p-4 ring-1 ring-inset ring-line/70">
-          <MeterBar label="Across the airline · last 12 months" value={stats.onTimePct} />
-          <MeterBar label={`On this route · ${routeLabel} · last 12 months`} value={stats.onTimeRoutePct} />
+          <MeterBar
+            label="Across the airline · last 12 months"
+            value={stats.onTimePct}
+            hint={<BenchmarkLine benchmark="onTimePct" value={stats.onTimePct} />}
+          />
+          <MeterBar
+            label={`On this route · ${routeLabel} · last 12 months`}
+            value={stats.onTimeRoutePct}
+            hint={<BenchmarkLine benchmark="onTimePct" value={stats.onTimeRoutePct} />}
+          />
           <p className="text-xs leading-snug text-ink-500">
-            Share of flights arriving within 15 minutes of schedule over the last 12 months.
+            Share of flights arriving within 15 minutes of schedule over the last 12 months. The US industry average
+            counts every airline&rsquo;s flights.
           </p>
         </div>
       </div>
@@ -84,14 +96,48 @@ export function AirlineSection({ flight }: SectionProps) {
             label="Comfort score"
             value={stats.comfortScore * 10}
             display={`${stats.comfortScore.toFixed(1)} / 10`}
-            hint={`Our index from legroom, seat width, cabin noise and amenities on ${possessive(flight.airline.name)} ${flight.aircraft.model}.`}
+            hint={
+              <>
+                Our index from legroom, seat width, cabin noise and amenities on {possessive(flight.airline.name)}{" "}
+                {flight.aircraft.model}.
+                <BenchmarkLine benchmark="comfortScore" value={stats.comfortScore} className="mt-1" />
+              </>
+            }
             tone="calm"
           />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <Stat label="Legroom" value={`${stats.seatPitchIn} in`} hint="Seat pitch in economy" />
-          <Stat label="Seat width" value={`${stats.seatWidthIn} in`} hint="Economy seats" />
-          <Stat label="Cabin noise" value={noise.label} hint={`Typical for the ${flight.aircraft.model}`} />
+          <Stat
+            label="Legroom"
+            value={`${stats.seatPitchIn} in`}
+            hint={
+              <>
+                Seat pitch in economy
+                <BenchmarkLine benchmark="seatPitchIn" value={stats.seatPitchIn} className="mt-1" />
+              </>
+            }
+          />
+          <Stat
+            label="Seat width"
+            value={`${stats.seatWidthIn} in`}
+            hint={
+              <>
+                Economy seats
+                <BenchmarkLine benchmark="seatWidthIn" value={stats.seatWidthIn} className="mt-1" />
+              </>
+            }
+          />
+          {/* The noise is a band, not a reading (docs/FEASIBILITY.md): the typical cabin sits beside it, no verdict. */}
+          <Stat
+            label="Cabin noise"
+            value={noise.label}
+            hint={
+              <>
+                {capitalize(noise.range)} on the {flight.aircraft.model}.
+                <span className="mt-0.5 block tabular-nums">Typical jet cabin {benchmarkValue("cabinNoiseDb")}</span>
+              </>
+            }
+          />
           <Stat
             label="Cabin crew"
             value={
@@ -120,6 +166,10 @@ export function AirlineSection({ flight }: SectionProps) {
       ) : null}
     </div>
   );
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** "Safety 97/100 · 86% on time, last 12 months" */

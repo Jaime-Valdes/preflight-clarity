@@ -14,9 +14,10 @@
  *    numbers are clamped to a sane range, an email is kept only if it looks
  *    like one.
  *  - Fields added after launch (participant, dashboard.exploration,
- *    post.wouldSwitch, firstName, waitlist, interview) are optional on input:
- *    older records parse with "" / null / false. The exploration block is
- *    sanitized, never a reason to reject.
+ *    post.wouldSwitch, post.travelImpact, post.bookLikelihood, firstName,
+ *    waitlist, interview) are optional on input: older records parse with
+ *    "" / null / [] / false. The exploration block is sanitized, never a
+ *    reason to reject.
  *  - The cleaners are exported at the bottom (cleanText, cleanLine, cleanEmail,
  *    cleanParticipant, parseTimestamp, isUuid) so the sign-up parser in
  *    ./signup applies the same policy.
@@ -58,6 +59,7 @@ import type {
   WorryMost,
   AnxietyStart,
   TravelImpact,
+  BookLikelihood,
 } from "./types";
 
 export type ParseResult = { ok: true; record: SessionRecord } | { ok: false; error: string };
@@ -121,6 +123,7 @@ const WOULD_SWITCH: readonly WouldSwitch[] = ["yes", "no", "not_sure", "didnt_lo
 const WORRIES: readonly WorryMost[] = ["turbulence", "takeoff_landing", "not_in_control", "something_wrong", "feeling_trapped", "other"];
 const ANXIETY_STARTS: readonly AnxietyStart[] = ["at_booking", "weeks_before", "days_before", "day_of", "not_before"];
 const TRAVEL_IMPACTS: readonly TravelImpact[] = ["no", "ground_instead", "paid_more", "skipped_trip"];
+const BOOK_LIKELIHOODS: readonly BookLikelihood[] = ["more_likely", "no_difference", "less_likely", "not_sure"];
 
 // ── Primitives ──────────────────────────────────────────────────────────────
 
@@ -273,6 +276,8 @@ function parsePost(value: unknown): PostSurvey {
     wouldSwitch: enumValue(value.wouldSwitch, WOULD_SWITCH) ?? null,
     // "No" is exclusive: it wins over anything sent beside it (2026-10-22; absent on older records).
     travelImpact: travelImpacts(value.travelImpact),
+    // "More likely to book a flight?" (2026-10-24); absent on older records.
+    bookLikelihood: enumValue(value.bookLikelihood, BOOK_LIKELIHOODS) ?? null,
   };
 }
 

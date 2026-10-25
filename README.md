@@ -26,34 +26,37 @@ npm workspaces, one `package-lock.json` at the root, Node 20.12 or newer.
 
 One link, one phone, about 5–10 minutes:
 
-1. **Welcome / consent** — "We're testing a prototype for nervous flyers. All data shown is illustrative."
-   It also says the briefing is an example flight on a route they choose, shown as it would look the day
-   before departure.
+1. **Welcome / consent** — "We're testing a prototype for nervous flyers. It takes about 5–10 minutes.
+   All data shown is illustrative." Three short points (anonymous, 5–10 minutes, stop anytime) and
+   "Run by a team of NYU students" — as little text as possible before the first question.
 2. **Pre-survey** — anxiety, control and predictability about their next flight, each 0–10. Sliders start
    unset.
-3. **About your flying** — how many flights they take a year, what worries them most about flying and
-   when the anxiety usually starts; one tap each, all three required. Then, optional: the route and how
-   far away that flight is.
-4. **Flight setup** — origin, destination and date. Airports come from the app's list (pick a suggestion;
-   for a small airport, the nearest major one) and the date can be up to 330 days ahead, about as far as
-   airlines publish schedules. The app generates a believable fake flight from them (airline, flight
-   number, aircraft, forecast…), labelled "An example flight on your route". Deterministic: same inputs,
-   same flight.
+3. **About your flying** — how many flights they take a year, what worries them most about flying, when
+   the anxiety usually starts, and whether fear of flying changed their travel plans in the past year
+   (multi-select, "No" exclusive); all four required.
+4. **Your flight** — origin, destination and date of the flight they rated (real or imagined), all
+   required and nothing prefilled: the date also tells us how far away the flight is. Airports come from
+   the app's list (pick a suggestion; for a small airport, the nearest major one) and the date can be up
+   to 330 days ahead, about as far as airlines publish schedules. The app generates a believable fake
+   flight from them (airline, flight number, aircraft, forecast…), labelled "An example flight on your
+   route". Deterministic: same inputs, same flight.
 5. **Dashboard** — the main part, shown as the briefing would look **the day before the flight** (a quiet
    banner says so; the countdown stays true). Only information a real product could have by then appears
    (docs/FEASIBILITY.md): no pilot names, hours or ratings, no maintenance records. Header, smoothness
-   score and, in variant A, nine collapsible sections (turbulence by phase, who flies your plane, aircraft,
-   airline, weather, best seat, sounds and sensations, smoother options, forecast alerts). Time on page and
-   every section open/close are recorded.
-6. **Post-survey** — the same three sliders, which parts helped or worried them, how often they'd check
-   it, what it would replace, what they'd still be scared of, and whether fear of flying changed their
-   travel plans in the past year.
-7. **Debrief** — reminder that the briefing was a day-before preview for an example flight and nothing was
-   a real forecast; then the one product sign-up ("Want this for your real flights?" → **Notify me when
-   it's live**): optional first name, email, and an unticked checkbox for a 15-minute follow-up chat. It is
-   identical in A and B and only appears here, after every answer is saved, so the sign-up rate by variant
-   is a clean business signal ([docs/INTEREST.md](docs/INTEREST.md)). The record keeps `waitlist` /
-   `interview`, and the same sign-up is also stored in the `signups` table.
+   score and, in variant A, nine collapsible sections (turbulence by phase, aircraft, best seat, airline,
+   who flies your plane, weather, sounds and sensations, smoother options, forecast alerts). Time on page
+   and every section open/close are recorded. At the bottom, after the sections, the product sign-up card
+   ("Want this for your real flights?") — the same card as on the debrief, placement `dashboard`.
+6. **Post-survey** — the same three sliders; which parts (up to three each) made them feel better or were
+   most valuable and which made them more anxious or were least valuable; how often they'd check it, what
+   it would replace, what they'd still feel anxious about, and whether having this information would make
+   them more likely to book a flight.
+7. **Debrief** — reminder that everything in the briefing was illustrative and nothing was a real forecast;
+   then the product sign-up ("Want this for your real flights?" → **Notify me when it's live**): optional
+   first name, email, and an unticked checkbox for a 15-minute follow-up chat. It is identical in A and B;
+   a participant who already signed up from the dashboard card sees "You're on the list." instead
+   ([docs/INTEREST.md](docs/INTEREST.md)). The record keeps `waitlist` / `interview`, and the same sign-up
+   is also stored in the `signups` table with where the form was.
 
 Progress lives in the browser tab (`sessionStorage`), so a reload resumes the same session at the same
 screen. The record is saved to the backend after every step, every ~20 s on the dashboard, and with a
@@ -202,7 +205,7 @@ Default filters: completed sessions only, test sessions hidden, forced-variant s
   "a lot to look at" working for a few minutes.
 - Compare **A against B** before celebrating A: if the minimal version moves the numbers as much, the
   rich data is not what helps.
-- Read the **free-text answers** ("still scared of…", "made me more anxious…") — the section counts say
+- Read the **free-text answers** ("still anxious about…", "made me more anxious…") — the section counts say
   *what*, the text says *why*. Anxiety that *rose* for some people is a finding, not an outlier.
 - Keep forced-variant and test sessions out of any number you share, unless you say so.
 - "No change" is a real result. Write it down the same way you would write down a win.

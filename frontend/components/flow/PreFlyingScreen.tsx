@@ -2,8 +2,15 @@
 
 import { ArrowRight } from "lucide-react";
 import { useRef } from "react";
-import { ANXIETY_START_LABELS, ANXIETY_STARTS, WORRIES, WORRY_LABELS } from "@preflight/shared/stats";
-import type { AnxietyStart, FlightsPerYear, PreSurvey, WorryMost } from "@preflight/shared/types";
+import {
+  ANXIETY_START_LABELS,
+  ANXIETY_STARTS,
+  TRAVEL_IMPACT_LABELS,
+  TRAVEL_IMPACTS,
+  WORRIES,
+  WORRY_LABELS,
+} from "@preflight/shared/stats";
+import type { AnxietyStart, FlightsPerYear, PreSurvey, TravelImpact, WorryMost } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
@@ -30,8 +37,14 @@ export const ANXIETY_START_OPTIONS: readonly ChoiceOption<AnxietyStart>[] = ANXI
   label: ANXIETY_START_LABELS[value],
 }));
 
-/** The three questions, in screen order. */
-const QUESTIONS = ["flightsPerYear", "worriesMost", "anxietyStarts"] as const;
+/** Same labels as the results breakdown (shared/src/stats.ts); "No" clears the others. */
+export const TRAVEL_IMPACT_OPTIONS: readonly ChoiceOption<TravelImpact>[] = TRAVEL_IMPACTS.map((value) => ({
+  value,
+  label: TRAVEL_IMPACT_LABELS[value],
+}));
+
+/** The four questions, in screen order. */
+const QUESTIONS = ["flightsPerYear", "worriesMost", "anxietyStarts", "travelImpact"] as const;
 type FlyingKey = (typeof QUESTIONS)[number];
 
 /** Height kept clear for the pinned Continue bar when deciding whether a question is already in view. */
@@ -39,34 +52,60 @@ const FOOTER_ALLOWANCE_PX = 120;
 
 interface PreFlyingScreenProps {
   pre: PreSurvey;
+  /**
+   * The travel-plans answer. It moved here from the post-survey on 2026-10-24 and is still stored as
+   * `post.travelImpact`, so the record, CSV column and results keep working for older sessions.
+   */
+  travelImpact: readonly TravelImpact[];
   onChange: (patch: Partial<PreSurvey>) => void;
+  onTravelImpactChange: (values: TravelImpact[]) => void;
   onContinue: () => void;
 }
 
 /**
  * "About your flying": flights per year, what worries them most, when the
- * anxiety starts. Tap-only single picks, all three required. After a pick the
- * next unanswered question is brought into view so nothing below the fold is
- * missed; focus stays where it is.
+ * anxiety starts, and whether fear of flying changed their travel plans. All
+ * four required (the last one is a multi-select with an exclusive "No"). After
+ * a pick the next unanswered question is brought into view so nothing below
+ * the fold is missed; focus stays where it is.
  */
-export function PreFlyingScreen({ pre, onChange, onContinue }: PreFlyingScreenProps) {
-  const complete = flyingComplete(pre);
+export function PreFlyingScreen({ pre, travelImpact, onChange, onTravelImpactChange, onContinue }: PreFlyingScreenProps) {
+  const complete = flyingComplete(pre, travelImpact);
   const flightsLabel = useRef<HTMLParagraphElement>(null);
   const worriesLabel = useRef<HTMLParagraphElement>(null);
   const startsLabel = useRef<HTMLParagraphElement>(null);
-  const labels = { flightsPerYear: flightsLabel, worriesMost: worriesLabel, anxietyStarts: startsLabel };
+  const travelLabel = useRef<HTMLParagraphElement>(null);
+  const labels = { flightsPerYear: flightsLabel, worriesMost: worriesLabel, anxietyStarts: startsLabel, travelImpact: travelLabel };
 
-  function pick(key: FlyingKey, patch: Partial<PreSurvey>) {
-    onChange(patch);
-    const answers = { ...pre, ...patch };
+  function revealNext(key: FlyingKey, answered: Record<FlyingKey, boolean>) {
     const i = QUESTIONS.indexOf(key);
     // The next unanswered question: the ones below this first, then back round to the top.
-    const next = [...QUESTIONS.slice(i + 1), ...QUESTIONS.slice(0, i)].find((k) => answers[k] == null);
+    const next = [...QUESTIONS.slice(i + 1), ...QUESTIONS.slice(0, i)].find((k) => !answered[k]);
     // The label's parent is the whole question with its options.
     const group = next ? labels[next].current?.parentElement : null;
     if (!group || fullyVisible(group)) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     group.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  function answeredWith(nextPre: PreSurvey, nextTravel: readonly TravelImpact[]): Record<FlyingKey, boolean> {
+    return {
+      flightsPerYear: nextPre.flightsPerYear != null,
+      worriesMost: nextPre.worriesMost != null,
+      anxietyStarts: nextPre.anxietyStarts != null,
+      travelImpact: nextTravel.length > 0,
+    };
+  }
+
+  function pick(key: Exclude<FlyingKey, "travelImpact">, patch: Partial<PreSurvey>) {
+    onChange(patch);
+    revealNext(key, answeredWith({ ...pre, ...patch }, travelImpact));
+  }
+
+  function pickTravel(values: TravelImpact[]) {
+    onTravelImpactChange(values);
+    // A multi-select: only the first pick moves on (unpicking, or adding a second, shouldn't jump).
+    if (travelImpact.length === 0 && values.length > 0) revealNext("travelImpact", answeredWith(pre, values));
   }
 
   return (
@@ -82,12 +121,12 @@ export function PreFlyingScreen({ pre, onChange, onContinue }: PreFlyingScreenPr
             Continue
           </Button>
           <p className="mt-2 h-4 text-center text-xs text-ink-500" aria-live="polite">
-            {complete ? "" : "Answer all three to continue"}
+            {complete ? "" : "Answer all four to continue"}
           </p>
         </div>
       }
     >
-      <StepHeader stage={1} eyebrow="Before you start" title="About your flying" sub="One answer each — whichever fits best." />
+      <StepHeader stage={1} eyebrow="Before you start" title="About your flying" />
       <div className="flex flex-col gap-3">
         <Card className="animate-fade-up" style={fadeUp()}>
           <ChoiceGroup
@@ -118,6 +157,18 @@ export function PreFlyingScreen({ pre, onChange, onContinue }: PreFlyingScreenPr
             options={ANXIETY_START_OPTIONS}
             value={pre.anxietyStarts ?? null}
             onChange={(v) => pick("anxietyStarts", { anxietyStarts: v })}
+          />
+        </Card>
+        <Card className="animate-fade-up" style={fadeUp(180)}>
+          <ChoiceGroup
+            kind="multi"
+            labelRef={travelLabel}
+            label="In the past year, has fear of flying changed your travel plans?"
+            hint="Choose as many as apply."
+            options={TRAVEL_IMPACT_OPTIONS}
+            values={travelImpact}
+            exclusive="no"
+            onChange={pickTravel}
           />
         </Card>
       </div>
