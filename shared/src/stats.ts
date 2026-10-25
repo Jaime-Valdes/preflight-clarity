@@ -887,6 +887,8 @@ export interface TextAnswer {
 
 export interface OpenTextAnswers {
   stillScaredOf: TextAnswer[];
+  /** "What worries you most" — the words given with "Other". */
+  worriesOther: TextAnswer[];
   feltWorse: TextAnswer[];
   wouldReplace: TextAnswer[];
 }
@@ -903,6 +905,7 @@ function collectText(records: readonly SessionRecord[], pick: (record: SessionRe
 export function openTextAnswers(records: readonly SessionRecord[]): OpenTextAnswers {
   return {
     stillScaredOf: collectText(records, (r) => r.post.stillScaredOf),
+    worriesOther: collectText(records, (r) => r.pre.worriesOtherText ?? ""),
     feltWorse: collectText(records, (r) => r.post.feltWorseText),
     wouldReplace: collectText(records, (r) => r.post.wouldReplaceText),
   };

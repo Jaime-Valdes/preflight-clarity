@@ -70,6 +70,7 @@ export const CSV_COLUMNS: readonly string[] = [
   "pre_timeframe",
   "pre_flights_per_year",
   "pre_worries_most",
+  "pre_worries_other",
   "pre_anxiety_starts",
   // post ratings + deltas
   "post_anxiety",
@@ -179,6 +180,7 @@ export function recordToRow(record: SessionRecord): Cell[] {
     pre.timeframe,
     pre.flightsPerYear,
     pre.worriesMost ?? null,
+    pre.worriesOtherText ?? "",
     pre.anxietyStarts ?? null,
 
     post.anxiety,

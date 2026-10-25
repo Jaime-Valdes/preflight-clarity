@@ -105,33 +105,18 @@ export function DebriefScreen({ signedUp, onSignup, isTest = false, onStartOver 
     <Screen>
       <Wordmark className="animate-fade-up" />
       <div className="mt-9 animate-fade-up [animation-delay:60ms]">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-calm-700">Thank you</p>
-        <h1 tabIndex={-1} className="mt-1.5 text-[28px] font-bold leading-[1.12] tracking-[-0.01em] text-ink-900 outline-none">
-          That&rsquo;s everything
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-calm-700">That&rsquo;s everything</p>
+        <h1 tabIndex={-1} className="mt-1.5 text-[40px] font-bold leading-[1.08] tracking-[-0.02em] text-ink-900 outline-none">
+          Thank you!
         </h1>
         <p className="mt-4 text-[15px] leading-relaxed text-ink-700">
-          Thanks for taking part. Your answers help a student team understand what nervous flyers actually need
-          before a flight.
+          Your answers help a student team understand what nervous flyers actually need before a flight.
         </p>
       </div>
 
-      <Card className="mt-6 animate-fade-up [animation-delay:120ms] !bg-breeze-50 !ring-breeze-100">
-        <div className="flex gap-3">
-          <span aria-hidden className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-surface text-breeze-700 ring-1 ring-inset ring-breeze-100">
-            <Info className="size-4" />
-          </span>
-          <div>
-            <p className="text-[15px] font-semibold leading-snug text-ink-900">A reminder about the data</p>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-ink-700">
-              Everything in the briefing was illustrative. None of it was a real forecast or real information about
-              any flight. No alerts were set up, and no seat or flight was held or booked.
-            </p>
-          </div>
-        </div>
-      </Card>
 
       {/* The screen's one action: the product sign-up (docs/INTEREST.md). Same copy in A and B; optional. */}
-      <div ref={cardRef} className="mt-3 animate-fade-up [animation-delay:180ms]">
+      <div ref={cardRef} className="mt-6 animate-fade-up [animation-delay:120ms]">
         <Card className="!bg-calm-50 !ring-calm-100">
           {signedUp ? (
             <div className="flex items-start gap-3" role="status">
@@ -215,7 +200,22 @@ export function DebriefScreen({ signedUp, onSignup, isTest = false, onStartOver 
         </Card>
       </div>
 
-      <p className="mt-8 text-center text-[15px] font-semibold text-ink-700 animate-fade-up [animation-delay:240ms]">
+      <Card className="mt-3 animate-fade-up [animation-delay:240ms] !bg-breeze-50 !ring-breeze-100">
+        <div className="flex gap-3">
+          <span aria-hidden className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-surface text-breeze-700 ring-1 ring-inset ring-breeze-100">
+            <Info className="size-4" />
+          </span>
+          <div>
+            <p className="text-[15px] font-semibold leading-snug text-ink-900">A reminder about the data</p>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-ink-700">
+              Everything in the briefing was illustrative. None of it was a real forecast or real information about
+              any flight. No alerts were set up, and no seat or flight was held or booked.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <p className="mt-8 text-center text-[15px] font-semibold text-ink-700 animate-fade-up [animation-delay:300ms]">
         You can close this page now.
       </p>
       <p className="mt-2 text-center text-xs text-ink-500">Prototype · illustrative data</p>

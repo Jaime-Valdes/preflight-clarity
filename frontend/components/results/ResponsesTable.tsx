@@ -129,7 +129,10 @@ function Details({ record }: { record: SessionRecord }) {
           {pre.flightsPerYear ? FLIGHTS_PER_YEAR_LABELS[pre.flightsPerYear] : "—"}
           {oldRouteLine(record) ? <span className="block text-xs text-ink-500">Pre-survey route · {oldRouteLine(record)}</span> : null}
         </Field>
-        <Field label="Worries most">{pre.worriesMost ? (WORRY_LABELS[pre.worriesMost] ?? pre.worriesMost) : "—"}</Field>
+        <Field label="Worries most">
+          {pre.worriesMost ? (WORRY_LABELS[pre.worriesMost] ?? pre.worriesMost) : "—"}
+          {pre.worriesOtherText ? ` — “${pre.worriesOtherText}”` : ""}
+        </Field>
         <Field label="Anxiety starts">{pre.anxietyStarts ? (ANXIETY_START_LABELS[pre.anxietyStarts] ?? pre.anxietyStarts) : "—"}</Field>
         <Field label="Device">
           {device ? `${DEVICE_LABELS[device.type]} · ${device.viewportW}×${device.viewportH}${device.touch ? " · touch" : ""}` : "—"}

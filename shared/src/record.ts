@@ -251,6 +251,7 @@ function parsePre(value: unknown): PreSurvey {
     flightsPerYear: enumValue(value.flightsPerYear, FLIGHTS_PER_YEAR) ?? null,
     // "About your flying" screen (2026-10-22); absent on older records.
     worriesMost: enumValue(value.worriesMost, WORRIES) ?? null,
+    worriesOtherText: text(value.worriesOtherText, MAX_SHORT_CHARS),
     anxietyStarts: enumValue(value.anxietyStarts, ANXIETY_STARTS) ?? null,
   };
 }

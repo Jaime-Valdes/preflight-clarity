@@ -129,17 +129,6 @@ export function PostHabitsScreen({ post, onChange, onFinish }: PostHabitsScreenP
           />
         </Card>
         <Card className="animate-fade-up" style={fadeUp(120)}>
-          <TextArea
-            id={anxiousId}
-            label="What would you still feel anxious about?"
-            hint="Optional. Anything at all."
-            value={post.stillScaredOf}
-            onChange={(v) => onChange({ stillScaredOf: v })}
-            placeholder="In your own words…"
-            rows={3}
-          />
-        </Card>
-        <Card className="animate-fade-up" style={fadeUp(180)}>
           <ChoiceGroup
             kind="single"
             labelRef={bookLabelRef}
@@ -148,6 +137,17 @@ export function PostHabitsScreen({ post, onChange, onFinish }: PostHabitsScreenP
             options={BOOK_LIKELIHOOD_OPTIONS}
             value={post.bookLikelihood ?? null}
             onChange={(v) => onChange({ bookLikelihood: v })}
+          />
+        </Card>
+        <Card className="animate-fade-up" style={fadeUp(240)}>
+          <TextArea
+            id={anxiousId}
+            label="What would you still feel anxious about?"
+            hint="Optional. Anything at all."
+            value={post.stillScaredOf}
+            onChange={(v) => onChange({ stillScaredOf: v })}
+            placeholder="In your own words…"
+            rows={3}
           />
         </Card>
       </div>

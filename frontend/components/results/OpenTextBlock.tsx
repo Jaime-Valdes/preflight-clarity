@@ -43,7 +43,7 @@ function TextList({ title, items }: { title: string; items: TextAnswer[] }) {
   );
 }
 
-/** The three free-text answers as readable lists, newest first. */
+/** The free-text answers as readable lists, newest first. */
 export function OpenTextBlock({ answers, className }: { answers: OpenTextAnswers; className?: string }) {
   return (
     <Block
@@ -52,8 +52,9 @@ export function OpenTextBlock({ answers, className }: { answers: OpenTextAnswers
       title="In their own words"
       subtitle="Free-text answers from the post-survey, newest first. Quoted exactly as typed."
     >
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-2">
         <TextList title="What they'd still feel anxious about" items={answers.stillScaredOf} />
+        <TextList title="What worries them most, in their words (picked “Other”)" items={answers.worriesOther} />
         <TextList title="What made them more anxious" items={answers.feltWorse} />
         <TextList title="What it would replace" items={answers.wouldReplace} />
       </div>

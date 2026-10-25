@@ -199,6 +199,7 @@ function fixture(): SessionRecord {
       timeframe: "1to4w",
       flightsPerYear: "2to3",
       worriesMost: "turbulence",
+      worriesOtherText: "",
       anxietyStarts: "days_before",
     },
     flightInput: { origin: "JFK", destination: "LAX", date: "2026-11-26" },
@@ -592,7 +593,7 @@ group("parseSessionRecord", () => {
     assert.deepEqual(expectOk(minimal), {
       ...minimal,
       participant: "",
-      pre: { ...minimal.pre, worriesMost: null, anxietyStarts: null },
+      pre: { ...minimal.pre, worriesMost: null, worriesOtherText: "", anxietyStarts: null },
       post: { ...minimal.post, wouldSwitch: null, travelImpact: [], bookLikelihood: null },
       waitlist: false,
       interview: false,

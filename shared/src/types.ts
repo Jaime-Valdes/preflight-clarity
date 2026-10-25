@@ -73,6 +73,8 @@ export interface PreSurvey extends Ratings {
   flightsPerYear: FlightsPerYear | null;
   /** "About your flying" screen; absent on records from before 2026-10-22. */
   worriesMost?: WorryMost | null;
+  /** Optional words when worriesMost is "other"; "" otherwise (absent on records before 2026-10-25). */
+  worriesOtherText?: string;
   anxietyStarts?: AnxietyStart | null;
 }
 

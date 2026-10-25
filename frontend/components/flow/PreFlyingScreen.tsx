@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import {
   ANXIETY_START_LABELS,
   ANXIETY_STARTS,
@@ -17,6 +17,7 @@ import { Screen } from "@/components/ui/Screen";
 import { flyingComplete } from "@/lib/session";
 import { ChoiceGroup, type ChoiceOption } from "./ChoiceGroup";
 import { fadeUp, StepHeader } from "./StepHeader";
+import { TextArea } from "./TextArea";
 
 export const FLIGHTS_PER_YEAR_OPTIONS: readonly ChoiceOption<FlightsPerYear>[] = [
   { value: "0to1", label: "Once or less" },
@@ -70,6 +71,7 @@ interface PreFlyingScreenProps {
  * the fold is missed; focus stays where it is.
  */
 export function PreFlyingScreen({ pre, travelImpact, onChange, onTravelImpactChange, onContinue }: PreFlyingScreenProps) {
+  const otherId = useId();
   const complete = flyingComplete(pre, travelImpact);
   const flightsLabel = useRef<HTMLParagraphElement>(null);
   const worriesLabel = useRef<HTMLParagraphElement>(null);
@@ -146,8 +148,21 @@ export function PreFlyingScreen({ pre, travelImpact, onChange, onTravelImpactCha
             label="What worries you most about flying?"
             options={WORRY_OPTIONS}
             value={pre.worriesMost ?? null}
-            onChange={(v) => pick("worriesMost", { worriesMost: v })}
+            // "Other" opens a text field right here, so it doesn't scroll on to the next question.
+            onChange={(v) => (v === "other" ? onChange({ worriesMost: v }) : pick("worriesMost", { worriesMost: v }))}
           />
+          {pre.worriesMost === "other" ? (
+            <TextArea
+              id={otherId}
+              label="What is it? (optional)"
+              value={pre.worriesOtherText ?? ""}
+              onChange={(v) => onChange({ worriesOtherText: v })}
+              placeholder="In your own words…"
+              rows={2}
+              maxLength={120}
+              className="mt-4"
+            />
+          ) : null}
         </Card>
         <Card className="animate-fade-up" style={fadeUp(120)}>
           <ChoiceGroup

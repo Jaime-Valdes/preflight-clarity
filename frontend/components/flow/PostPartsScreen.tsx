@@ -49,29 +49,32 @@ export function PostPartsScreen({ variant, post, onChange, onContinue }: PostPar
     >
       <StepHeader stage={4} eyebrow="After the briefing" title="What stood out" />
       <div className="flex flex-col gap-3">
+        {/* The two lists sit side by side (team decision 2026-10-25), so dense rows keep them readable on a phone. */}
         <Card className="animate-fade-up" style={fadeUp()}>
-          <ChoiceGroup
-            kind="multi"
-            label="Which parts made you feel better or did you find the most value in?"
-            hint={`Pick up to ${MAX_PARTS}.`}
-            options={partOptions(variant, "None of these")}
-            values={post.feltBetter}
-            exclusive="none"
-            max={MAX_PARTS}
-            onChange={(values) => onChange({ feltBetter: values })}
-          />
-        </Card>
-        <Card className="animate-fade-up" style={fadeUp(60)}>
-          <ChoiceGroup
-            kind="multi"
-            label="Which parts made you more anxious or did you find least valuable?"
-            hint={`Pick up to ${MAX_PARTS}.`}
-            options={partOptions(variant, "Nothing")}
-            values={post.feltWorse}
-            exclusive="none"
-            max={MAX_PARTS}
-            onChange={(values) => onChange({ feltWorse: values })}
-          />
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <ChoiceGroup
+              kind="multi"
+              dense
+              label="Which parts made you feel better or did you find the most value in?"
+              hint={`Pick up to ${MAX_PARTS}.`}
+              options={partOptions(variant, "None of these")}
+              values={post.feltBetter}
+              exclusive="none"
+              max={MAX_PARTS}
+              onChange={(values) => onChange({ feltBetter: values })}
+            />
+            <ChoiceGroup
+              kind="multi"
+              dense
+              label="Which parts made you more anxious or did you find least valuable?"
+              hint={`Pick up to ${MAX_PARTS}.`}
+              options={partOptions(variant, "Nothing")}
+              values={post.feltWorse}
+              exclusive="none"
+              max={MAX_PARTS}
+              onChange={(values) => onChange({ feltWorse: values })}
+            />
+          </div>
           <TextArea
             id={worseTextId}
             label="Anything you'd like to add? (optional)"

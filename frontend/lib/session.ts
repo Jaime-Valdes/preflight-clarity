@@ -170,6 +170,7 @@ export function emptyPre(): PreSurvey {
     timeframe: null,
     flightsPerYear: null,
     worriesMost: null,
+    worriesOtherText: "",
     anxietyStarts: null,
   };
 }
@@ -336,7 +337,12 @@ export function buildRecord(state: FlowState): SessionRecord | null {
     participant: s.participant,
     device: s.device,
     // The "About your flying" picks are null until answered (and on flow states saved before they existed).
-    pre: { ...state.pre, worriesMost: state.pre.worriesMost ?? null, anxietyStarts: state.pre.anxietyStarts ?? null },
+    pre: {
+      ...state.pre,
+      worriesMost: state.pre.worriesMost ?? null,
+      worriesOtherText: state.pre.worriesMost === "other" ? (state.pre.worriesOtherText ?? "") : "",
+      anxietyStarts: state.pre.anxietyStarts ?? null,
+    },
     flightInput: state.flightInput,
     flight: state.flight,
     dashboard: state.dashboard,

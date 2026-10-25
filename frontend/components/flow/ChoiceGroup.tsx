@@ -17,6 +17,8 @@ interface BaseProps<T extends string> {
   options: readonly ChoiceOption<T>[];
   /** 1 (default) = full-width rows, 2 = two-column grid for short labels. */
   columns?: 1 | 2;
+  /** Tighter rows (smaller text, less padding) for groups that sit side by side. */
+  dense?: boolean;
   className?: string;
   /** When set, the question label becomes a programmatic focus target (tabIndex -1). */
   labelRef?: Ref<HTMLParagraphElement>;
@@ -52,7 +54,7 @@ type ChoiceGroupProps<T extends string> = SingleProps<T> | MultiProps<T>;
 export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
   const labelId = useId();
   const hintId = useId();
-  const { label, hint, options, columns = 1, className, labelRef } = props;
+  const { label, hint, options, columns = 1, dense = false, className, labelRef } = props;
   const isMulti = props.kind === "multi";
   // Radio group: one Tab stop (the checked option, else the first) and arrow keys move + select.
   const anyChecked = props.kind === "single" && options.some((o) => o.value === props.value);
@@ -141,7 +143,8 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
               onKeyDown={isMulti ? undefined : (e) => onRadioKeyDown(e, i)}
               onClick={() => toggle(opt.value)}
               className={cn(
-                "flex min-h-12 items-center gap-3 rounded-2xl px-4 py-2.5 text-left text-[15px] leading-snug transition-colors duration-150",
+                "flex items-center rounded-2xl text-left leading-snug transition-colors duration-150",
+                dense ? "min-h-11 gap-2 px-3 py-2 text-[13px]" : "min-h-12 gap-3 px-4 py-2.5 text-[15px]",
                 checked
                   ? "bg-night-900 text-white shadow-soft"
                   : "bg-surface text-ink-900 ring-1 ring-inset ring-line-strong hover:bg-canvas active:bg-line/60",
@@ -151,12 +154,13 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>) {
               <span
                 aria-hidden
                 className={cn(
-                  "flex size-5 shrink-0 items-center justify-center ring-1 ring-inset",
+                  "flex shrink-0 items-center justify-center ring-1 ring-inset",
+                  dense ? "size-4" : "size-5",
                   isMulti ? "rounded-md" : "rounded-full",
                   checked ? "bg-white text-night-900 ring-white" : "bg-surface ring-ink-300",
                 )}
               >
-                {checked ? <Check className="size-3.5" strokeWidth={3} /> : null}
+                {checked ? <Check className={dense ? "size-3" : "size-3.5"} strokeWidth={3} /> : null}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block">{opt.label}</span>
