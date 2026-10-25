@@ -140,7 +140,7 @@ export function DebriefScreen({ signedUp, onSignup, isTest = false, onStartOver 
                 <div>
                   <h2 className="text-[17px] font-semibold leading-snug text-ink-900">Want this for your real flights?</h2>
                   <p className="mt-1.5 text-[14px] leading-relaxed text-ink-700">
-                    Pre-Flight Clarity is a prototype today. We&rsquo;re building it into a free app. Leave your email
+                    Cloud9 is a prototype today. We&rsquo;re building it into a free app. Leave your email
                     and we&rsquo;ll let you know when it&rsquo;s live &mdash; one email, no spam.
                   </p>
                 </div>

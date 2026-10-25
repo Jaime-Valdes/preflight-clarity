@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Plane } from "lucide-react";
+import { BrandTile } from "@/components/ui/BrandMark";
 import { cn } from "@/lib/cn";
 import { PROGRESS_STAGES } from "@/lib/session";
 
@@ -77,13 +77,8 @@ export function StepHeader({ stage, eyebrow, title, sub, className }: StepHeader
 export function Wordmark({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      <span
-        aria-hidden
-        className="flex size-9 items-center justify-center rounded-xl bg-night-900 text-white shadow-soft"
-      >
-        <Plane className="size-4" />
-      </span>
-      <span className="text-[15px] font-bold tracking-tight text-ink-900">Pre-Flight Clarity</span>
+      <BrandTile className="size-9" />
+      <span className="text-[15px] font-bold tracking-tight text-ink-900">Cloud9</span>
     </div>
   );
 }

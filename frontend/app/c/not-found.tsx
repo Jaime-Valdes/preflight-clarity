@@ -14,7 +14,7 @@ export default function CNotFound() {
   return (
     <>
       {/* A nested not-found's `metadata` isn't applied, so the tab would keep the home title: React hoists this one. */}
-      <title>Page not found · Pre-Flight Clarity</title>
+      <title>Page not found · Cloud9</title>
       <section
         aria-labelledby="c-not-found-title"
         className="mx-auto mt-4 max-w-xl animate-fade-up rounded-3xl bg-surface px-5 py-8 text-center shadow-soft ring-1 ring-line/80 sm:mt-8 sm:px-8"

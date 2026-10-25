@@ -39,7 +39,7 @@ const MAX_FIRST_NAME = 60;
 // shared strings read the same in both prototypes (and match the same PostHog click names).
 export const INTEREST_TITLE = "Want this for your real flights?";
 export const INTEREST_BODY =
-  "Pre-Flight Clarity is a prototype today. We’re building it into a free app. Leave your email and we’ll let you know when it’s live — one email, no spam.";
+  "Cloud9 is a prototype today. We’re building it into a free app. Leave your email and we’ll let you know when it’s live — one email, no spam.";
 export const INTEREST_BUTTON = "Notify me when it’s live";
 export const INTEREST_INTERVIEW = "I’m also open to a 15-minute chat about what I’d want from this";
 /** The study's wording of the interview box (docs/INTEREST.md). */

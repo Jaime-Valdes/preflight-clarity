@@ -2,7 +2,7 @@
   "name": "preflight-clarity",
   "version": "0.1.0",
   "private": true,
-  "description": "Pre-Flight Clarity — a research prototype testing whether a calm, data-rich pre-flight dashboard lowers flight anxiety.",
+  "description": "Cloud9 — a research prototype testing whether a calm, data-rich pre-flight dashboard lowers flight anxiety.",
   "workspaces": [
     "shared",
     "backend",

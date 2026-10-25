@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Pre-Flight Clarity API: receives study sessions from the web app and serves them to the team results page (Hono on Node).",
+  "description": "Cloud9 API: receives study sessions from the web app and serves them to the team results page (Hono on Node).",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",

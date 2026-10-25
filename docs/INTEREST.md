@@ -18,7 +18,7 @@ sign-up as the primary action, the interview as an optional checkbox.
 ## The form (same copy everywhere, calm, honest)
 
 - Title: **Want this for your real flights?**
-- Body: *Pre-Flight Clarity is a prototype today. We're building it into a free app. Leave your email and
+- Body: *Cloud9 is a prototype today. We're building it into a free app. Leave your email and
   we'll let you know when it's live — one email, no spam.*
 - Fields: **First name** (optional, ≤ 60) · **Email** (required, validated) · checkbox *I'm also open to
   a 15-minute chat about what I'd want from this* (study: *…about my experience*).

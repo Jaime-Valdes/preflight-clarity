@@ -68,7 +68,7 @@ export function ResultsHeader({ total, shown, storage, filters, onFiltersChange,
     <header>
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400">Pre-Flight Clarity · Team</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400">Cloud9 · Team</p>
           <h1 className="mt-1 text-[28px] font-bold leading-none text-ink-900 sm:text-[32px]">Results</h1>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-500">
             <span className="tabular-nums">

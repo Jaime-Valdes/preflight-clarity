@@ -9,10 +9,10 @@ import { TestFlag } from "@/components/c/interest/TestFlag";
 const DESCRIPTION = `Compare nonstop flights side by side with the pre-flight picture in hand: times and fares, aircraft, airline and who flies it, plus the turbulence forecast from ${TURBULENCE_FORECAST_DAYS} days before departure and the weather from about a week before. A prototype — all data is illustrative.`;
 
 export const metadata: Metadata = {
-  title: { default: "Compare flights", template: "%s · Pre-Flight Clarity" },
+  title: { default: "Compare flights", template: "%s · Cloud9" },
   description: DESCRIPTION,
-  openGraph: { title: "Pre-Flight Clarity · Compare flights", description: DESCRIPTION },
-  twitter: { title: "Pre-Flight Clarity · Compare flights", description: DESCRIPTION },
+  openGraph: { title: "Cloud9 · Compare flights", description: DESCRIPTION },
+  twitter: { title: "Cloud9 · Compare flights", description: DESCRIPTION },
 };
 
 /**

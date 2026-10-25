@@ -7,7 +7,7 @@ const port = Number(process.env.PORT) || 8787;
 
 serve({ fetch: app.fetch, port }, (info) => {
   const storage = storageKind();
-  console.log(`Pre-Flight Clarity API listening on http://localhost:${info.port} (storage: ${storage})`);
+  console.log(`Cloud9 API listening on http://localhost:${info.port} (storage: ${storage})`);
   if (storage !== "supabase") {
     console.warn(
       storage === "file"

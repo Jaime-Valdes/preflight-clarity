@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { CloudMarkShapes } from "@/components/ui/BrandMark";
 
 /*
  * Link-preview image (iMessage, WhatsApp, Slack, X…). Static: no request-time
@@ -6,12 +7,12 @@ import { ImageResponse } from "next/og";
  * next/og, so it is generated once at build time and cached.
  *
  * Design: deep night navy fading into sea-glass teal, the earth's horizon
- * rising at the bottom, the app mark (a plane climbing over the horizon),
- * and three calm lines of text. Mirrors the colours in app/globals.css.
+ * rising at the bottom, the Cloud9 mark floating above it, and three calm
+ * lines of text. Mirrors the colours in app/globals.css.
  */
 
 export const alt =
-  "Pre-Flight Clarity — a 5–10 minute study for nervous flyers. Student research prototype.";
+  "Cloud9 — a 5–10 minute study for nervous flyers. Student research prototype.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -22,26 +23,6 @@ const TEAL_DEEP = "#1f5149";
 const TEAL = "#3c9e89";
 const TEAL_SOFT = "#85cdbb";
 const CALM_100 = "#d5efe8";
-const CANVAS = "#f3f6f9";
-
-/** The same plane silhouette as icon.svg, in its 64-unit coordinate space. */
-function Plane({ size: px, opacity = 1 }: { size: number; opacity?: number }) {
-  return (
-    <svg
-      width={px}
-      height={px}
-      viewBox="0 0 64 64"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ opacity }}
-    >
-      <g fill={CANVAS}>
-        <rect x="28.5" y="8" width="7" height="34" rx="3.5" />
-        <path d="M32 19 L9 34 V39.5 L32 32.5 L55 39.5 V34 Z" />
-        <path d="M32 35.5 L22.5 43 V46.5 L32 44 L41.5 46.5 V43 Z" />
-      </g>
-    </svg>
-  );
-}
 
 export default function OpenGraphImage() {
   return new ImageResponse(
@@ -99,17 +80,11 @@ export default function OpenGraphImage() {
           }}
         />
 
-        {/* A plane climbing above the horizon on the right. */}
-        <div
-          style={{
-            position: "absolute",
-            right: 140,
-            top: 268,
-            display: "flex",
-            transform: "rotate(32deg)",
-          }}
-        >
-          <Plane size={216} opacity={0.96} />
+        {/* The Cloud9 mark floating above the horizon on the right. */}
+        <div style={{ position: "absolute", right: 96, top: 128, display: "flex" }}>
+          <svg width="320" height="320" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+            <CloudMarkShapes />
+          </svg>
         </div>
 
         {/* Text block. */}
@@ -140,28 +115,26 @@ export default function OpenGraphImage() {
                 boxShadow: "0 18px 40px -16px rgba(0,0,0,0.6)",
               }}
             >
-              <div
-                style={{
-                  position: "absolute",
-                  left: -24,
-                  top: 48,
-                  width: 124,
-                  height: 124,
-                  borderRadius: 9999,
-                  background: `linear-gradient(180deg, #9bdac9 0%, ${TEAL} 100%)`,
-                }}
-              />
-              <Plane size={72} />
+              <svg
+                width="84"
+                height="84"
+                viewBox="0 0 64 64"
+                xmlns="http://www.w3.org/2000/svg"
+                style={{ position: "absolute", left: -4, top: -4 }}
+              >
+                <CloudMarkShapes />
+              </svg>
             </div>
             <div
               style={{
-                fontSize: 30,
-                letterSpacing: 6,
+                fontSize: 34,
+                fontWeight: 700,
+                letterSpacing: -0.5,
                 color: CALM_100,
-                opacity: 0.85,
+                opacity: 0.9,
               }}
             >
-              PRE-FLIGHT CLARITY
+              Cloud9
             </div>
           </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { Plane, RotateCcw, Search } from "lucide-react";
+import { RotateCcw, Search } from "lucide-react";
+import { CloudMark } from "@/components/ui/BrandMark";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
@@ -32,7 +33,7 @@ export default function CError({ error, retry }: CErrorProps) {
         aria-hidden
         className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-calm-50 text-calm-700 ring-1 ring-inset ring-calm-100"
       >
-        <Plane className="size-6" />
+        <CloudMark tone="onLight" className="size-9" />
       </span>
       <h1 id="c-error-title" className="mt-5 text-2xl font-bold leading-tight text-ink-900">
         This page didn’t load

@@ -2,7 +2,7 @@
   "name": "@preflight/frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "Pre-Flight Clarity web app: the participant study flow, the dashboard and the team results page (Next.js).",
+  "description": "Cloud9 web app: the participant study flow, the dashboard and the team results page (Next.js).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

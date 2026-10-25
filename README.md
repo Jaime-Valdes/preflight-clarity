@@ -1,4 +1,8 @@
-# Pre-Flight Clarity
+# Cloud9
+
+Formerly "Pre-Flight Clarity" (renamed 2026-10-25). The GitHub repo, the `@preflight/shared` package, the
+`pfc.*` browser-storage keys and the deployed `preflight-clarity` URLs keep the old slug on purpose: the
+study is live and participants' links and in-progress sessions must keep working.
 
 A research prototype for a student startup (Allen, Arshad, Jaime, Krish) building software for people
 with flight anxiety. It shows participants a calm, data-rich (fake but credible) dashboard about an

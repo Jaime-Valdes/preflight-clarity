@@ -1,4 +1,4 @@
--- Pre-Flight Clarity — Supabase schema
+-- Cloud9 — Supabase schema
 --
 -- Paste into the Supabase SQL editor (Project → SQL Editor) and run. Safe to
 -- run more than once: every statement is idempotent. Two tables: `responses`
@@ -43,7 +43,7 @@ create table if not exists public.responses (
   record               jsonb not null
 );
 
-comment on table  public.responses is 'One row per Pre-Flight Clarity study session. Upserted by the API on session_id; stale writes (lower seq) are ignored by a trigger.';
+comment on table  public.responses is 'One row per Cloud9 study session. Upserted by the API on session_id; stale writes (lower seq) are ignored by a trigger.';
 comment on column public.responses.session_id is 'Session UUID generated in the browser.';
 comment on column public.responses.seq is 'Save counter from the browser; increases on every save of the same session.';
 comment on column public.responses.created_at is 'When the session started (from the first save; preserved on later saves).';

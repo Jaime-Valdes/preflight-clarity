@@ -1,4 +1,4 @@
-# Pre-Flight Clarity — architecture & build contract
+# Cloud9 — architecture & build contract
 
 Research prototype for a student startup (Allen, Arshad, Jaime, Krish) building
 software for people with flight anxiety. The full brief is in

@@ -15,7 +15,7 @@ function CenteredCard({ icon, title, children }: { icon: ReactNode; title: strin
         <h1 className="mt-4 text-lg font-bold text-ink-900">{title}</h1>
         <div className="mt-2 text-[15px] leading-relaxed text-ink-700">{children}</div>
       </Card>
-      <p className="mt-6 text-xs text-ink-400">Pre-Flight Clarity · team results</p>
+      <p className="mt-6 text-xs text-ink-400">Cloud9 · team results</p>
     </div>
   );
 }

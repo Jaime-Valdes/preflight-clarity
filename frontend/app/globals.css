@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Pre-Flight Clarity design tokens.
+ * Cloud9 design tokens.
  * Mood: aviation app × wellness app — calm, premium, soft, generous whitespace.
  * Never use red/rose/orange (or Tailwind's default amber/yellow) anywhere;
  * the strongest "caution" colour is the soft `sand` scale.

@@ -1,25 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- Pre-Flight Clarity mark: a plane climbing over a sea-glass horizon on night navy. Drawn to stay legible at 16px. -->
+  <!-- Cloud9 mark on night navy: the cloud alone. Its face (components/ui/BrandMark.tsx) only reads from 24px up, so the tab icon leaves it off. -->
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#1b3a58"/>
       <stop offset="1" stop-color="#0b1a2c"/>
     </linearGradient>
-    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#9bdac9"/>
-      <stop offset="1" stop-color="#3c9e89"/>
-    </linearGradient>
-    <clipPath id="tile">
-      <rect width="64" height="64" rx="15"/>
-    </clipPath>
   </defs>
   <rect width="64" height="64" rx="15" fill="url(#sky)"/>
-  <g clip-path="url(#tile)">
-    <circle cx="32" cy="92" r="52" fill="url(#sea)"/>
-  </g>
-  <g fill="#f3f6f9">
-    <rect x="28.5" y="8" width="7" height="34" rx="3.5"/>
-    <path d="M32 19 L9 34 V39.5 L32 32.5 L55 39.5 V34 Z"/>
-    <path d="M32 35.5 L22.5 43 V46.5 L32 44 L41.5 46.5 V43 Z"/>
+  <g transform="translate(-3.84 -3.84) scale(1.12)">
+    <circle cx="39" cy="27" r="13" fill="#f3f6f9"/>
+    <circle cx="18" cy="33" r="10" fill="#f3f6f9"/>
+    <circle cx="14" cy="43" r="6" fill="#f3f6f9"/>
+    <circle cx="49" cy="41.5" r="7.5" fill="#f3f6f9"/>
+    <rect x="14" y="33" width="35" height="16" fill="#f3f6f9"/>
   </g>
 </svg>

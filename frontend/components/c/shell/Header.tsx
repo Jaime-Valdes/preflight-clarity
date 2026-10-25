@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCompareList } from "@/lib/c/compare-store";
 import { cn } from "@/lib/cn";
-import { BrandMark } from "./BrandMark";
+import { BrandTile } from "@/components/ui/BrandMark";
 
 const NAV_LINK =
   "relative inline-flex h-11 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition-colors sm:px-3.5";
@@ -33,13 +33,10 @@ export function Header() {
         <Link
           href="/c"
           className="-ml-1 flex min-h-11 min-w-0 items-center gap-2.5 rounded-2xl px-1 text-ink-900"
-          aria-label="Pre-Flight Clarity, flight search"
+          aria-label="Cloud9, flight search"
         >
-          <BrandMark />
-          {/* Below 380px the name wraps into a two-line lockup so both links keep their full size. */}
-          <span className="text-[15px] font-bold leading-tight tracking-tight max-[379px]:w-[5.25rem] max-[379px]:text-[14px] max-[379px]:leading-[1.1]">
-            Pre-Flight Clarity
-          </span>
+          <BrandTile className="size-8" />
+          <span className="text-[15px] font-bold leading-tight tracking-tight">Cloud9</span>
         </Link>
         <nav aria-label="Main" className="shrink-0">
           <ul className="flex items-center gap-0.5 sm:gap-1">

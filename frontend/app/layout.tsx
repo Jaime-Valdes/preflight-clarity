@@ -9,7 +9,7 @@ const manrope = Manrope({
   display: "swap",
 });
 
-const SHARE_TITLE = "Pre-Flight Clarity · A 5–10 minute study for nervous flyers";
+const SHARE_TITLE = "Cloud9 · A 5–10 minute study for nervous flyers";
 const DESCRIPTION =
   "Explore a detailed briefing for an upcoming flight, then tell us how it feels. Takes about 5–10 minutes on your phone. All flight data is illustrative.";
 
@@ -32,14 +32,14 @@ function siteBaseUrl(): URL | undefined {
 
 export const metadata: Metadata = {
   metadataBase: siteBaseUrl(),
-  title: { default: "Pre-Flight Clarity", template: "%s · Pre-Flight Clarity" },
+  title: { default: "Cloud9", template: "%s · Cloud9" },
   description: DESCRIPTION,
-  applicationName: "Pre-Flight Clarity",
-  appleWebApp: { title: "Pre-Flight Clarity" },
+  applicationName: "Cloud9",
+  appleWebApp: { title: "Cloud9" },
   // The link-preview image comes from app/opengraph-image.tsx (and twitter-image.tsx).
   openGraph: {
     type: "website",
-    siteName: "Pre-Flight Clarity",
+    siteName: "Cloud9",
     locale: "en_US",
     title: SHARE_TITLE,
     description: DESCRIPTION,
