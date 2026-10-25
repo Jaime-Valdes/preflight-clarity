@@ -19,15 +19,34 @@ const DEBUG = process.env.NEXT_PUBLIC_POSTHOG_DEBUG === "1";
 
 let started = false;
 
+/**
+ * Clicks since the last page view. Every $pageview carries the count made on the page just
+ * left (clicks_on_previous_page) and every $pageleave the count for its page (clicks_on_page),
+ * so "how many clicks did it take to move on" is a property, not an extra event. Referrer and
+ * UTM parameters ($referrer, utm_source…) are PostHog's own default pageview properties.
+ */
+let clicksOnPage = 0;
+
 /** Call once on the client. Safe to call again (no-op). */
 export function startAnalytics(): void {
   if (started || !KEY || typeof window === "undefined") return;
   started = true;
+  document.addEventListener("click", () => { clicksOnPage += 1; }, true);
   posthog.init(KEY, {
     api_host: PROXY_PATH,
     ui_host: UI_HOST,
     defaults: "2026-08-30",
     debug: DEBUG,
+    before_send: (event) => {
+      if (!event) return event;
+      if (event.event === "$pageview") {
+        event.properties = { ...event.properties, clicks_on_previous_page: clicksOnPage };
+        clicksOnPage = 0;
+      } else if (event.event === "$pageleave") {
+        event.properties = { ...event.properties, clicks_on_page: clicksOnPage };
+      }
+      return event;
+    },
     // Visitors stay anonymous: one distinct id per browser, no person profiles.
     person_profiles: "never",
     capture_pageview: "history_change",
