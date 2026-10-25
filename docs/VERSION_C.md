@@ -64,15 +64,20 @@ than 330 days ahead (`MAX_DAYS_AHEAD`) get a calm message with a way to pick ano
   the day's results so the first paint isn't blocked.
 - **Sort tabs**: Smoothest (default within 2 days; disabled further out, where Departure time is the default) · Cheapest · Fastest · Departure time. In the URL as `sort=`.
 - **Filters** (in the URL; sidebar ≥ 1024 px, "Filters" sheet on phones, with an active-filter count and
-  "Clear all"): departure time (Morning 5–11:59 · Afternoon 12–5:59 · Evening 6–11:59 · Night 12–4:59,
-  only buckets that have flights), airlines (with each airline's lowest fare), aircraft size (any /
-  wide-body only), minimum smoothness (any / 75+ / 85+). Filtering to nothing shows a calm empty state
-  with "Clear filters".
+  "Clear all"): a departure window (earliest and latest departure in 30-minute steps, defaulting to the
+  day's exact first and last departure; `dep_from` / `dep_to` as HHMM), a highest fare (stepped by $10
+  from the day's cheapest to its dearest fare, on `fareAt`; `max_price`, off-grid link values round to
+  the nearest step; defaults are the day's exact edges and are left out of the URL), airlines (with each
+  airline's lowest fare), aircraft size (any / wide-body only), minimum smoothness (any / 75+ / 85+).
+  Filtering to nothing shows a calm empty state with "Clear filters".
 - **Result card** (one per flight): airline mark + name + flight number; depart → arrive times (+1 day),
-  duration, "Nonstop"; aircraft model + "Wide-body" pill when wide; **smoothness score** (ring/badge +
-  label) and a **mini turbulence timeline** (sparkline of `turbulence.points`); one or two quiet facts
-  (on-time % on this route · last 12 months; about N seats · fleet-average age); fare. Actions: **Compare** (toggle, max 3) and **Details**
-  (link). The whole card is not one giant link (nested interactive elements are not allowed).
+  duration, "Nonstop"; aircraft model + "Wide-body" pill when wide; the **smoothness score** on a tinted
+  block (teal / sky / sand by the score's own label — the card's one focal point) as a button that opens
+  the "How the smoothness score works" sheet (only when the forecast exists), with a **mini turbulence
+  timeline** (sparkline of `turbulence.points`); **Smoothest / Cheapest / Fastest** pills computed over
+  the filtered list (ties all marked); quiet facts with tinted icons — on-time % and fleet-average age
+  shown against the industry benchmarks in `shared/src/benchmarks.ts`; the fare via `fareAt`. Actions:
+  **Compare** (toggle, max 3) and **Details** (link). The whole card is not one giant link.
 - **Compare tray**: sticky at the bottom when ≥ 1 flight is picked (on every C page): the picked flights
   as small chips with remove buttons, "Compare (n)" (enabled at ≥ 2), "Clear". At 3 picked, other Compare
   toggles are disabled with a short note ("Up to 3 flights").
@@ -137,7 +142,7 @@ export interface FlightOption {
   key: string;
   /** Full flight (dashboard shape). `alternatives` is [] — C shows other options from the same results. */
   flight: Flight;
-  /** Illustrative one-way economy fare, whole US dollars. */
+  /** Illustrative base one-way economy fare at a typical lead time, whole US dollars — display fareAt(). */
   fareUsd: number;
 }
 export interface SearchResults { query: FlightInput; options: FlightOption[] }   // options by departure time
@@ -146,7 +151,11 @@ export interface DayOverview { date: string; count: number; lowestFareUsd: numbe
 export function optionKey(flight: Pick<Flight, "flightNumber">): string;
 export function searchFlights(query: FlightInput): SearchResults;          // cached, deterministic
 export function findOption(query: FlightInput, key: string): FlightOption | null;
-export function dayOverview(query: FlightInput, date: string): DayOverview;
+export function dayOverview(query: FlightInput, date: string): DayOverview;   // lowestFareUsd is the base fare
+/** Lead time at which fareAt(option, days) === option.fareUsd. */
+export const FARE_REFERENCE_LEAD_DAYS: number;
+/** The base fare moved along the booking lead-time curve; the UI shows this, never fareUsd. */
+export function fareAt(option: FlightOption, daysUntil: number): number;
 ```
 
 As implemented (`shared/src/search.ts` + `routeDay` / `buildScheduledFlight` in `fakeFlight.ts`):
@@ -168,9 +177,32 @@ As implemented (`shared/src/search.ts` + `routeDay` / `buildScheduledFlight` in 
    per airport + date + clock hour (A/B's model), and one bump draw per 2-hour air block on odd hours
    (`air|ROUTE|DATE|HH:MM`) — the same body type gets the identical timeline, a wide-body never a
    bumpier one; blocks differ through the time-of-day model, so the history's best window holds.
-4. **Fares** (`fare|ROUTE|DATE|KEY`): distance, oceanic, region, carrier tier (`fareTier` in
-   airlines.ts), weekday, departure hour, ±10% jitter; whole dollars ≥ $39; never look at turbulence
-   (within-day correlation with the score ≈ 0).
+4. **Fares** — illustrative, but shaped like real one-way economy fares. `FlightOption.fareUsd` is the
+   **base fare** (seed `fare|ROUTE|DATE|KEY`): a distance curve (42 + 36·√(mi/100) + 0.04·(mi − 2,000)⁺)
+   × oceanic 1.4 / other international 1.1 × cheaper regional markets (within South Asia 0.55, Southeast
+   Asia 0.7, Africa 0.8, Latin America 0.85) × carrier tier (`fareTier` in airlines.ts: value 0.84,
+   premium 1.15 long-haul / 1.04) × weekday (Fri/Sun 1.08, Tue/Wed/Sat 0.92–0.95) × US holidays on
+   routes touching the US (the days around Thanksgiving — the Sunday after ×1.28 —, Christmas/New Year,
+   the Fourth of July, Memorial Day and Labor Day; the holiday itself is a quiet day; elsewhere only the
+   Christmas/New Year period, at half the amplitude) × departure hour (before 06:30 and after 21:00 ×0.9,
+   07:00–09:30 and 16:00–19:00 ×1.07; half as much on long-haul) × ±10% jitter — on **price points**: a
+   last digit drawn once per flight (`fare-shape|ORIGIN|DEST|KEY`), 7/9/4 about three quarters of the time,
+   round hundreds only by coincidence; whole dollars ≥ $39. Calibrated so the sample's medians sit inside
+   typical one-way economy ranges — roughly the one-way equivalent of the BTS average domestic itinerary
+   fare (~$390 in 2025; BTS mixes one-way and round-trip tickets and publishes no one-way average) plus
+   the ranges booking sites show per route (LGA–ORD $90–180, ATL–MCO $75–140, JFK–LAX $200–320, JFK–LHR
+   $400–650, SFO–NRT $520–820, LAX–SYD $780–1,150): a synthesis, not a published per-route figure —
+   `check-search.ts` prints them. **`fareAt(option, daysUntil)`** is the fare to show: the base fare
+   moved along a lead-time curve — 0–3 days ×1.5–1.85, 4–13 days ×1.2–1.35, 14–20 ×1.05–1.1, 21–56 the
+   sweet spot ×0.95–1.0, 1.0 at `FARE_REFERENCE_LEAD_DAYS` (63, so `fareAt(o, 63) === o.fareUsd`), ×1.03–1.12
+   further out — with each flight's own small shift (±1.5 days) and steepness (exponent 0.85–1.15) so a
+   day's fares don't move in lockstep; `daysUntil ≤ 0` is the day-of fare, beyond 330 the plateau; re-rounded
+   to the flight's price points, ≥ $39; ~0.5 µs a call. The UI shows `fareAt` everywhere a fare appears
+   (cards, Cheapest sort, price filter, date strip, compare, flight page) with `daysUntil` from
+   `useTodayISO()`; `dayOverview().lowestFareUsd` is the base fare, so the date strip computes its own
+   `min(fareAt(o, daysUntil(date)))`. Fares never look at the turbulence (within-day correlation with the
+   score ≈ 0, also a day out) or at "today" (only `fareAt` takes the lead time), and the generator's output
+   for A/B is untouched.
 5. **Determinism and A/B safety**: `check-search.ts` holds a permanent hash guard over 329
    `generateFlight` outputs — a deliberate A/B change must update it. C flight ids are
    `hashId("c|ORIGIN|DEST|DATE|KEY")`. Cached results are frozen: copy before sorting.

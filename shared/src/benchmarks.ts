@@ -24,9 +24,9 @@ export const BENCHMARKS = {
   /** Average age of the global commercial jet fleet (Cirium / IATA fleet analyses, 2024). */
   fleetAgeYears: { value: 13, unit: "years", label: "global fleet average", higherIsBetter: false, source: "Cirium fleet data, 2024" },
   /** Typical economy seat pitch on US network carriers (airline seat maps, SeatGuru). */
-  seatPitchIn: { value: 31, unit: "in", label: "typical economy", higherIsBetter: true, source: "Airline seat maps / SeatGuru, 2024" },
+  seatPitchIn: { value: 31, unit: "in", label: "typical economy seat", higherIsBetter: true, source: "Airline seat maps / SeatGuru, 2024" },
   /** Typical economy seat width. */
-  seatWidthIn: { value: 17.5, unit: "in", label: "typical economy", higherIsBetter: true, source: "Airline seat maps / SeatGuru, 2024" },
+  seatWidthIn: { value: 17.5, unit: "in", label: "typical economy seat", higherIsBetter: true, source: "Airline seat maps / SeatGuru, 2024" },
   /** Typical cabin noise at cruise for a narrow-body jet (published cabin measurements). */
   cabinNoiseDb: { value: 82, unit: "dB", label: "typical jet cabin", higherIsBetter: false, source: "Published cabin-noise measurements of A320/737-family jets" },
   /** The prototype's own comfort index: the median across the airlines in the catalogue. */
@@ -57,7 +57,13 @@ export function compareToBenchmark(key: BenchmarkKey, value: number, tolerance?:
   const diff = round1(value - b.value);
   const band = tolerance ?? Math.max(0.5, b.value * 0.03);
   const magnitude = Math.abs(diff);
-  const unitWord = (n: number) => (b.unit === "years" ? `${n} ${n === 1 ? "year" : "years"}` : b.unit === "%" ? `${n} points` : b.unit === "in" ? `${n} in` : b.unit === "dB" ? `${n} dB` : `${n}`);
+  const points = (n: number) => `${n} ${n === 1 ? "point" : "points"}`;
+  const unitWord = (n: number) =>
+    b.unit === "years" ? `${n} ${n === 1 ? "year" : "years"}`
+    : b.unit === "%" || b.unit === "/10" || b.unit === "/100" ? points(n)
+    : b.unit === "in" ? `${n} in`
+    : b.unit === "dB" ? `${n} dB`
+    : `${n}`;
   if (magnitude <= band) return { diff, verdict: "about average", text: `about the ${b.label}` };
   const higher = diff > 0;
   const better = b.higherIsBetter === null ? null : higher === b.higherIsBetter;

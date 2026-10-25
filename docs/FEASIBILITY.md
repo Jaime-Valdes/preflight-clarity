@@ -84,4 +84,5 @@ the gate is available; the gate shows "posted on the day"). Version C uses the r
 
 - The study's example flight can be a nonstop on a route people usually fly with a connection; it is
   labelled as an example.
-- Version C fares are fixed, illustrative numbers (a real product would show the fare when checked).
+- Version C fares are illustrative numbers that move with the booking lead time (`fareAt`) and the
+  date; they are never real fares (a real product would quote the fare when checked).
