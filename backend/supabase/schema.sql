@@ -164,7 +164,7 @@ comment on column public.signups.id is 'Sign-up UUID generated in the browser (t
 comment on column public.signups.created_at is 'When this email first signed up from this source (preserved on repeats).';
 comment on column public.signups.updated_at is 'Server time of the latest accepted sign-up for this row.';
 comment on column public.signups.source is 'study = the debrief screen of the A/B study; c = version C, the flight comparison tool.';
-comment on column public.signups.placement is 'Screen the form was on: debrief, c_home, c_results, c_flight or c_compare (signups_placement_check).';
+comment on column public.signups.placement is 'Screen the form was on: debrief, dashboard (the study briefing), c_home, c_results, c_flight or c_compare (signups_placement_check).';
 comment on column public.signups.email is 'Email as typed (trimmed).';
 comment on column public.signups.email_key is 'lower(btrim(email)), generated; unique together with source.';
 comment on column public.signups.first_name is 'Optional first name; null if none.';
@@ -182,7 +182,7 @@ comment on column public.signups.record is 'The full Signup as sent by the brows
 -- one-line edit here (shared/src/signup.ts SIGNUP_PLACEMENTS is the other copy).
 alter table public.signups drop constraint if exists signups_placement_check;
 alter table public.signups add constraint signups_placement_check
-  check (placement in ('debrief', 'c_home', 'c_results', 'c_flight', 'c_compare'));
+  check (placement in ('debrief', 'dashboard', 'c_home', 'c_results', 'c_flight', 'c_compare'));
 
 -- Repeat sign-ups: the upsert replaces the details, so keep the original
 -- created_at (in the column and inside the jsonb record), stamp updated_at

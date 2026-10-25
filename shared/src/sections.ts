@@ -13,14 +13,18 @@ export interface SectionMeta {
   dimension: Dimension;
 }
 
-/** Display order on the full dashboard (variant A) — same order as the brief. */
+/**
+ * Display order on the full dashboard (variant A): the parts people care about most first
+ * (team decision 2026-10-24), then the rest in the brief's order. Each session records the
+ * order it actually showed (DashboardMetrics.sectionOrder), so older sessions keep theirs.
+ */
 export const SECTIONS: readonly SectionMeta[] = [
   { id: "turbulence", title: "Turbulence forecast", dimension: "predictability" },
-  { id: "pilot", title: "Who flies your plane", dimension: "trust" },
   { id: "aircraft", title: "Your aircraft", dimension: "trust" },
-  { id: "airline", title: "Airline safety & comfort", dimension: "trust" },
-  { id: "weather", title: "Weather", dimension: "predictability" },
   { id: "seat", title: "Best seat for smoothness", dimension: "control" },
+  { id: "airline", title: "Airline safety & comfort", dimension: "trust" },
+  { id: "pilot", title: "Who flies your plane", dimension: "trust" },
+  { id: "weather", title: "Weather", dimension: "predictability" },
   { id: "sounds", title: "What you'll hear & feel", dimension: "predictability" },
   { id: "compare", title: "Compare smoother options", dimension: "control" },
   { id: "alerts", title: "Forecast alerts", dimension: "control" },

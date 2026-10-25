@@ -622,7 +622,7 @@ export interface SessionRecord {
 /** Where a sign-up came from: the study's debrief screen, or version C. */
 export type SignupSource = "study" | "c";
 /** The screen the sign-up form was on. */
-export type SignupPlacement = "debrief" | "c_home" | "c_results" | "c_flight" | "c_compare";
+export type SignupPlacement = "debrief" | "dashboard" | "c_home" | "c_results" | "c_flight" | "c_compare";
 
 /**
  * One "notify me when it's live" sign-up (docs/INTEREST.md). Stored in its own

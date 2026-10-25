@@ -27,7 +27,7 @@ export const MAX_PAGE_CHARS = 200;
 const MAX_URL_CHARS = 2048;
 
 export const SIGNUP_SOURCES: readonly SignupSource[] = ["study", "c"];
-export const SIGNUP_PLACEMENTS: readonly SignupPlacement[] = ["debrief", "c_home", "c_results", "c_flight", "c_compare"];
+export const SIGNUP_PLACEMENTS: readonly SignupPlacement[] = ["debrief", "dashboard", "c_home", "c_results", "c_flight", "c_compare"];
 
 export type ParsedSignup = { ok: true; signup: Signup } | { ok: false; error: string };
 

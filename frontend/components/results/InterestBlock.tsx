@@ -10,6 +10,7 @@ export const SOURCE_LABELS: Record<SignupSource, string> = { study: "Study", c: 
 
 export const PLACEMENT_LABELS: Record<SignupPlacement, string> = {
   debrief: "Study · debrief",
+  dashboard: "Study · briefing",
   c_home: "C · home",
   c_results: "C · results",
   c_flight: "C · flight",
