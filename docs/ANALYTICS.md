@@ -31,6 +31,7 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 | `score_factors_open` | the "What goes into this score" panel under the smoothness score is expanded | `variant` |
 | `interest_cta_view` | the "notify me when it's live" card scrolls into view (once per page view; study placements count a view when 40% of the card is on screen, version C from its first visible pixel) | `source` (study, c), `placement` (dashboard, debrief, c_home, c_results, c_flight, c_compare) |
 | `interest_signup` | a sign-up is submitted successfully | `source`, `placement`, `interview` (ticked the interview box) |
+| `study_share` | "Share with a friend" on the debrief is used | `method` (native = the phone's share sheet, copy), `outcome` (shared, cancelled, copied, shown = the link was displayed because copying wasn't allowed). The shared link is the plain study link tagged `utm_source=share&utm_medium=friend`, so arrivals from a share carry those on their `$pageview`; the sharer's `?v=`, `?p=` and `?test=` never travel with it. |
 
 `placement = dashboard` is the sign-up card at the end of the study's briefing (after every section, before
 the "I'm done exploring" footer; identical in A and B, added 2026-10-24). `debrief` is the form on the

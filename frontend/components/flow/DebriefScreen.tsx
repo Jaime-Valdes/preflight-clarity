@@ -6,6 +6,7 @@ import { track } from "@/lib/analytics";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
+import { ShareCard } from "./ShareCard";
 import { Wordmark } from "./StepHeader";
 
 /** What the product-interest form submits (docs/INTEREST.md). */
@@ -199,6 +200,9 @@ export function DebriefScreen({ signedUp, onSignup, isTest = false, onStartOver 
           )}
         </Card>
       </div>
+
+      {/* Pass it on (team ask 2026-10-26): the plain link, never this session's parameters. */}
+      <ShareCard className="mt-3 animate-fade-up [animation-delay:180ms]" />
 
       <Card className="mt-3 animate-fade-up [animation-delay:240ms] !bg-breeze-50 !ring-breeze-100">
         <div className="flex gap-3">
