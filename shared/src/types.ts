@@ -40,7 +40,7 @@ export type WorryMost = "turbulence" | "takeoff_landing" | "not_in_control" | "s
 /** "When does the anxiety usually start before a flight?" */
 export type AnxietyStart = "at_booking" | "weeks_before" | "days_before" | "day_of" | "not_before";
 /** "In the past year, has fear of flying changed your travel plans?" `"no"` is exclusive. */
-export type TravelImpact = "no" | "ground_instead" | "paid_more" | "skipped_trip";
+export type TravelImpact = "no" | "ground_instead" | "paid_more" | "skipped_trip" | "other";
 /** "Would having this pre-flight information make you more likely to book a flight?" */
 export type BookLikelihood = "more_likely" | "no_difference" | "less_likely" | "not_sure";
 export type ReplaceOption =
@@ -100,6 +100,8 @@ export interface PostSurvey extends Ratings {
    * `post` so older records and the CSV / responses columns stay the same. Absent before 2026-10-22.
    */
   travelImpact?: TravelImpact[];
+  /** Optional words when travelImpact includes "other" (2026-10-25); "" otherwise, absent on older records. */
+  travelImpactOtherText?: string;
   /**
    * "Would having this pre-flight information make you more likely to book a flight?" Optional,
    * both variants (2026-10-24). Null when unanswered; absent on records from before it.

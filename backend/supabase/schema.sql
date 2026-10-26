@@ -80,7 +80,7 @@ alter table public.responses add column if not exists anxiety_starts text;
 alter table public.responses add column if not exists travel_impact  text;
 comment on column public.responses.worries_most is 'Pre-survey: what worries them most about flying (turbulence, takeoff_landing, not_in_control, something_wrong, feeling_trapped, other).';
 comment on column public.responses.anxiety_starts is 'Pre-survey: when the anxiety usually starts (at_booking, weeks_before, days_before, day_of, not_before).';
-comment on column public.responses.travel_impact is 'Post-survey: how fear of flying changed travel plans in the past year, comma-joined (no, ground_instead, paid_more, skipped_trip).';
+comment on column public.responses.travel_impact is 'Post-survey: how fear of flying changed travel plans in the past year, comma-joined (no, ground_instead, paid_more, skipped_trip, other; the "other" words are in the record only).';
 
 -- Stale writes: saves can arrive out of order (a sendBeacon on page hide can
 -- land after the next save). Skip any update whose seq is lower than the

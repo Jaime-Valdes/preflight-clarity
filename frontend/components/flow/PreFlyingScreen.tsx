@@ -53,6 +53,8 @@ const FOOTER_ALLOWANCE_PX = 120;
 
 interface PreFlyingScreenProps {
   pre: PreSurvey;
+  /** Optional words for the travel-plans "Other" (stored as `post.travelImpactOtherText`). */
+  travelOtherText: string;
   /**
    * The travel-plans answer. It moved here from the post-survey on 2026-10-24 and is still stored as
    * `post.travelImpact`, so the record, CSV column and results keep working for older sessions.
@@ -60,6 +62,7 @@ interface PreFlyingScreenProps {
   travelImpact: readonly TravelImpact[];
   onChange: (patch: Partial<PreSurvey>) => void;
   onTravelImpactChange: (values: TravelImpact[]) => void;
+  onTravelOtherTextChange: (text: string) => void;
   onContinue: () => void;
 }
 
@@ -70,8 +73,17 @@ interface PreFlyingScreenProps {
  * a pick the next unanswered question is brought into view so nothing below
  * the fold is missed; focus stays where it is.
  */
-export function PreFlyingScreen({ pre, travelImpact, onChange, onTravelImpactChange, onContinue }: PreFlyingScreenProps) {
+export function PreFlyingScreen({
+  pre,
+  travelImpact,
+  travelOtherText,
+  onChange,
+  onTravelImpactChange,
+  onTravelOtherTextChange,
+  onContinue,
+}: PreFlyingScreenProps) {
   const otherId = useId();
+  const travelOtherId = useId();
   const complete = flyingComplete(pre, travelImpact);
   const flightsLabel = useRef<HTMLParagraphElement>(null);
   const worriesLabel = useRef<HTMLParagraphElement>(null);
@@ -107,7 +119,8 @@ export function PreFlyingScreen({ pre, travelImpact, onChange, onTravelImpactCha
   function pickTravel(values: TravelImpact[]) {
     onTravelImpactChange(values);
     // A multi-select: only the first pick moves on (unpicking, or adding a second, shouldn't jump).
-    if (travelImpact.length === 0 && values.length > 0) revealNext("travelImpact", answeredWith(pre, values));
+    // "Other" opens a text field right here instead.
+    if (travelImpact.length === 0 && values.length > 0 && !values.includes("other")) revealNext("travelImpact", answeredWith(pre, values));
   }
 
   return (
@@ -185,6 +198,18 @@ export function PreFlyingScreen({ pre, travelImpact, onChange, onTravelImpactCha
             exclusive="no"
             onChange={pickTravel}
           />
+          {travelImpact.includes("other") ? (
+            <TextArea
+              id={travelOtherId}
+              label="What happened? (optional)"
+              value={travelOtherText}
+              onChange={onTravelOtherTextChange}
+              placeholder="In your own words…"
+              rows={2}
+              maxLength={120}
+              className="mt-4"
+            />
+          ) : null}
         </Card>
       </div>
     </Screen>

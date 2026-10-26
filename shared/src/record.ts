@@ -122,7 +122,7 @@ const ADDED_VIA: readonly AddedVia[] = [
 const WOULD_SWITCH: readonly WouldSwitch[] = ["yes", "no", "not_sure", "didnt_look"];
 const WORRIES: readonly WorryMost[] = ["turbulence", "takeoff_landing", "not_in_control", "something_wrong", "feeling_trapped", "other"];
 const ANXIETY_STARTS: readonly AnxietyStart[] = ["at_booking", "weeks_before", "days_before", "day_of", "not_before"];
-const TRAVEL_IMPACTS: readonly TravelImpact[] = ["no", "ground_instead", "paid_more", "skipped_trip"];
+const TRAVEL_IMPACTS: readonly TravelImpact[] = ["no", "ground_instead", "paid_more", "skipped_trip", "other"];
 const BOOK_LIKELIHOODS: readonly BookLikelihood[] = ["more_likely", "no_difference", "less_likely", "not_sure"];
 
 // ── Primitives ──────────────────────────────────────────────────────────────
@@ -277,6 +277,7 @@ function parsePost(value: unknown): PostSurvey {
     wouldSwitch: enumValue(value.wouldSwitch, WOULD_SWITCH) ?? null,
     // "No" is exclusive: it wins over anything sent beside it (2026-10-22; absent on older records).
     travelImpact: travelImpacts(value.travelImpact),
+    travelImpactOtherText: text(value.travelImpactOtherText, MAX_SHORT_CHARS),
     // "More likely to book a flight?" (2026-10-24); absent on older records.
     bookLikelihood: enumValue(value.bookLikelihood, BOOK_LIKELIHOODS) ?? null,
   };

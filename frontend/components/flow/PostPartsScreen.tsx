@@ -51,7 +51,8 @@ export function PostPartsScreen({ variant, post, onChange, onContinue }: PostPar
       <div className="flex flex-col gap-3">
         {/* The two lists sit side by side (team decision 2026-10-25), so dense rows keep them readable on a phone. */}
         <Card className="animate-fade-up" style={fadeUp()}>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          {/* A hairline between the two columns keeps the matching rows apart. */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 [&>*+*]:border-l [&>*+*]:border-line-strong [&>*+*]:pl-3 sm:[&>*+*]:pl-4">
             <ChoiceGroup
               kind="multi"
               dense

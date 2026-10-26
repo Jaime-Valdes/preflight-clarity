@@ -398,6 +398,8 @@ function StudyFlowClient() {
         <PreFlyingScreen
           pre={state.pre}
           travelImpact={state.post.travelImpact ?? []}
+          travelOtherText={state.post.travelImpactOtherText ?? ""}
+          onTravelOtherTextChange={(text) => commit({ type: "post", patch: { travelImpactOtherText: text } })}
           onChange={(patch) => commit({ type: "pre", patch })}
           onTravelImpactChange={(values) => commit({ type: "post", patch: { travelImpact: values } })}
           onContinue={() => {

@@ -241,6 +241,7 @@ function fixture(): SessionRecord {
       wouldReplaceText: "Maybe the forecast app I use now.",
       stillScaredOf: "Long stretches of bumps over the ocean, and the feeling of not knowing when they end.",
       travelImpact: ["paid_more", "skipped_trip"],
+      travelImpactOtherText: "",
       wouldSwitch: "not_sure",
       bookLikelihood: "more_likely",
     },
@@ -594,7 +595,7 @@ group("parseSessionRecord", () => {
       ...minimal,
       participant: "",
       pre: { ...minimal.pre, worriesMost: null, worriesOtherText: "", anxietyStarts: null },
-      post: { ...minimal.post, wouldSwitch: null, travelImpact: [], bookLikelihood: null },
+      post: { ...minimal.post, wouldSwitch: null, travelImpact: [], travelImpactOtherText: "", bookLikelihood: null },
       waitlist: false,
       interview: false,
     });

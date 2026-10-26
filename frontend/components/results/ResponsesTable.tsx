@@ -153,7 +153,10 @@ function Details({ record }: { record: SessionRecord }) {
         <Field label="More likely to book">
           {post.bookLikelihood ? (BOOK_LIKELIHOOD_LABELS[post.bookLikelihood] ?? post.bookLikelihood) : "—"}
         </Field>
-        <Field label="Travel plans">{travel.length > 0 ? travel.map((o) => TRAVEL_IMPACT_LABELS[o] ?? o).join(", ") : "—"}</Field>
+        <Field label="Travel plans">
+          {travel.length > 0 ? travel.map((o) => TRAVEL_IMPACT_LABELS[o] ?? o).join(", ") : "—"}
+          {post.travelImpactOtherText ? ` — “${post.travelImpactOtherText}”` : ""}
+        </Field>
         {/* Asked in variant A until 2026-10-24; only sessions that answered still show it. */}
         {post.wouldSwitch ? <Field label="Would switch">{WOULD_SWITCH_LABELS[post.wouldSwitch] ?? post.wouldSwitch}</Field> : null}
         <Field label="First name">{record.firstName || "—"}</Field>

@@ -131,6 +131,7 @@ export const CSV_COLUMNS: readonly string[] = [
   "would_replace_text",
   "still_scared_of",
   "travel_impact",
+  "travel_impact_other",
   "first_name",
   "email",
   // debrief sign-up (blank when the record predates it)
@@ -240,6 +241,7 @@ export function recordToRow(record: SessionRecord): Cell[] {
     post.wouldReplaceText,
     post.stillScaredOf,
     joinList(post.travelImpact ?? []),
+    post.travelImpactOtherText ?? "",
     record.firstName ?? "",
     record.email,
     record.waitlist ?? null,

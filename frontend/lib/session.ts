@@ -191,6 +191,7 @@ export function emptyPost(): PostSurvey {
     wouldSwitch: null,
     // Asked on the "About your flying" screen since 2026-10-24; the field stays under `post` for continuity.
     travelImpact: [],
+    travelImpactOtherText: "",
     bookLikelihood: null,
   };
 }
@@ -351,6 +352,7 @@ export function buildRecord(state: FlowState): SessionRecord | null {
       // The switch question was variant A only (no longer asked); B always stores null.
       wouldSwitch: s.variant === "A" ? normalizeWouldSwitch(state.post.wouldSwitch) : null,
       travelImpact: state.post.travelImpact ?? [],
+      travelImpactOtherText: state.post.travelImpact?.includes("other") ? (state.post.travelImpactOtherText ?? "") : "",
       bookLikelihood: state.post.bookLikelihood ?? null,
     },
     email: state.email,

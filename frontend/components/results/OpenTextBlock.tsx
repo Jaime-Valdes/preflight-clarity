@@ -55,6 +55,7 @@ export function OpenTextBlock({ answers, className }: { answers: OpenTextAnswers
       <div className="grid gap-6 lg:grid-cols-2">
         <TextList title="What they'd still feel anxious about" items={answers.stillScaredOf} />
         <TextList title="What worries them most, in their words (picked “Other”)" items={answers.worriesOther} />
+        <TextList title="How fear changed their travel plans (picked “Other”)" items={answers.travelOther} />
         <TextList title="What made them more anxious" items={answers.feltWorse} />
         <TextList title="What it would replace" items={answers.wouldReplace} />
       </div>

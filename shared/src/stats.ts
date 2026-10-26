@@ -135,13 +135,14 @@ export const ANXIETY_START_LABELS: Record<AnxietyStart, string> = {
   not_before: "I don't usually feel it before",
 };
 
-export const TRAVEL_IMPACTS: readonly TravelImpact[] = ["no", "ground_instead", "paid_more", "skipped_trip"];
+export const TRAVEL_IMPACTS: readonly TravelImpact[] = ["no", "ground_instead", "paid_more", "skipped_trip", "other"];
 
 export const TRAVEL_IMPACT_LABELS: Record<TravelImpact, string> = {
   no: "No",
   ground_instead: "Took a train/bus/car instead",
   paid_more: "Paid more for a different flight",
   skipped_trip: "Skipped a trip",
+  other: "Other",
 };
 
 export const WOULD_SWITCH_OPTIONS: readonly WouldSwitch[] = ["yes", "no", "not_sure", "didnt_look"];
@@ -889,6 +890,7 @@ export interface OpenTextAnswers {
   stillScaredOf: TextAnswer[];
   /** "What worries you most" — the words given with "Other". */
   worriesOther: TextAnswer[];
+  travelOther: TextAnswer[];
   feltWorse: TextAnswer[];
   wouldReplace: TextAnswer[];
 }
@@ -906,6 +908,7 @@ export function openTextAnswers(records: readonly SessionRecord[]): OpenTextAnsw
   return {
     stillScaredOf: collectText(records, (r) => r.post.stillScaredOf),
     worriesOther: collectText(records, (r) => r.pre.worriesOtherText ?? ""),
+    travelOther: collectText(records, (r) => r.post.travelImpactOtherText ?? ""),
     feltWorse: collectText(records, (r) => r.post.feltWorseText),
     wouldReplace: collectText(records, (r) => r.post.wouldReplaceText),
   };
