@@ -265,8 +265,10 @@ function lonDelta(a: Airport, b: Airport): number {
 
 type Season = "winter" | "spring" | "summer" | "autumn";
 type Slot = "morning" | "midday" | "afternoon" | "evening" | "overnight";
+/** A departure slot of the schedule and the route history (routeBestSlot). */
+export type DepartureSlot = Slot;
 
-interface MountainRange {
+export interface MountainRange {
   name: string;
   short: string;
   lonMin: number;
@@ -283,11 +285,17 @@ const RANGES: MountainRange[] = [
   { name: "the Andes", short: "the Andes", lonMin: -72, lonMax: -64, latMin: -45, latMax: -10 },
 ];
 
+/** The mountain boxes the cruise and descent models use (read-only; for other modules that must agree with them). */
+export const MOUNTAIN_RANGES: readonly MountainRange[] = RANGES;
+
 const COASTAL = new Set([
   "JFK", "LGA", "EWR", "BOS", "MIA", "FLL", "TPA", "LAX", "SAN", "SFO", "OAK", "SEA", "HNL", "OGG", "SJU", "CUN",
   "MBJ", "NAS", "PUJ", "LIM", "GIG", "NCE", "LIS", "BCN", "ATH", "IST", "TLV", "DXB", "AUH", "DOH", "HND", "KIX",
   "HKG", "SIN", "MNL", "DPS", "BOM", "SYD", "BNE", "PER", "AKL", "CPT", "LOS", "ACC", "CMN", "YVR", "KEF", "CPH",
 ]);
+
+/** The airports whose descents can cite a sea breeze near the coast (read-only; for other modules that must agree). */
+export const COASTAL_AIRPORTS: ReadonlySet<string> = COASTAL;
 
 /**
  * Perimeter rules: LaGuardia and Reagan National only fly short routes, from
@@ -322,6 +330,11 @@ interface RouteContext {
 
 function inRange(lat: number, lon: number, r: MountainRange): boolean {
   return lon >= r.lonMin && lon <= r.lonMax && lat >= r.latMin && lat <= r.latMax;
+}
+
+/** The mountain box a point sits in — the range a climb-out or descent there is worded with — or null. */
+export function mountainRangeAt(lat: number, lon: number): MountainRange | null {
+  return RANGES.find((r) => inRange(lat, lon, r)) ?? null;
 }
 
 function seasonFor(month: number, lat: number): Season {
@@ -2335,6 +2348,17 @@ export function routeDay(input: FlightInput): RouteDay {
   if (ROUTE_DAYS.size >= 256) ROUTE_DAYS.delete(ROUTE_DAYS.keys().next().value as string);
   ROUTE_DAYS.set(key, day);
   return day;
+}
+
+/**
+ * The calmest departure slot the route history names for the input's month — the slot
+ * RouteHistory.bestDepartureWindow describes in words and todModelFor favours — read from the
+ * model rather than parsed back out of the sentence. Cached like routeDay; throws only on an
+ * invalid date, like normalizeInput.
+ */
+export function routeBestSlot(input: FlightInput): DepartureSlot {
+  const day = routeDay(input);
+  return routeMonthFor(day.input, ROUTE_DAY_CONTEXT.get(day) ?? buildRoute(day.input)).bestSlot;
 }
 
 /** What the schedule decides for one flight; everything else is built as for A/B. */
