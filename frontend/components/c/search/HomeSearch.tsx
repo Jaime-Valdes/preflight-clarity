@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { formatShortDate } from "@preflight/shared/dates";
-import { searchHref } from "@/lib/c/model";
+import { useHrefs } from "@/components/c/shell/ToolContext";
 import { useTodayISO } from "@/lib/hooks";
 import { defaultSearchDate, dateHint, type SearchDraft } from "./query";
 import { SearchForm } from "./SearchForm";
@@ -49,6 +49,7 @@ function HomeSearchClient() {
 }
 
 function HomeSearchReady({ today, campaign }: { today: string; campaign: Record<string, string | undefined> }) {
+  const hrefs = useHrefs();
   const [draft, setDraft] = useState<SearchDraft>(() => ({
     origin: "",
     destination: "",
@@ -75,7 +76,7 @@ function HomeSearchReady({ today, campaign }: { today: string; campaign: Record<
             return (
               <li key={`${from}-${to}`} className="min-w-0">
                 <Link
-                  href={searchHref({ origin: from, destination: to, date }, campaign)}
+                  href={hrefs.search({ origin: from, destination: to, date }, campaign)}
                   className="flex h-full min-h-14 flex-col justify-center rounded-2xl bg-white/[0.08] px-3.5 py-2 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/[0.16] focus-visible:outline-white"
                 >
                   <span className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-white">

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCompareList } from "@/lib/c/compare-store";
+import { useTool } from "./ToolContext";
 import { cn } from "@/lib/cn";
 import { BrandTile } from "@/components/ui/BrandMark";
 
@@ -16,10 +17,11 @@ const NAV_LINK =
  */
 export function Header() {
   const pathname = usePathname();
+  const tool = useTool();
   const { items } = useCompareList();
   const count = items.length;
-  const onCompare = pathname === "/c/compare";
-  const onFlights = !onCompare && pathname.startsWith("/c");
+  const onCompare = pathname === `${tool.base}/compare`;
+  const onFlights = !onCompare && pathname.startsWith(tool.base);
 
   return (
     <header className="border-b border-line/70 bg-surface/85 backdrop-blur-md">
@@ -31,9 +33,9 @@ export function Header() {
       </a>
       <div className="mx-auto flex h-16 w-full max-w-[1120px] items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
         <Link
-          href="/c"
+          href={tool.base}
           className="-ml-1 flex min-h-11 min-w-0 items-center gap-2.5 rounded-2xl px-1 text-ink-900"
-          aria-label="Cloud9, flight search"
+          aria-label={`Cloud9, ${tool.name}`}
         >
           <BrandTile className="size-8" />
           <span className="text-[15px] font-bold leading-tight tracking-tight">Cloud9</span>
@@ -42,8 +44,8 @@ export function Header() {
           <ul className="flex items-center gap-0.5 sm:gap-1">
             <li>
               <Link
-                href="/c"
-                aria-current={pathname === "/c" ? "page" : onFlights ? "true" : undefined}
+                href={tool.base}
+                aria-current={pathname === tool.base ? "page" : onFlights ? "true" : undefined}
                 className={cn(
                   NAV_LINK,
                   onFlights ? "bg-canvas text-ink-900 ring-1 ring-inset ring-line" : "text-ink-500 hover:bg-canvas hover:text-ink-900",
@@ -54,7 +56,7 @@ export function Header() {
             </li>
             <li>
               <Link
-                href="/c/compare"
+                href={`${tool.base}/compare`}
                 aria-current={onCompare ? "page" : undefined}
                 className={cn(
                   NAV_LINK,

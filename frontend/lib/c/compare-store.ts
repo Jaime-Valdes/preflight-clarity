@@ -1,37 +1,30 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { useTool } from "@/components/c/shell/ToolContext";
 import { MAX_COMPARE, itemId, parseItemId, type CompareItem } from "./model";
 
 /*
- * Version C's compare list: up to MAX_COMPARE flights, kept in localStorage
- * (falls back to memory when storage is blocked) and shared by every /c page
- * and tab. Read it with useCompareList(); never during server render.
+ * A tool's compare list: up to MAX_COMPARE flights, kept in localStorage
+ * (falls back to memory when storage is blocked) and shared by every page and
+ * tab of that tool. Versions C and D keep separate lists (their keys are in
+ * frontend/lib/tool.ts). Read it with useCompareList(); never during server render.
  */
 
-const STORAGE_KEY = "pfc.c.compare.v1";
 const EMPTY: readonly CompareItem[] = Object.freeze([]);
 
-const listeners = new Set<() => void>();
-let memory: string | null = null;
-let snapshot: { raw: string | null; items: readonly CompareItem[] } = { raw: null, items: EMPTY };
-
-function readRaw(): string | null {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return memory;
-  }
+/** One store per storage key, created on first use. */
+interface Store {
+  key: string;
+  listeners: Set<() => void>;
+  memory: string | null;
+  snapshot: { raw: string | null; items: readonly CompareItem[] };
+  subscribe(listener: () => void): () => void;
+  getSnapshot(): readonly CompareItem[];
+  save(items: readonly CompareItem[]): void;
 }
 
-function writeRaw(raw: string): void {
-  memory = raw;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, raw);
-  } catch {
-    // Storage blocked (private mode, quota): the in-memory copy still works for this tab.
-  }
-}
+const stores = new Map<string, Store>();
 
 function parse(raw: string | null): readonly CompareItem[] {
   if (!raw) return EMPTY;
@@ -49,36 +42,53 @@ function parse(raw: string | null): readonly CompareItem[] {
   }
 }
 
-/** Current list; the same array while nothing changed (useSyncExternalStore needs a stable snapshot). */
-function getSnapshot(): readonly CompareItem[] {
-  const raw = readRaw();
-  if (raw !== snapshot.raw) snapshot = { raw, items: parse(raw) };
-  return snapshot.items;
+function storeFor(key: string): Store {
+  const existing = stores.get(key);
+  if (existing) return existing;
+  const store: Store = {
+    key,
+    listeners: new Set(),
+    memory: null,
+    snapshot: { raw: null, items: EMPTY },
+    subscribe(listener) {
+      store.listeners.add(listener);
+      const onStorage = (event: StorageEvent) => {
+        if (event.key === key || event.key === null) listener();
+      };
+      window.addEventListener("storage", onStorage);
+      return () => {
+        store.listeners.delete(listener);
+        window.removeEventListener("storage", onStorage);
+      };
+    },
+    // The same array while nothing changed (useSyncExternalStore needs a stable snapshot).
+    getSnapshot() {
+      let raw: string | null;
+      try {
+        raw = window.localStorage.getItem(key);
+      } catch {
+        raw = store.memory;
+      }
+      if (raw !== store.snapshot.raw) store.snapshot = { raw, items: parse(raw) };
+      return store.snapshot.items;
+    },
+    save(items) {
+      const raw = JSON.stringify(items.slice(0, MAX_COMPARE).map(itemId));
+      store.memory = raw;
+      try {
+        window.localStorage.setItem(key, raw);
+      } catch {
+        // Storage blocked (private mode, quota): the in-memory copy still works for this tab.
+      }
+      for (const listener of store.listeners) listener();
+    },
+  };
+  stores.set(key, store);
+  return store;
 }
 
 function getServerSnapshot(): readonly CompareItem[] {
   return EMPTY;
-}
-
-function emit(): void {
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY || event.key === null) listener();
-  };
-  window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(listener);
-    window.removeEventListener("storage", onStorage);
-  };
-}
-
-function save(items: readonly CompareItem[]): void {
-  writeRaw(JSON.stringify(items.slice(0, MAX_COMPARE).map(itemId)));
-  emit();
 }
 
 export interface CompareList {
@@ -98,9 +108,13 @@ export interface CompareList {
   prune(today: string): void;
 }
 
-/** The visitor's compare list. Empty during server render and hydration. */
+/** The visitor's compare list for the current tool. Empty during server render and hydration. */
 export function useCompareList(): CompareList {
-  const items = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { compareKey } = useTool();
+  const store = storeFor(compareKey);
+  const items = useSyncExternalStore(store.subscribe, store.getSnapshot, getServerSnapshot);
+  const getSnapshot = store.getSnapshot;
+  const save = store.save;
   const has = (id: string) => items.some((i) => itemId(i) === id);
   const add = (item: CompareItem) => {
     const current = getSnapshot();

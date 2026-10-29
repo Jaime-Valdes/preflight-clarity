@@ -14,7 +14,7 @@ import type { SessionRecord, SignupPlacement, SignupSource } from "@preflight/sh
 import { cn } from "@/lib/cn";
 import { BarRow, Block, EmptyNote, Notice, SERIES, Tile } from "./bits";
 
-export const SOURCE_LABELS: Record<SignupSource, string> = { study: "Study", c: "Version C" };
+export const SOURCE_LABELS: Record<SignupSource, string> = { study: "Study", c: "Version C", d: "Version D" };
 
 export const PLACEMENT_LABELS: Record<SignupPlacement, string> = {
   debrief: "Study · debrief",
@@ -23,6 +23,10 @@ export const PLACEMENT_LABELS: Record<SignupPlacement, string> = {
   c_results: "C · results",
   c_flight: "C · flight",
   c_compare: "C · compare",
+  d_home: "D · home",
+  d_results: "D · results",
+  d_flight: "D · flight",
+  d_compare: "D · compare",
 };
 
 /** Cells below this many sessions are flagged in the note as saying little. */

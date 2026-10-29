@@ -1,0 +1,74 @@
+"use client";
+
+import { RotateCcw, Search } from "lucide-react";
+import { CloudMark } from "@/components/ui/BrandMark";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+
+interface DErrorProps {
+  error: Error & { digest?: string };
+  /** Re-fetches and re-renders the part of the page that failed. */
+  retry: () => void;
+}
+
+/**
+ * Version D error boundary (inside the /d layout, so the header and the
+ * compare tray stay): calm wording, no blame, two ways out. The compare list
+ * and the priorities live in this browser, so nothing picked is lost.
+ */
+export default function DError({ error, retry }: DErrorProps) {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
+  return (
+    <section
+      aria-labelledby="d-error-title"
+      className="mx-auto mt-4 max-w-xl animate-fade-up rounded-3xl bg-surface px-5 py-8 text-center shadow-soft ring-1 ring-line/80 sm:mt-8 sm:px-8"
+    >
+      <span
+        aria-hidden
+        className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-calm-50 text-calm-700 ring-1 ring-inset ring-calm-100"
+      >
+        <CloudMark tone="onLight" className="size-9" />
+      </span>
+      <h1 id="d-error-title" className="mt-5 text-2xl font-bold leading-tight text-ink-900">
+        This page didn’t load
+      </h1>
+      <p className="mx-auto mt-3 max-w-[44ch] text-[15px] leading-relaxed text-ink-700">
+        Something went wrong on our side while putting these flights together. Nothing you did caused it, and what
+        you picked is still saved in this browser.
+      </p>
+
+      <div className="mx-auto mt-6 flex max-w-sm flex-col gap-3">
+        <button
+          type="button"
+          onClick={() => retry()}
+          className="inline-flex h-14 w-full select-none items-center justify-center gap-2 rounded-full bg-night-900 px-6 text-base font-semibold text-white shadow-lift transition-colors duration-200 hover:bg-night-800 active:bg-night-950"
+        >
+          Try again
+          <RotateCcw aria-hidden className="size-4" />
+        </button>
+        {/* On /d itself a soft navigation to the same route would keep this boundary up: reload instead. */}
+        <Link
+          href="/d"
+          onClick={(event) => {
+            if (pathname === "/d") {
+              event.preventDefault();
+              window.location.reload();
+            }
+          }}
+          className="inline-flex h-14 w-full select-none items-center justify-center gap-2 rounded-full bg-surface px-6 text-base font-semibold text-ink-900 ring-1 ring-inset ring-line-strong transition-colors duration-200 hover:bg-canvas active:bg-line/60"
+        >
+          <Search aria-hidden className="size-4 text-ink-500" />
+          Back to the search
+        </Link>
+      </div>
+
+      {error.digest ? <p className="mt-5 text-xs text-ink-400 tabular-nums">Reference {error.digest}</p> : null}
+    </section>
+  );
+}

@@ -1,7 +1,8 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { SignupPlacement } from "@preflight/shared/types";
+import type { SignupPlacement, SignupSource } from "@preflight/shared/types";
+import { TOOLS, toolForPath } from "@/lib/tool";
 
 /*
  * Version C sign-up state (docs/INTEREST.md): whether this browser has already
@@ -43,10 +44,10 @@ export function useSignedUp(): boolean {
 }
 
 /** Remember the sign-up in this browser (call from the submit handler). `at`: ISO timestamp. */
-export function markSignedUp(at: string): void {
+export function markSignedUp(at: string, source: SignupSource = "c"): void {
   memory = true;
   try {
-    window.localStorage.setItem(INTEREST_KEY, JSON.stringify({ source: "c", at }));
+    window.localStorage.setItem(INTEREST_KEY, JSON.stringify({ source, at }));
   } catch {
     // Storage blocked: the in-memory flag still hides the form for this tab.
   }
@@ -84,14 +85,16 @@ export function isCTest(): boolean {
 
 // ── placement and context ───────────────────────────────────────────────────
 
-export type CPlacement = Extract<SignupPlacement, `c_${string}`>;
+/** A tool's placements (version C or D), as opposed to the study's. */
+export type ToolPlacement = Extract<SignupPlacement, `c_${string}` | `d_${string}`>;
 
-/** The placement for a /c pathname (anything unknown counts as the home). */
-export function placementFor(pathname: string | null): CPlacement {
-  if (pathname === "/c/search") return "c_results";
-  if (pathname === "/c/flight") return "c_flight";
-  if (pathname === "/c/compare") return "c_compare";
-  return "c_home";
+/** The placement for a /c or /d pathname (anything unknown counts as that tool's home; no tool → C's). */
+export function placementFor(pathname: string | null): ToolPlacement {
+  const tool = toolForPath(pathname) ?? TOOLS.c;
+  if (pathname === `${tool.base}/search`) return tool.placements.results as ToolPlacement;
+  if (pathname === `${tool.base}/flight`) return tool.placements.flight as ToolPlacement;
+  if (pathname === `${tool.base}/compare`) return tool.placements.compare as ToolPlacement;
+  return tool.placements.home as ToolPlacement;
 }
 
 let pageContext = "";

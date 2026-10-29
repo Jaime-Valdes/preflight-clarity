@@ -11,7 +11,7 @@ import { ScoreBadge, scoreTone } from "@/components/c/common/ScoreBadge";
 import { ScoreSheet } from "@/components/c/common/ScoreSheet";
 import { cabinNoiseBand } from "@/components/dashboard/trust/format";
 import { formatFare } from "@/lib/c/format";
-import { flightHref } from "@/lib/c/model";
+import { useHrefs } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import { TONE_CLASSES, type Tone } from "@/lib/theme";
 import { marker, type PendingItem } from "@/components/c/common/availability";
@@ -82,6 +82,7 @@ function revealFocused(event: FocusEvent<HTMLDivElement>) {
  * 390 px; a third scrolls sideways inside the table, never the page.
  */
 export function CompareTable({ columns, slots, names, onRemove }: CompareTableProps) {
+  const hrefs = useHrefs();
   const flights = useMemo(() => columns.filter(isFlightColumn), [columns]);
   const n = columns.length;
   // Flight-specific turbulence exists only close to departure (docs/FEASIBILITY.md): scores, stretches and
@@ -337,7 +338,7 @@ export function CompareTable({ columns, slots, names, onRemove }: CompareTablePr
               <td key={c.id} className={cn(CELL, "pb-4")}>
                 <div className="flex flex-col gap-1.5 lg:flex-row lg:flex-wrap">
                   {isFlightColumn(c) ? (
-                    <Link href={flightHref(c.item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-3 lg:flex-1")}>
+                    <Link href={hrefs.flight(c.item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-3 lg:flex-1")}>
                       Details<span className="sr-only"> for {nameOf(c)}</span>
                     </Link>
                   ) : (

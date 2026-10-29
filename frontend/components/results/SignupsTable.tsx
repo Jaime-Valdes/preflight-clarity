@@ -28,7 +28,7 @@ function Row({ signup }: { signup: Signup }) {
       </td>
       <td className={cell}>
         <span className="flex items-center gap-1">
-          <Pill tone={signup.source === "study" ? "breeze" : "dusk"}>{SOURCE_LABELS[signup.source]}</Pill>
+          <Pill tone={signup.source === "study" ? "breeze" : signup.source === "d" ? "calm" : "dusk"}>{SOURCE_LABELS[signup.source]}</Pill>
           {signup.isTest ? <Pill tone="dusk">Test</Pill> : null}
         </span>
       </td>

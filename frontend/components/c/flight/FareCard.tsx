@@ -10,7 +10,8 @@ import { possessive } from "@/components/dashboard/trust/format";
 import { Card } from "@/components/ui/Card";
 import { useCompareList } from "@/lib/c/compare-store";
 import { formatFare } from "@/lib/c/format";
-import { MAX_COMPARE, compareHref, itemId, type CompareItem } from "@/lib/c/model";
+import { MAX_COMPARE, itemId, type CompareItem } from "@/lib/c/model";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import { BenchmarkLine } from "./BenchmarkLine";
 import { LINK_BUTTON, dayOffsetMark, fareFor } from "./copy";
@@ -37,6 +38,8 @@ type FocusTarget = { target: "add" | "remove" };
  */
 export function FareCard({ option, item, daysUntil, othersHref, className }: FareCardProps) {
   const list = useCompareList();
+  const tool = useTool();
+  const hrefs = useHrefs();
   const id = itemId(item);
   const inList = list.has(id);
   const full = list.isFull && !inList;
@@ -59,7 +62,7 @@ export function FareCard({ option, item, daysUntil, othersHref, className }: Far
     // Full: the button stays focusable (aria-disabled) so its note is read; pressing it does nothing.
     if (full) return;
     if (list.add(item)) {
-      track("c_compare_toggle", { from: "flight", added: true, key: item.key });
+      track(`${tool.events}_compare_toggle`, { from: "flight", added: true, key: item.key });
       setAnnouncement(`Added to compare. ${count + 1} of ${MAX_COMPARE} flights picked.`);
       setFocus({ target: "remove" });
     } else {
@@ -68,7 +71,7 @@ export function FareCard({ option, item, daysUntil, othersHref, className }: Far
   };
 
   const remove = () => {
-    track("c_compare_toggle", { from: "flight", added: false, key: item.key });
+    track(`${tool.events}_compare_toggle`, { from: "flight", added: false, key: item.key });
     list.remove(id);
     setAnnouncement("Removed from compare.");
     setFocus({ target: "add" });
@@ -173,12 +176,12 @@ export function FareCard({ option, item, daysUntil, othersHref, className }: Far
           <p id={noteId} className="text-xs leading-snug text-ink-500">
             You&rsquo;ve picked {MAX_COMPARE} flights, the most that fit side by side. Remove one to add this flight.
           </p>
-          <Link href={compareHref(list.items)} className={cn(LINK_BUTTON.secondary, "mt-3 w-full")}>
+          <Link href={hrefs.compare(list.items)} className={cn(LINK_BUTTON.secondary, "mt-3 w-full")}>
             Compare your {MAX_COMPARE} flights
           </Link>
         </div>
       ) : inList && count >= 2 ? (
-        <Link href={compareHref(list.items)} className={cn(LINK_BUTTON.primary, "mt-3 w-full")}>
+        <Link href={hrefs.compare(list.items)} className={cn(LINK_BUTTON.primary, "mt-3 w-full")}>
           Compare {count} flights
           <ArrowRight aria-hidden className="size-4" />
         </Link>

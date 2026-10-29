@@ -26,8 +26,19 @@ export const MAX_PAGE_CHARS = 200;
 /** Longest `page` value looked at before it is reduced to a pathname. */
 const MAX_URL_CHARS = 2048;
 
-export const SIGNUP_SOURCES: readonly SignupSource[] = ["study", "c"];
-export const SIGNUP_PLACEMENTS: readonly SignupPlacement[] = ["debrief", "dashboard", "c_home", "c_results", "c_flight", "c_compare"];
+export const SIGNUP_SOURCES: readonly SignupSource[] = ["study", "c", "d"];
+export const SIGNUP_PLACEMENTS: readonly SignupPlacement[] = [
+  "debrief",
+  "dashboard",
+  "c_home",
+  "c_results",
+  "c_flight",
+  "c_compare",
+  "d_home",
+  "d_results",
+  "d_flight",
+  "d_compare",
+];
 
 export type ParsedSignup = { ok: true; signup: Signup } | { ok: false; error: string };
 
@@ -194,7 +205,7 @@ const FORM_STEPS: ReadonlySet<Step> = new Set<Step>(["dashboard", "post", "debri
  * step says otherwise, so the rate never passes 100%.
  */
 export function signupStats(signups: readonly Signup[], records: readonly SessionRecord[]): SignupStats {
-  const bySource: Record<SignupSource, number> = { study: 0, c: 0 };
+  const bySource: Record<SignupSource, number> = { study: 0, c: 0, d: 0 };
   const byPlacement: Partial<Record<SignupPlacement, number>> = {};
   const emails = new Set<string>();
   let interview = 0;

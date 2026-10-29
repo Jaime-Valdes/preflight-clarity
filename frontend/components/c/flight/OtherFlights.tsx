@@ -12,7 +12,8 @@ import { Card } from "@/components/ui/Card";
 import { useNowMs } from "@/lib/hooks";
 import { useCompareList, type CompareList } from "@/lib/c/compare-store";
 import { formatFare } from "@/lib/c/format";
-import { MAX_COMPARE, flightHref, itemId, searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
+import { MAX_COMPARE, itemId, type CompareItem, type RouteDay } from "@/lib/c/model";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import { CompareToggle } from "./CompareToggle";
 import { PendingNote } from "./PendingNote";
@@ -55,6 +56,8 @@ function byDeparture(a: FlightOption, b: FlightOption): number {
  */
 export function OtherFlights({ day, options, currentKey, turbulence, daysUntil, id, className }: OtherFlightsProps) {
   const list = useCompareList();
+  const tool = useTool();
+  const hrefs = useHrefs();
   const headingId = useId();
   const noteId = useId();
   const [announcement, setAnnouncement] = useState("");
@@ -71,7 +74,7 @@ export function OtherFlights({ day, options, currentKey, turbulence, daysUntil, 
 
   const toggle = (item: CompareItem, label: string) => {
     const wasIn = list.has(itemId(item));
-    track("c_compare_toggle", { from: "other_flights", added: !wasIn, key: item.key });
+    track(`${tool.events}_compare_toggle`, { from: "other_flights", added: !wasIn, key: item.key });
     if (!list.toggle(item)) {
       setAnnouncement(`You can compare up to ${MAX_COMPARE} flights.`);
       return;
@@ -129,7 +132,7 @@ export function OtherFlights({ day, options, currentKey, turbulence, daysUntil, 
         </p>
       ) : null}
 
-      <Link href={searchHref(day)} className={cn(LINK_BUTTON.secondary, "mt-4 w-full sm:w-auto")}>
+      <Link href={hrefs.search(day)} className={cn(LINK_BUTTON.secondary, "mt-4 w-full sm:w-auto")}>
         {leftCount > 0 ? `See all flights on ${monthDay(day.date)}` : `See all ${options.length} flights on ${monthDay(day.date)}`}
         <ArrowRight aria-hidden className="size-4" />
       </Link>
@@ -153,6 +156,7 @@ interface OtherFlightRowProps {
 }
 
 function OtherFlightRow({ option, day, daysUntil, list, noteId, showScore, onToggle }: OtherFlightRowProps) {
+  const hrefs = useHrefs();
   const f = option.flight;
   // The flight's own airports (a search from LGA can list JFK's long-haul flights): one flight, one compare item.
   const item: CompareItem = { origin: f.origin.code, destination: f.destination.code, date: day.date, key: option.key };
@@ -190,7 +194,7 @@ function OtherFlightRow({ option, day, daysUntil, list, noteId, showScore, onTog
         </p>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-0 sm:flex sm:shrink-0">
-        <Link href={flightHref(item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-4")}>
+        <Link href={hrefs.flight(item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-4")}>
           Details<span className="sr-only"> for {label}</span>
         </Link>
         <CompareToggle

@@ -13,7 +13,8 @@ import { InterestCard } from "@/components/c/interest/InterestCard";
 import { keepClearOfTray } from "@/components/c/shell/CompareTray";
 import { useCompareList } from "@/lib/c/compare-store";
 import { formatFare, formatMinutes12 } from "@/lib/c/format";
-import { itemId, searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
+import { itemId, type CompareItem, type RouteDay } from "@/lib/c/model";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { monthDay, routeText } from "../flight/copy";
@@ -116,6 +117,7 @@ function useSheetState(): [boolean, (open: boolean) => void] {
 function Results({ day, params, today }: { day: RouteDay; params: Params; today: string }) {
   const router = useRouter();
   const compare = useCompareList();
+  const tool = useTool();
   const [, startTransition] = useTransition();
   const [filtersOpen, setFiltersOpen] = useSheetState();
   const nowMs = useNowMs();
@@ -177,7 +179,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 
   function changeView(next: ResultsView, focusId?: string) {
     if (focusId) focusNext.current = focusId;
-    track("c_results_view", {
+    track(`${tool.events}_results_view`, {
       sort: next.sort,
       dep_from: next.depFrom,
       dep_to: next.depTo,
@@ -188,12 +190,12 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
     });
     startTransition(() => {
       setOptimisticView(next);
-      router.replace(resultsHref(day, next, campaign), { scroll: false });
+      router.replace(resultsHref(day, next, campaign, tool.base), { scroll: false });
     });
   }
 
   const clearFilters = (focusId?: string) => changeView(withoutFilters(view), focusId);
-  const hrefFor = (d: string) => resultsHref({ ...day, date: d }, viewForDay(view, availabilityAt(today, d).turbulence), campaign);
+  const hrefFor = (d: string) => resultsHref({ ...day, date: d }, viewForDay(view, availabilityAt(today, d).turbulence), campaign, tool.base);
   const scoresNote = `From ${forecastFrom}, when the turbulence forecast for these flights comes out (${forecastLead}).`;
 
   if (routeEmpty) {
@@ -392,7 +394,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                         inCompare={inCompare}
                         compareLocked={compare.isFull && !inCompare}
                         onToggleCompare={(control) => {
-                          track("c_compare_toggle", { from: "results", added: !inCompare, key: item.key, has_scores: scores });
+                          track(`${tool.events}_compare_toggle`, { from: "results", added: !inCompare, key: item.key, has_scores: scores });
                           compare.toggle(item);
                           keepClearOfTray(control);
                         }}
@@ -528,6 +530,7 @@ function ScoresLater({
  * have flights (when there are some). Two airports in one metro area get their own sentence.
  */
 function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, string | undefined> }) {
+  const hrefs = useHrefs();
   const { origin: from, destination: to, date } = day;
   const suggestions = useMemo(() => nearbyRoutes({ origin: from, destination: to, date }), [from, to, date]);
   const area = useMemo(() => sameArea({ origin: from, destination: to, date }), [from, to, date]);
@@ -568,7 +571,7 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
           {suggestions.map((route) => (
             <li key={`${route.origin}-${route.destination}`} className="min-w-0">
               <Link
-                href={searchHref(route, carry)}
+                href={hrefs.search(route, carry)}
                 className="flex min-h-14 items-center justify-between gap-3 rounded-2xl bg-canvas px-4 py-2 ring-1 ring-inset ring-line transition-colors hover:bg-line/40"
               >
                 <span className="min-w-0">

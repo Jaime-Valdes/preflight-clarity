@@ -6,7 +6,8 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { formatShortDate } from "@preflight/shared/dates";
 import { Sheet } from "@/components/c/common/Sheet";
-import { searchHref, type RouteDay } from "@/lib/c/model";
+import type { RouteDay } from "@/lib/c/model";
+import { useHrefs } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import type { SearchDraft } from "./query";
 import { SearchForm } from "./SearchForm";
@@ -27,6 +28,7 @@ const PILL =
  * inline on laptops and as a full-screen sheet on phones.
  */
 export function SearchSummary({ day, today, carry }: SearchSummaryProps) {
+  const hrefs = useHrefs();
   const formId = useId();
   const changeRef = useRef<HTMLButtonElement>(null);
   const [mode, setMode] = useState<"closed" | "inline" | "sheet">("closed");
@@ -83,7 +85,7 @@ export function SearchSummary({ day, today, carry }: SearchSummaryProps) {
         </div>
         <div className="flex shrink-0 gap-2">
           <Link
-            href={searchHref(reversed, carry)}
+            href={hrefs.search(reversed, carry)}
             className={PILL}
             aria-label={`Swap: ${destination?.city ?? day.destination} to ${origin?.city ?? day.origin}`}
           >

@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { INTEREST_DONE_TITLE, InterestSheet } from "./InterestSheet";
-import { currentContext, placementFor, useSignedUp, type CPlacement } from "./signupState";
+import { currentContext, placementFor, useSignedUp, type ToolPlacement } from "./signupState";
 
 /*
  * The footer's quiet "Get early access" link (docs/INTEREST.md). The footer
@@ -14,7 +14,7 @@ import { currentContext, placementFor, useSignedUp, type CPlacement } from "./si
 export function EarlyAccessLink() {
   const pathname = usePathname();
   const signedUp = useSignedUp();
-  const [open, setOpen] = useState<{ placement: CPlacement; context: string } | null>(null);
+  const [open, setOpen] = useState<{ placement: ToolPlacement; context: string } | null>(null);
   const statusRef = useRef<HTMLSpanElement>(null);
 
   // Back/forward (another page under the sheet) closes it.

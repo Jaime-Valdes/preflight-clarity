@@ -10,7 +10,8 @@ import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { InterestCard } from "@/components/c/interest/InterestCard";
-import { searchHref, type CompareItem, type RouteDay } from "@/lib/c/model";
+import type { CompareItem, RouteDay } from "@/lib/c/model";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { daysToDeparture } from "@/components/c/common/availability";
 import { flightContext, monthDay, routeText } from "./copy";
 import { FareCard } from "./FareCard";
@@ -42,6 +43,8 @@ function noop(): void {}
  * state starts fresh for each one.
  */
 export function FlightDetail({ day, option, options, today, position }: FlightDetailProps) {
+  const tool = useTool();
+  const hrefs = useHrefs();
   const { flight } = option;
   // The flight's own airports: a search from LGA can list JFK's long-haul flights, and one flight is one compare item.
   const item: CompareItem = { origin: flight.origin.code, destination: flight.destination.code, date: day.date, key: option.key };
@@ -61,7 +64,7 @@ export function FlightDetail({ day, option, options, today, position }: FlightDe
   const score = availability.turbulence ? flight.smoothness.score : null;
   const isSmoothest = score === null ? null : options.every((o) => o.flight.smoothness.score <= score);
   useEffect(() => {
-    track("c_flight_view", {
+    track(`${tool.events}_flight_view`, {
       key: option.key,
       origin: flight.origin.code,
       destination: flight.destination.code,
@@ -73,7 +76,7 @@ export function FlightDetail({ day, option, options, today, position }: FlightDe
       is_smoothest: isSmoothest,
       position,
     });
-  }, [option.key, flight.origin.code, flight.destination.code, daysUntil, availability.turbulence, score, price, isCheapest, isSmoothest, position]);
+  }, [tool.events, option.key, flight.origin.code, flight.destination.code, daysUntil, availability.turbulence, score, price, isCheapest, isSmoothest, position]);
 
   // What the section bodies keep for this flight (the chosen seat…); see useFlightState.
   const [bodyState, setBodyState] = useState<Readonly<Record<string, unknown>>>({});
@@ -95,7 +98,7 @@ export function FlightDetail({ day, option, options, today, position }: FlightDe
   return (
     <div className="mx-auto w-full max-w-[640px] lg:max-w-none">
       <Link
-        href={searchHref(day)}
+        href={hrefs.search(day)}
         className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-sm font-semibold text-ink-700 transition-colors hover:text-ink-900"
       >
         <ChevronLeft aria-hidden className="size-4 shrink-0" />

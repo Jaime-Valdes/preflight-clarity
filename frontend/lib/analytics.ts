@@ -2,6 +2,7 @@
 
 import posthog from "posthog-js";
 import { isCTest } from "@/components/c/interest/signupState";
+import { toolForPath } from "@/lib/tool";
 
 /*
  * Product analytics (PostHog): funnels, paths and session replay for the study
@@ -29,21 +30,23 @@ let started = false;
 let clicksOnPage = 0;
 
 /**
- * Version C's context for an event sent from a /c page: `variant` "C" and `is_test` (the tab was
- * opened with ?test=1, or carries it now). The study registers its context once a session exists
- * (setContext), but super properties persist per browser, so registering C's the same way would
- * leak A/B into C events and C into the study's welcome pageview. Stamping by URL instead means
- * every C event carries them, including the first pageview, and the study's are untouched.
+ * The tools' context for an event sent from a /c or /d page: `variant` ("C" or "D") and `is_test`
+ * (the tab was opened with ?test=1, or carries it now). The study registers its context once a
+ * session exists (setContext), but super properties persist per browser, so registering the tools'
+ * the same way would leak A/B into their events and theirs into the study's welcome pageview.
+ * Stamping by URL instead means every tool event carries them, including the first pageview, and
+ * the study's are untouched.
  */
-function cContext(currentUrl: unknown): { variant: "C"; is_test: boolean } | null {
+function toolContext(currentUrl: unknown): { variant: "C" | "D"; is_test: boolean } | null {
   let url: URL;
   try {
     url = new URL(typeof currentUrl === "string" ? currentUrl : window.location.href, window.location.origin);
   } catch {
     return null;
   }
-  if (url.pathname !== "/c" && !url.pathname.startsWith("/c/")) return null;
-  return { variant: "C", is_test: isCTest() || url.searchParams.get("test") === "1" };
+  const tool = toolForPath(url.pathname);
+  if (!tool) return null;
+  return { variant: tool.variant, is_test: isCTest() || url.searchParams.get("test") === "1" };
 }
 
 /** Call once on the client. Safe to call again (no-op). */
@@ -58,8 +61,8 @@ export function startAnalytics(): void {
     debug: DEBUG,
     before_send: (event) => {
       if (!event) return event;
-      const c = cContext(event.properties?.$current_url);
-      if (c) event.properties = { ...event.properties, ...c };
+      const tool = toolContext(event.properties?.$current_url);
+      if (tool) event.properties = { ...event.properties, ...tool };
       if (event.event === "$pageview") {
         event.properties = { ...event.properties, clicks_on_previous_page: clicksOnPage };
         clicksOnPage = 0;

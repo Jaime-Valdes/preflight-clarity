@@ -1,7 +1,7 @@
 import { getAirline } from "@preflight/shared/airlines";
 import { timeToMinutes } from "@preflight/shared/dates";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
-import { DEFAULT_SORT, SORT_KEYS, searchHref, type RouteDay, type SortKey } from "@/lib/c/model";
+import { DEFAULT_SORT, type RouteDay, SORT_KEYS, type SortKey, type ToolBase, hrefsFor } from "@/lib/c/model";
 import { PRICE_STEP } from "@/lib/c/format";
 
 /*
@@ -180,9 +180,9 @@ export function campaignParams(params: Params & { keys?(): Iterable<string> }): 
   return out;
 }
 
-/** /c/search for a route and day with this sort and these filters (commas kept readable). `extra`: parameters to keep (campaign tags). */
-export function resultsHref(day: RouteDay, view: ResultsView, extra: Record<string, string | undefined> = {}): string {
-  return searchHref(day, { ...extra, ...viewParams(view) }).replace(/%2C/gi, ",");
+/** The results page for a route and day with this sort and these filters (commas kept readable). `extra`: parameters to keep (campaign tags); `base`: the tool's path. */
+export function resultsHref(day: RouteDay, view: ResultsView, extra: Record<string, string | undefined> = {}, base: ToolBase = "/c"): string {
+  return hrefsFor(base).search(day, { ...extra, ...viewParams(view) }).replace(/%2C/gi, ",");
 }
 
 export function activeFilterCount(view: ResultsView): number {

@@ -13,7 +13,8 @@ import { Sparkline } from "@/components/c/common/Sparkline";
 import { Pill } from "@/components/ui/Pill";
 import { track } from "@/lib/analytics";
 import { formatFare } from "@/lib/c/format";
-import { MAX_COMPARE, flightHref, type CompareItem } from "@/lib/c/model";
+import { MAX_COMPARE, type CompareItem } from "@/lib/c/model";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import { TONE_CLASSES, type Tone } from "@/lib/theme";
 import { stretchesText, timelineLabel } from "./describe";
@@ -85,6 +86,8 @@ export function ResultCard({
   forecastFrom,
   forecastLead,
 }: ResultCardProps) {
+  const tool = useTool();
+  const hrefs = useHrefs();
   const { flight } = option;
   const titleId = useId();
   const noteId = useId();
@@ -181,7 +184,7 @@ export function ResultCard({
                   {stretchesText(flight)}
                 </>
               }
-              onOpen={() => track("c_score_sheet", { from: "results", key: option.key, score: flight.smoothness.score })}
+              onOpen={() => track(`${tool.events}_score_sheet`, { from: "results", key: option.key, score: flight.smoothness.score })}
               className="w-[calc(100%+0.75rem)]"
             />
             <Sparkline
@@ -285,7 +288,7 @@ export function ResultCard({
             </p>
           ) : null}
           <Link
-            href={flightHref(item, { ...campaign, pos: String(position) })}
+            href={hrefs.flight(item, { ...campaign, pos: String(position) })}
             className="ml-auto inline-flex h-11 items-center justify-center gap-0.5 rounded-full pl-4 pr-3 text-sm font-semibold text-breeze-700 transition-colors hover:bg-breeze-50 md:ml-0"
           >
             Details

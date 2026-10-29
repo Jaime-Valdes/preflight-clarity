@@ -4,6 +4,7 @@ import { MailCheck, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SignupPlacement, SignupSource } from "@preflight/shared/types";
 import { track } from "@/lib/analytics";
+import { useTool } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import {
   INTEREST_BODY,
@@ -57,7 +58,8 @@ export function InterestCard({ placement, context, study, stack = false, classNa
   /** The study: a submit from this card shows the done state at once, before the session state catches up. */
   const [submitted, setSubmitted] = useState(false);
   const signedUp = study ? study.signedUp || submitted : browserSignedUp;
-  const source: SignupSource = study ? "study" : "c";
+  const tool = useTool();
+  const source: SignupSource = study ? "study" : tool.source;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLElement>(null);
   /** interest_cta_view fires once per mount. */

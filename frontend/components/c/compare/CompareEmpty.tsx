@@ -7,7 +7,7 @@ import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { ScoreBadge } from "@/components/c/common/ScoreBadge";
 import { Card } from "@/components/ui/Card";
 import { formatFare } from "@/lib/c/format";
-import { flightHref } from "@/lib/c/model";
+import { useHrefs } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import { LINK_BASE, LINK_BUTTON, LINK_TONE, fareFor, routeText, shortDate } from "../flight/copy";
 import { PendingNote } from "../flight/PendingNote";
@@ -28,6 +28,7 @@ interface CompareEmptyProps {
  * does, the one flight already picked (if any) and a way back to the results.
  */
 export function CompareEmpty({ columns, badLink, addHref, onRemove }: CompareEmptyProps) {
+  const hrefs = useHrefs();
   const flight = columns.find(isFlightColumn);
   const unavailable = columns.filter((c): c is UnavailableColumn => !isFlightColumn(c));
 
@@ -73,7 +74,7 @@ export function CompareEmpty({ columns, badLink, addHref, onRemove }: CompareEmp
             Add a flight
           </Link>
         ) : (
-          <Link href="/c" className={LINK_BUTTON.primary}>
+          <Link href={hrefs.home} className={LINK_BUTTON.primary}>
             <Search aria-hidden className="size-4" />
             Search flights
           </Link>
@@ -84,6 +85,7 @@ export function CompareEmpty({ columns, badLink, addHref, onRemove }: CompareEmp
 }
 
 function PickedFlight({ column, onRemove }: { column: FlightColumn; onRemove: (id: string) => void }) {
+  const hrefs = useHrefs();
   const f = column.flight;
   const label = `${f.flightNumber}, ${shortDate(column.item.date)}`;
   return (
@@ -109,7 +111,7 @@ function PickedFlight({ column, onRemove }: { column: FlightColumn; onRemove: (i
         <p className="shrink-0 text-base font-bold text-ink-900 tabular-nums">{formatFare(fareFor(column.option, column.daysUntil))}</p>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Link href={flightHref(column.item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-3")}>
+        <Link href={hrefs.flight(column.item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-3")}>
           Details<span className="sr-only"> for {label}</span>
         </Link>
         <RemoveButton id={column.id} label={label} onRemove={onRemove} />

@@ -99,19 +99,48 @@ function query(params: Record<string, string | undefined>): string {
   return text ? `?${text}` : "";
 }
 
+/** Where a tool's pages live: "/c" or "/d" (frontend/lib/tool.ts). */
+export type ToolBase = "/c" | "/d";
+
+/** The page links of one tool. Components get them from `useHrefs()` so the same code serves /c and /d. */
+export interface Hrefs {
+  base: ToolBase;
+  /** The tool's home (search form). */
+  home: string;
+  /** Results for a route and day; `extra` adds sort/filter parameters (empty values are dropped). */
+  search(day: RouteDay, extra?: Record<string, string | undefined>): string;
+  /** One flight; `extra` adds parameters to keep (campaign tags — empty values are dropped). */
+  flight(item: CompareItem, extra?: Record<string, string | undefined>): string;
+  /** The compare page for these flights (the visitor's own list when empty). */
+  compare(items: readonly CompareItem[]): string;
+}
+
+export function hrefsFor(base: ToolBase): Hrefs {
+  return {
+    base,
+    home: base,
+    search: (day, extra = {}) => `${base}/search${query({ from: day.origin, to: day.destination, date: day.date, ...extra })}`,
+    flight: (item, extra = {}) =>
+      `${base}/flight${query({ ...extra, from: item.origin, to: item.destination, date: item.date, f: item.key })}`,
+    // Commas and dots are safe in a query value; keep the URL readable.
+    compare: (items) => (items.length ? `${base}/compare?f=${items.map(itemId).join(",")}` : `${base}/compare`),
+  };
+}
+
+const C_HREFS = hrefsFor("/c");
+
 /** /c/search for a route and day; `extra` adds sort/filter parameters (empty values are dropped). */
 export function searchHref(day: RouteDay, extra: Record<string, string | undefined> = {}): string {
-  return `/c/search${query({ from: day.origin, to: day.destination, date: day.date, ...extra })}`;
+  return C_HREFS.search(day, extra);
 }
 
 /** /c/flight for one flight; `extra` adds parameters to keep (campaign tags — empty values are dropped). */
 export function flightHref(item: CompareItem, extra: Record<string, string | undefined> = {}): string {
-  return `/c/flight${query({ ...extra, from: item.origin, to: item.destination, date: item.date, f: item.key })}`;
+  return C_HREFS.flight(item, extra);
 }
 
 export function compareHref(items: readonly CompareItem[]): string {
-  // Commas and dots are safe in a query value; keep the URL readable.
-  return items.length ? `/c/compare?f=${items.map(itemId).join(",")}` : "/c/compare";
+  return C_HREFS.compare(items);
 }
 
 /** Furthest date anyone can pick: schedules and fares are published about this far ahead. */

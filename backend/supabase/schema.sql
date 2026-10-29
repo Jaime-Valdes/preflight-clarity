@@ -142,7 +142,7 @@ create table if not exists public.signups (
   id           uuid primary key,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
-  source       text not null check (source in ('study', 'c')),
+  source       text not null,
   placement    text not null,
   email        text not null,
   email_key    text generated always as (lower(btrim(email))) stored,
@@ -178,11 +178,16 @@ comment on column public.signups.context is 'What they were looking at, e.g. "JF
 comment on column public.signups.page is 'Pathname the form was on, e.g. /c/compare.';
 comment on column public.signups.record is 'The full Signup as sent by the browser (shared/src/types.ts).';
 
--- Known placements. Dropped and re-added on every run, so adding one is a
--- one-line edit here (shared/src/signup.ts SIGNUP_PLACEMENTS is the other copy).
+-- Known sources and placements. Dropped and re-added on every run, so adding one is a
+-- one-line edit here (shared/src/signup.ts SIGNUP_SOURCES / SIGNUP_PLACEMENTS are the other copy).
+-- 2026-10-28: source 'd' and the d_* placements (version D, the smooth-flight finder). The
+-- source check used to be inline on the column; it is a named constraint now so it can grow.
+alter table public.signups drop constraint if exists signups_source_check;
+alter table public.signups add constraint signups_source_check
+  check (source in ('study', 'c', 'd'));
 alter table public.signups drop constraint if exists signups_placement_check;
 alter table public.signups add constraint signups_placement_check
-  check (placement in ('debrief', 'dashboard', 'c_home', 'c_results', 'c_flight', 'c_compare'));
+  check (placement in ('debrief', 'dashboard', 'c_home', 'c_results', 'c_flight', 'c_compare', 'd_home', 'd_results', 'd_flight', 'd_compare'));
 
 -- Repeat sign-ups: the upsert replaces the details, so keep the original
 -- created_at (in the column and inside the jsonb record), stamp updated_at

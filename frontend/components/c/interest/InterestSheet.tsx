@@ -5,6 +5,7 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import type { Signup, SignupPlacement } from "@preflight/shared/types";
 import { Sheet } from "@/components/c/common/Sheet";
 import { track } from "@/lib/analytics";
+import { useTool } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import { saveSignup } from "@/lib/storage";
 import { isCTest, markSignedUp } from "./signupState";
@@ -78,6 +79,7 @@ function newId(): string {
 }
 
 export function InterestSheet({ placement, context, onClose, fallbackFocus, onSubmit }: InterestSheetProps) {
+  const tool = useTool();
   const study = onSubmit !== undefined;
   const formId = useId();
   const nameId = useId();
@@ -112,7 +114,7 @@ export function InterestSheet({ placement, context, onClose, fallbackFocus, onSu
       schemaVersion: 1,
       id: newId(),
       createdAt,
-      source: "c",
+      source: tool.source,
       placement,
       email: email.trim(),
       firstName: firstName.trim().slice(0, MAX_FIRST_NAME),
@@ -126,8 +128,8 @@ export function InterestSheet({ placement, context, onClose, fallbackFocus, onSu
       page: window.location.pathname,
     };
     void saveSignup(signup);
-    markSignedUp(createdAt);
-    track("interest_signup", { source: "c", placement, interview, is_test: signup.isTest });
+    markSignedUp(createdAt, tool.source);
+    track("interest_signup", { source: tool.source, placement, interview, is_test: signup.isTest });
     finishSubmit();
   }
 

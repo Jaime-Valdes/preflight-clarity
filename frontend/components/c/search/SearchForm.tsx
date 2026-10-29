@@ -4,7 +4,8 @@ import { ArrowLeftRight, ArrowUpDown, CalendarDays, Search } from "lucide-react"
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { AirportField } from "@/components/flow/AirportField";
-import { searchHref, type RouteDay } from "@/lib/c/model";
+import type { RouteDay } from "@/lib/c/model";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import { dateHint, dateNote, maxSearchDate, validateDraft, WINDOW_TEXT, type SearchDraft } from "./query";
 import { track } from "@/lib/analytics";
@@ -51,6 +52,8 @@ export function SearchForm({
   className,
 }: SearchFormProps) {
   const router = useRouter();
+  const tool = useTool();
+  const hrefs = useHrefs();
   const [attempted, setAttempted] = useState(false);
   const ids = { origin: `${idPrefix}-origin`, destination: `${idPrefix}-destination`, date: `${idPrefix}-date` };
   const dateHintId = `${idPrefix}-date-hint`;
@@ -67,8 +70,8 @@ export function SearchForm({
       document.getElementById(first)?.focus();
       return;
     }
-    track("c_search", { origin: check.day.origin, destination: check.day.destination, date: check.day.date });
-    router.push(searchHref(check.day, carry));
+    track(`${tool.events}_search`, { origin: check.day.origin, destination: check.day.destination, date: check.day.date });
+    router.push(hrefs.search(check.day, carry));
     onSearched?.(check.day);
   }
 

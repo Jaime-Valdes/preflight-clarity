@@ -7,7 +7,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TURBULENCE_FORECAST_DAYS, WEATHER_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useCompareList } from "@/lib/c/compare-store";
-import { MAX_COMPARE, clampDate, compareHref, itemId, parseCompareParam, searchHref, type CompareItem } from "@/lib/c/model";
+import { MAX_COMPARE, clampDate, itemId, parseCompareParam, type CompareItem, type Hrefs } from "@/lib/c/model";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { LINK_BUTTON } from "../flight/copy";
@@ -26,10 +27,10 @@ function sameItems(a: readonly CompareItem[], b: readonly CompareItem[]): boolea
 }
 
 /** Where "Add a flight" goes: the results for the first flight's route and day (a date the tool can show). */
-function addHrefFor(items: readonly CompareItem[], today: string): string | null {
+function addHrefFor(items: readonly CompareItem[], today: string, hrefs: Hrefs): string | null {
   const first = items[0];
   if (!first) return null;
-  return searchHref({ origin: first.origin, destination: first.destination, date: clampDate(first.date, today) });
+  return hrefs.search({ origin: first.origin, destination: first.destination, date: clampDate(first.date, today) });
 }
 
 /**
@@ -44,6 +45,8 @@ export function ComparePage() {
   // Flights that left earlier today show as such, not as upcoming (updates every minute).
   const nowMs = useNowMs();
   const list = useCompareList();
+  const tool = useTool();
+  const hrefs = useHrefs();
   const url = useMemo(() => {
     const raw = params.get("f");
     return { fromUrl: raw !== null, raw: raw ?? "", items: parseCompareParam(raw) };
@@ -60,8 +63,8 @@ export function ComparePage() {
   const columns = useMemo(() => (today ? resolveColumns(visible, today, nowMs) : []), [visible, today, nowMs]);
   const shownCount = columns.filter(isFlightColumn).length;
   useEffect(() => {
-    if (today) track("c_compare_view", { flights: shownCount, from_link: url.fromUrl });
-  }, [today, shownCount, url.fromUrl]);
+    if (today) track(`${tool.events}_compare_view`, { flights: shownCount, from_link: url.fromUrl });
+  }, [today, shownCount, url.fromUrl, tool.events]);
   const flights = useMemo(() => columns.filter(isFlightColumn), [columns]);
   const names = useMemo(() => flightNames(flights), [flights]);
 
@@ -102,7 +105,7 @@ export function ComparePage() {
     if (url.fromUrl) {
       setPending((prev) => ({ raw: url.raw, ids: new Set([...(prev.raw === url.raw ? prev.ids : []), id]) }));
       // An emptied link stays a link ("?f="): without `f` the page would switch to the visitor's own list.
-      router.replace(rest.length ? compareHref(rest) : "/c/compare?f=", { scroll: false });
+      router.replace(rest.length ? hrefs.compare(rest) : `${tool.base}/compare?f=`, { scroll: false });
     }
     const name = spoken(isFlightColumn(removed) ? (names.get(id) ?? removed.flight.flightNumber) : removed.item.key);
     const left = rest.length;
@@ -127,7 +130,7 @@ export function ComparePage() {
   if (!today || nowMs === null) return <CompareSkeleton />;
 
   const comparing = flights.length >= 2;
-  const addHref = addHrefFor(visible, today);
+  const addHref = addHrefFor(visible, today, hrefs);
   // A flight whose date has passed doesn't take up one of the places.
   const canAdd = visible.filter((i) => i.date >= today).length < MAX_COMPARE;
 

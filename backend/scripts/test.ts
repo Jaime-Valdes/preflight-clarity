@@ -1208,7 +1208,7 @@ group("signup stats and CSV", () => {
     assert.equal(stats.total, 3);
     assert.equal(stats.uniqueEmails, 2);
     assert.equal(stats.interview, 1);
-    assert.deepEqual(stats.bySource, { study: 1, c: 2 });
+    assert.deepEqual(stats.bySource, { study: 1, c: 2, d: 0 });
     assert.deepEqual(stats.byPlacement, { debrief: 1, c_compare: 2 });
     assert.deepEqual(stats.study.all, { signups: 1, sawForm: 1, pct: 100 }, "a signed-up session reached the debrief even without its record");
   });

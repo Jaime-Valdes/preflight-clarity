@@ -8,7 +8,8 @@ import { formatShortDate, formatTime12 } from "@preflight/shared/dates";
 import { findOption, type FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { useCompareList } from "@/lib/c/compare-store";
-import { MAX_COMPARE, compareHref, flightHref, itemId, type CompareItem } from "@/lib/c/model";
+import { useHrefs, useTool } from "./ToolContext";
+import { MAX_COMPARE, itemId, type CompareItem } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
 import { useTodayISO } from "@/lib/hooks";
 
@@ -67,6 +68,8 @@ function refocus(index: number) {
 export function CompareTray() {
   const pathname = usePathname();
   const compare = useCompareList();
+  const tool = useTool();
+  const hrefs = useHrefs();
   const today = useTodayISO();
   const { prune } = compare;
   // Flights whose date has passed leave the list (they can't be shown or compared, and mustn't fill it).
@@ -77,7 +80,7 @@ export function CompareTray() {
   const items = useMemo(() => (today ? compare.items.filter((i) => i.date >= today) : compare.items), [compare.items, today]);
   const entries = useMemo(() => items.map((item) => ({ item, id: itemId(item), option: lookUp(item) })), [items]);
 
-  if (pathname === "/c/compare" || items.length === 0) return null;
+  if (pathname === `${tool.base}/compare` || items.length === 0) return null;
 
   const count = items.length;
   const note =
@@ -104,7 +107,7 @@ export function CompareTray() {
             return (
               <li key={id} className="flex shrink-0 snap-start items-center rounded-2xl bg-canvas ring-1 ring-inset ring-line">
                 <Link
-                  href={flightHref(item)}
+                  href={hrefs.flight(item)}
                   className="flex min-h-11 items-center gap-2 rounded-2xl py-1.5 pl-1.5 pr-1 text-ink-900 hover:bg-line/40"
                 >
                   <AirlineMark code={airline} size="sm" />
@@ -152,7 +155,7 @@ export function CompareTray() {
           </button>
           {count >= 2 ? (
             <Link
-              href={compareHref(items)}
+              href={hrefs.compare(items)}
               className="inline-flex h-11 shrink-0 items-center rounded-full bg-night-900 px-5 text-sm font-semibold text-white shadow-lift transition-colors hover:bg-night-800 active:bg-night-950"
             >
               Compare ({count})

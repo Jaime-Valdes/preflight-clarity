@@ -14,14 +14,13 @@ import {
   MAX_DAYS_AHEAD,
   clampDate,
   dateStatus,
-  flightHref,
   flightKey,
   itemId,
   parseRouteDay,
-  searchHref,
   type CompareItem,
   type RouteDay,
 } from "@/lib/c/model";
+import { useHrefs } from "@/components/c/shell/ToolContext";
 import { LINK_BUTTON, flightContext, monthDay, routeText, shortDate } from "./copy";
 import { FlightDetail } from "./FlightDetail";
 import { FlightSkeleton } from "./FlightSkeleton";
@@ -121,6 +120,7 @@ function WithSignup({ context, children }: { context: string; children: ReactNod
  */
 export function FlightPage() {
   const params = useSearchParams();
+  const hrefs = useHrefs();
   const today = useTodayISO();
   // A flight that left earlier today is shown as such (checked again every minute).
   const nowMs = useNowMs();
@@ -147,7 +147,7 @@ export function FlightPage() {
           <Notice
             title="We couldn’t find that flight"
             actions={
-              <Link href="/c" className={LINK_BUTTON.primary}>
+              <Link href={hrefs.home} className={LINK_BUTTON.primary}>
                 <Search aria-hidden className="size-4" />
                 Search flights
               </Link>
@@ -199,6 +199,7 @@ interface DepartedProps {
  * day's flights that are still to leave.
  */
 function Departed({ day, option, options, today, next }: DepartedProps) {
+  const hrefs = useHrefs();
   const f = option.flight;
   const tomorrow = addDays(day.date, 1);
   const turbulence = availabilityAt(today, day.date).turbulence;
@@ -210,15 +211,15 @@ function Departed({ day, option, options, today, next }: DepartedProps) {
         actions={
           <>
             {next ? (
-              <Link href={flightHref(next)} className={LINK_BUTTON.primary}>
+              <Link href={hrefs.flight(next)} className={LINK_BUTTON.primary}>
                 {f.flightNumber} on {shortDate(next.date)}
               </Link>
             ) : dateStatus(tomorrow, today) === "ok" ? (
-              <Link href={searchHref({ ...day, date: tomorrow })} className={LINK_BUTTON.primary}>
+              <Link href={hrefs.search({ ...day, date: tomorrow })} className={LINK_BUTTON.primary}>
                 See flights on {shortDate(tomorrow)}
               </Link>
             ) : null}
-            <Link href="/c" className={LINK_BUTTON.secondary}>
+            <Link href={hrefs.home} className={LINK_BUTTON.secondary}>
               New search
             </Link>
           </>
@@ -244,6 +245,7 @@ function Departed({ day, option, options, today, next }: DepartedProps) {
 }
 
 function DateNotice({ day, status, nearest }: { day: RouteDay; status: "past" | "too-far"; nearest: string }) {
+  const hrefs = useHrefs();
   const route = `${airportLabel(day.origin)} to ${airportLabel(day.destination)}`;
   return (
     <Notice
@@ -251,10 +253,10 @@ function DateNotice({ day, status, nearest }: { day: RouteDay; status: "past" | 
       icon={<CalendarDays />}
       actions={
         <>
-          <Link href={searchHref({ ...day, date: nearest })} className={LINK_BUTTON.primary}>
+          <Link href={hrefs.search({ ...day, date: nearest })} className={LINK_BUTTON.primary}>
             See flights on {shortDate(nearest)}
           </Link>
-          <Link href="/c" className={LINK_BUTTON.secondary}>
+          <Link href={hrefs.home} className={LINK_BUTTON.secondary}>
             New search
           </Link>
         </>
@@ -277,6 +279,7 @@ interface NotOnScheduleProps {
 }
 
 function NotOnSchedule({ day, flightText, reason, noFlights }: NotOnScheduleProps) {
+  const hrefs = useHrefs();
   const route = `${airportLabel(day.origin)} to ${airportLabel(day.destination)}`;
   const date = shortDate(day.date);
   const title =
@@ -299,10 +302,10 @@ function NotOnSchedule({ day, flightText, reason, noFlights }: NotOnScheduleProp
       icon={reason === "not-that-day" ? <CalendarDays /> : undefined}
       actions={
         <>
-          <Link href={searchHref(day)} className={LINK_BUTTON.primary}>
+          <Link href={hrefs.search(day)} className={LINK_BUTTON.primary}>
             See flights on {date}
           </Link>
-          <Link href="/c" className={LINK_BUTTON.secondary}>
+          <Link href={hrefs.home} className={LINK_BUTTON.secondary}>
             New search
           </Link>
         </>
