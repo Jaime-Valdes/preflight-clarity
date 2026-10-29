@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HomeSearch } from "@/components/c/search/HomeSearch";
 import { PrioritiesSetup } from "@/components/d/setup/PrioritiesSetup";
 
@@ -10,14 +10,23 @@ import { PrioritiesSetup } from "@/components/d/setup/PrioritiesSetup";
  */
 export function DHome() {
   const searchRef = useRef<HTMLDivElement>(null);
+  // Counts the setup's answers. The scroll runs from an effect keyed on it, i.e. after the commit in
+  // which the setup card collapsed into its summary — measured during the click, the target would sit
+  // a form's height too low and the visitor would land past the search card.
+  const [advanced, setAdvanced] = useState(0);
 
-  function focusSearch() {
+  useEffect(() => {
+    if (advanced === 0) return;
     const el = searchRef.current;
     if (!el) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const touch = window.matchMedia("(pointer: coarse)").matches;
     el.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
-    el.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true });
-  }
+    // On a touch screen, focusing the From field would open its suggestions and the keyboard over the
+    // card, so focus lands on the card itself; with a mouse or keyboard the field is ready to type into.
+    const target = touch ? el : el.querySelector<HTMLElement>("input, button");
+    target?.focus({ preventScroll: true });
+  }, [advanced]);
 
   return (
     <>
@@ -32,10 +41,14 @@ export function DHome() {
         </p>
       </section>
 
-      <PrioritiesSetup className="mt-4" onDone={focusSearch} />
+      <PrioritiesSetup className="mt-4" onDone={() => setAdvanced((n) => n + 1)} />
 
       {/* Navy like C's hero: the search form's popular routes are drawn for a dark background. */}
-      <div ref={searchRef} className="mt-4 scroll-mt-4 rounded-3xl bg-night-900 px-4 py-5 text-white shadow-lift sm:px-6 sm:py-6 lg:px-8">
+      <div
+        ref={searchRef}
+        tabIndex={-1}
+        className="mt-4 scroll-mt-4 rounded-3xl bg-night-900 px-4 py-5 text-white shadow-lift outline-none sm:px-6 sm:py-6 lg:px-8"
+      >
         <h2 className="text-[20px] font-bold leading-snug tracking-tight text-white">Where and when?</h2>
         <div className="mt-3">
           <HomeSearch />

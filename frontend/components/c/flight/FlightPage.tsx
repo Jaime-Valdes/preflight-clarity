@@ -33,7 +33,10 @@ export type FlightDetailProps = ComponentProps<typeof FlightDetail>;
 interface FlightPageProps {
   /** The component that shows a flight the link leads to. Default: version C's FlightDetail; version D passes its own. */
   Detail?: ComponentType<FlightDetailProps>;
-  /** Smoothness scores in the departed state's "Other flights" list (version D passes false). Default true. */
+  /**
+   * Smoothness scores in the departed state's "Other flights" list, and the score ring in the loading
+   * skeleton (version D passes false). Default true.
+   */
   showScores?: boolean;
 }
 
@@ -151,7 +154,7 @@ export function FlightPage({ Detail = FlightDetail, showScores = true }: FlightP
 
   switch (view.kind) {
     case "loading":
-      return <FlightSkeleton />;
+      return <FlightSkeleton showScore={showScores} />;
     case "invalid":
       return (
         <WithSignup context="">

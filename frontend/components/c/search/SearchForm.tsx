@@ -70,7 +70,7 @@ export function SearchForm({
       document.getElementById(first)?.focus();
       return;
     }
-    track(`${tool.events}_search`, { origin: check.day.origin, destination: check.day.destination, date: check.day.date });
+    track(`${tool.events}_search`, { origin: check.day.origin, destination: check.day.destination, date: check.day.date, from: "form" });
     router.push(hrefs.search(check.day, carry));
     onSearched?.(check.day);
   }

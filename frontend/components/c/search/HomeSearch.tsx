@@ -6,7 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { formatShortDate } from "@preflight/shared/dates";
-import { useHrefs } from "@/components/c/shell/ToolContext";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
+import { track } from "@/lib/analytics";
 import { useTodayISO } from "@/lib/hooks";
 import { defaultSearchDate, dateHint, type SearchDraft } from "./query";
 import { SearchForm } from "./SearchForm";
@@ -49,6 +50,7 @@ function HomeSearchClient() {
 }
 
 function HomeSearchReady({ today, campaign }: { today: string; campaign: Record<string, string | undefined> }) {
+  const tool = useTool();
   const hrefs = useHrefs();
   const [draft, setDraft] = useState<SearchDraft>(() => ({
     origin: "",
@@ -77,6 +79,8 @@ function HomeSearchReady({ today, campaign }: { today: string; campaign: Record<
               <li key={`${from}-${to}`} className="min-w-0">
                 <Link
                   href={hrefs.search({ origin: from, destination: to, date }, campaign)}
+                  // A tapped route is a search too (docs/ANALYTICS.md): the same event the form sends, marked "popular".
+                  onClick={() => track(`${tool.events}_search`, { origin: from, destination: to, date, from: "popular" })}
                   className="flex h-full min-h-14 flex-col justify-center rounded-2xl bg-white/[0.08] px-3.5 py-2 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/[0.16] focus-visible:outline-white"
                 >
                   <span className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-white">

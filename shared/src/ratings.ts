@@ -5,7 +5,10 @@
  * Space & quiet. Pure and deterministic: no clock (today is passed in), no randomness; the
  * same flight and date give the same ratings. Calm copy only: each rating has a one-line
  * "what it means for you" that says what to expect and why it is normal, and the ratings
- * are about smoothness, size and comfort — never about safety.
+ * are about smoothness, size and comfort — never about safety. The smoothness lines keep to
+ * their basis: weeks out they speak for flights on the route and at these airports at this time
+ * of year ("usually", "often", "tend to"), never for this flight; within 2 days they describe
+ * this week's forecast ("Expect…").
  *
  * Time-aware (docs/FEASIBILITY.md, shared/src/forecast.ts): weeks or months out, a rating
  * may only use what is knowable then — the route's history for the month, the scheduled
@@ -301,29 +304,42 @@ function heatAt(airport: Airport, month: number): number {
 
 function smoothRating(category: "cruise" | "takeoff_landing", value: number, basis: SmoothBasis, basisText: string, factors: RatingFactor[], numbers: Rating["numbers"]): Rating {
   const tier = SMOOTH_TIERS[Math.max(0, Math.min(4, Math.round(value)))];
-  const meaning = category === "cruise" ? CRUISE_MEANING[tier] : APPROACH_MEANING[basis][tier];
+  const meaning = (category === "cruise" ? CRUISE_MEANING : APPROACH_MEANING)[basis][tier];
   return { category, tier, label: SMOOTH_LABELS[tier], value: SMOOTH_TIERS.indexOf(tier), meaning, basis, basisText, factors, numbers };
 }
 
-const CRUISE_MEANING: Record<SmoothTier, string> = {
-  very_smooth: "Expect a steady cruise with little more than the odd ripple — the kind of flight where the seatbelt sign stays off for most of the way.",
-  smooth: "Expect a mostly steady cruise; a few light bumps are common on any flight and pass in a minute or two.",
-  moderate: "Expect smooth stretches with a few patches of light bumps mid-flight — routine for the plane and crew, who ride through air like this every day.",
-  slightly_bumpy: "Expect a few bumpy patches at cruise, the kind the seatbelt sign comes on for; they feel bigger than they are, and the pilots often change altitude to find smoother air.",
-  bumpy: "Expect a livelier cruise than most flights, with stretches where the seatbelt sign stays on; the bumps feel bigger than they are, and the pilots usually change altitude to find smoother air.",
+/**
+ * Keyed by basis. Weeks out only the route's climatology for the month exists, so the history
+ * lines speak for flights on the route at this time of year ("usually", "often", "tend to") and
+ * never predict this flight; the forecast lines ("Expect…") describe this week's air. Both say
+ * what to expect and why it is normal, and leave the cause to the factors (check-ratings asserts
+ * the voice of each basis).
+ */
+const CRUISE_MEANING: Record<SmoothBasis, Record<SmoothTier, string>> = {
+  history: {
+    very_smooth: "Flights on this route at this time of year usually have a steady cruise with little more than the odd ripple — the seatbelt sign tends to stay off for most of the way.",
+    smooth: "Flights on this route at this time of year are usually steady for most of the cruise; a few light bumps are common on any flight and pass in a minute or two.",
+    moderate: "Flights on this route at this time of year usually have smooth stretches with a few patches of light bumps mid-flight — routine for the plane and crew, who ride through air like this every day.",
+    slightly_bumpy: "Flights on this route at this time of year often have a few bumpy patches at cruise, the kind the seatbelt sign comes on for; they feel bigger than they are, and the pilots tend to change altitude to find smoother air.",
+    bumpy: "Flights on this route at this time of year tend to have a livelier cruise than most, with stretches where the seatbelt sign stays on; the bumps feel bigger than they are, and the pilots usually change altitude to find smoother air.",
+  },
+  forecast: {
+    very_smooth: "Expect a steady cruise with little more than the odd ripple — the kind of flight where the seatbelt sign stays off for most of the way.",
+    smooth: "Expect a mostly steady cruise; a few light bumps are common on any flight and pass in a minute or two.",
+    moderate: "Expect smooth stretches with a few patches of light bumps mid-flight — routine for the plane and crew, who ride through air like this every day.",
+    slightly_bumpy: "Expect a few bumpy patches at cruise, the kind the seatbelt sign comes on for; they feel bigger than they are, and the pilots often change altitude to find smoother air.",
+    bumpy: "Expect a livelier cruise than most flights, with stretches where the seatbelt sign stays on; the bumps feel bigger than they are, and the pilots usually change altitude to find smoother air.",
+  },
 };
 
-/**
- * Keyed by basis: the history lines may say "usually" and "often" (climatology, at this time of
- * day and year); the forecast lines describe this week's air. Both leave the cause to the factors.
- */
+/** The same split: the history lines speak for these airports at this time of day and year; the forecast lines for this week's air. */
 const APPROACH_MEANING: Record<SmoothBasis, Record<SmoothTier, string>> = {
   history: {
-    very_smooth: "Expect a gentle climb-out and a steady approach — the air near the ground at both airports is usually calm at these times of day and year.",
-    smooth: "Expect a routine takeoff and landing, with perhaps a nudge or two in the first and last few minutes as the plane passes through the wind near the ground.",
-    moderate: "Expect a few light bumps in the first or last few minutes — common near these airports at this time of year, and part of every pilot's working day.",
-    slightly_bumpy: "Expect a lively few minutes after takeoff or before landing — the air near the ground here is often unsettled at this time of day and year, like a car on a rough stretch of road, and the pilots are well used to it.",
-    bumpy: "Expect a bumpy few minutes after takeoff or before landing — the air near the ground is often lively at one or both ends at this time of day and year; it is routine for the crews who fly here daily, and it settles once the plane is above it or on the ground.",
+    very_smooth: "A gentle climb-out and a steady approach are the norm here — the air near the ground at both airports is usually calm at these times of day and year.",
+    smooth: "Takeoff and landing are usually routine here, with perhaps a nudge or two in the first and last few minutes as the plane passes through the wind near the ground.",
+    moderate: "Flights here often meet a few light bumps in the first or last few minutes — common near these airports at this time of year, and part of every pilot's working day.",
+    slightly_bumpy: "Flights here often have a lively few minutes after takeoff or before landing — the air near the ground tends to be unsettled at this time of day and year, like a car on a rough stretch of road, and the pilots are well used to it.",
+    bumpy: "Flights here often have a bumpy few minutes after takeoff or before landing — the air near the ground is usually lively at one or both ends at this time of day and year; it is routine for the crews who fly here daily, and it settles once the plane is above it or on the ground.",
   },
   forecast: {
     very_smooth: "Expect a gentle climb-out and a steady approach, with calm air near the ground at both ends.",
@@ -592,6 +608,9 @@ function rateCruiseHistory(f: Flight, geo: RouteGeometry): Rating {
   return smoothRating("cruise", value, "history", `Based on past flights on this route in ${h.month}`, factors, numbers);
 }
 
+/** From this smooth share the forecast sheet says "Nearly all" instead of a percentage. */
+const NEARLY_ALL_PCT = 99;
+
 /** The forecast's cruise line: the moderate window at its own time (the generator's phaseNote does the same), else the first light one. */
 function cruiseForecastDetail(cruiseWindows: readonly BumpWindow[]): string {
   const first = cruiseWindows[0];
@@ -624,6 +643,8 @@ function rateCruiseForecast(f: Flight): Rating {
   if (score < 70) value = Math.min(value, 2);
 
   const cruisePeak = cruiseWindows.some((w) => w.intensity === "moderate") ? "moderate" : cruiseWindows.length > 0 ? "light" : "none";
+  // "Nearly all" rather than an over-precise "About 100%" when the forecast has no bumps to speak of.
+  const nearlyAll = t.smoothMinutesPct >= NEARLY_ALL_PCT;
   const factors: RatingFactor[] = [
     {
       title: "Forecast at cruise",
@@ -638,14 +659,14 @@ function rateCruiseForecast(f: Flight): Rating {
     BODY_FACTOR[wide ? "wide" : "narrow"],
     {
       title: "Smooth share",
-      detail: `About ${t.smoothMinutesPct}% of the time in the air is expected to be smooth`,
+      detail: `${nearlyAll ? "Nearly all" : `About ${t.smoothMinutesPct}%`} of the time in the air is expected to be smooth`,
       effect: t.smoothMinutesPct >= 85 ? "up" : t.smoothMinutesPct >= 70 ? "neutral" : "down",
     },
   ];
   const cruiseMinutes = cruiseWindows.reduce((n, w) => n + w.durationMin, 0);
   const numbers: Rating["numbers"] = [
     { label: "Smoothness score", value: `${score} of 100` },
-    { label: "Smooth share of the flight", value: `${t.smoothMinutesPct}%` },
+    { label: "Smooth share of the flight", value: nearlyAll ? "Nearly all" : `${t.smoothMinutesPct}%` },
     { label: "Bumps at cruise", value: cruiseMinutes > 0 ? `About ${formatOffset(cruiseMinutes)} · ${cruisePeak}` : "None expected" },
     { label: "Strongest expected", value: t.maxIntensity === "none" ? "No bumps expected" : `${cap(t.maxIntensity)} bumps` },
     { label: "Route in " + monthName(f.input.date), value: `${f.turbulence.history.smoothPct}% of past flights smooth` },

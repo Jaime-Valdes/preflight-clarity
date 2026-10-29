@@ -4,6 +4,7 @@ import { ArrowRight, Check, Clock3, Plane, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { formatTime12 } from "@preflight/shared/dates";
+import { availabilityFor } from "@preflight/shared/forecast";
 import type { FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { possessive } from "@/components/dashboard/trust/format";
@@ -24,6 +25,11 @@ interface FareCardProps {
   daysUntil: number;
   /** In-page link to the "Other flights this day" list. */
   othersHref: string;
+  /**
+   * The two benchmark facts (on-time record, fleet age) between the fare and the compare actions.
+   * Version D, whose reassurance cards already state them, passes false. Default true.
+   */
+  showFacts?: boolean;
   className?: string;
 }
 
@@ -36,7 +42,7 @@ type FocusTarget = { target: "add" | "remove" };
  * record, fleet age) so they mean something at a glance. Nothing can be
  * booked; the copy says so quietly.
  */
-export function FareCard({ option, item, daysUntil, othersHref, className }: FareCardProps) {
+export function FareCard({ option, item, daysUntil, othersHref, showFacts = true, className }: FareCardProps) {
   const list = useCompareList();
   const tool = useTool();
   const hrefs = useHrefs();
@@ -58,11 +64,14 @@ export function FareCard({ option, item, daysUntil, othersHref, className }: Far
     (focus.target === "add" ? addRef : removeRef).current?.focus();
   }, [focus]);
 
+  // Whether flight-specific smoothness scores exist yet at this lead time (docs/ANALYTICS.md: has_scores).
+  const hasScores = availabilityFor(daysUntil).turbulence;
+
   const add = () => {
     // Full: the button stays focusable (aria-disabled) so its note is read; pressing it does nothing.
     if (full) return;
     if (list.add(item)) {
-      track(`${tool.events}_compare_toggle`, { from: "flight", added: true, key: item.key });
+      track(`${tool.events}_compare_toggle`, { from: "flight", added: true, key: item.key, has_scores: hasScores });
       setAnnouncement(`Added to compare. ${count + 1} of ${MAX_COMPARE} flights picked.`);
       setFocus({ target: "remove" });
     } else {
@@ -71,7 +80,7 @@ export function FareCard({ option, item, daysUntil, othersHref, className }: Far
   };
 
   const remove = () => {
-    track(`${tool.events}_compare_toggle`, { from: "flight", added: false, key: item.key });
+    track(`${tool.events}_compare_toggle`, { from: "flight", added: false, key: item.key, has_scores: hasScores });
     list.remove(id);
     setAnnouncement("Removed from compare.");
     setFocus({ target: "add" });
@@ -103,36 +112,38 @@ export function FareCard({ option, item, daysUntil, othersHref, className }: Far
       <p className="mt-2 text-xs leading-snug text-ink-500">Illustrative price. Nothing can be booked here.</p>
 
       {/* Two facts anyone can look up any time, each next to its benchmark (shared/src/benchmarks.ts). */}
-      <ul className="mt-4 flex flex-col gap-2.5 border-t border-line/70 pt-4">
-        <li className="flex items-start gap-2.5">
-          <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-calm-50 text-calm-700">
-            <Clock3 className="size-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px] font-semibold leading-snug text-ink-900">
-              <span className="tabular-nums">{flight.airlineStats.onTimePct}%</span> on time
-              <span className="font-normal text-ink-500">
-                {" "}
-                · across the airline, last 12 months · <span className="tabular-nums">{flight.airlineStats.onTimeRoutePct}%</span> on this
-                route
+      {showFacts ? (
+        <ul className="mt-4 flex flex-col gap-2.5 border-t border-line/70 pt-4">
+          <li className="flex items-start gap-2.5">
+            <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-calm-50 text-calm-700">
+              <Clock3 className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold leading-snug text-ink-900">
+                <span className="tabular-nums">{flight.airlineStats.onTimePct}%</span> on time
+                <span className="font-normal text-ink-500">
+                  {" "}
+                  · across the airline, last 12 months · <span className="tabular-nums">{flight.airlineStats.onTimeRoutePct}%</span> on this
+                  route
+                </span>
               </span>
+              <BenchmarkLine benchmark="onTimePct" value={flight.airlineStats.onTimePct} className="mt-0.5" />
             </span>
-            <BenchmarkLine benchmark="onTimePct" value={flight.airlineStats.onTimePct} className="mt-0.5" />
-          </span>
-        </li>
-        <li className="flex items-start gap-2.5">
-          <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-breeze-50 text-breeze-700">
-            <Plane className="size-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px] font-semibold leading-snug text-ink-900">
-              Fleet age <span className="tabular-nums">{flight.aircraft.fleetAvgAgeYears.toFixed(1)}</span> years
-              <span className="font-normal text-ink-500"> · {possessive(flight.airline.name)} {flight.aircraft.model} fleet</span>
+          </li>
+          <li className="flex items-start gap-2.5">
+            <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-breeze-50 text-breeze-700">
+              <Plane className="size-4" />
             </span>
-            <BenchmarkLine benchmark="fleetAgeYears" value={flight.aircraft.fleetAvgAgeYears} className="mt-0.5" />
-          </span>
-        </li>
-      </ul>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold leading-snug text-ink-900">
+                Fleet age <span className="tabular-nums">{flight.aircraft.fleetAvgAgeYears.toFixed(1)}</span> years
+                <span className="font-normal text-ink-500"> · {possessive(flight.airline.name)} {flight.aircraft.model} fleet</span>
+              </span>
+              <BenchmarkLine benchmark="fleetAgeYears" value={flight.aircraft.fleetAvgAgeYears} className="mt-0.5" />
+            </span>
+          </li>
+        </ul>
+      ) : null}
 
       <div className="mt-4">
         {inList ? (

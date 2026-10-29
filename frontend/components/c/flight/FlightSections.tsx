@@ -15,7 +15,13 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import type { Tone } from "@/lib/theme";
 
 /** The dashboard sections version C shows — not "Compare smoother options" or "Forecast alerts" (A/B only). */
-type CSectionId = Exclude<SectionId, "compare" | "alerts">;
+export type CSectionId = Exclude<SectionId, "compare" | "alerts">;
+
+/** Another title and/or teaser for one section (see FlightSectionsProps.overrides). */
+export interface SectionOverride {
+  title?: string;
+  teaser?: (flight: Flight, ctx: SectionContext) => string;
+}
 
 interface CSection {
   id: CSectionId;
@@ -51,15 +57,15 @@ function initialOpen(): ReadonlySet<CSectionId> {
 }
 
 /** Before the flight-specific forecast exists, the section is about the route's turbulence, not a forecast. */
-function titleFor(section: CSection, ctx: SectionContext): string {
+function titleFor(section: CSection, ctx: SectionContext, override?: SectionOverride): string {
   if (section.id === "turbulence" && !availabilityFor(ctx.daysUntil).turbulence) return "Turbulence";
-  return section.title;
+  return override?.title ?? section.title;
 }
 
 /** A section's teaser must never take the page down. */
-function safeTeaser(section: CSection, flight: Flight, ctx: SectionContext): string {
+function safeTeaser(section: CSection, flight: Flight, ctx: SectionContext, override?: SectionOverride): string {
   try {
-    return section.teaser(flight, ctx);
+    return (override?.teaser ?? section.teaser)(flight, ctx);
   } catch {
     return "";
   }
@@ -68,6 +74,11 @@ function safeTeaser(section: CSection, flight: Flight, ctx: SectionContext): str
 interface FlightSectionsProps {
   flight: Flight;
   ctx: SectionContext;
+  /**
+   * Another title or teaser for some sections. Version D names the airline section "Airline" and teases
+   * its on-time figure only, so no score sits at the surface of the detail layer. Default: version C's.
+   */
+  overrides?: Partial<Record<CSectionId, SectionOverride>>;
 }
 
 /**
@@ -76,7 +87,7 @@ interface FlightSectionsProps {
  * is tracked. Must sit inside the page's ExploreContext provider (neutral
  * "this flight" copy, per-flight body state).
  */
-export function FlightSections({ flight, ctx }: FlightSectionsProps) {
+export function FlightSections({ flight, ctx, overrides }: FlightSectionsProps) {
   const [open, setOpen] = useState<ReadonlySet<CSectionId>>(initialOpen);
 
   const toggle = (id: CSectionId, next: boolean) => {
@@ -103,10 +114,10 @@ export function FlightSections({ flight, ctx }: FlightSectionsProps) {
       {C_SECTIONS.map((section) => (
         <div key={section.id} data-c-section={section.id} className="scroll-mt-4">
           <SectionCard
-            title={titleFor(section, ctx)}
+            title={titleFor(section, ctx, overrides?.[section.id])}
             icon={section.icon}
             tone={section.tone}
-            teaser={safeTeaser(section, flight, ctx)}
+            teaser={safeTeaser(section, flight, ctx, overrides?.[section.id])}
             open={open.has(section.id)}
             onToggle={(next) => toggle(section.id, next)}
           >

@@ -9,7 +9,7 @@ import { cn } from "@/lib/cn";
 import { completeOrder, orderKey, savePriorities, skipPriorities, usePriorities } from "@/lib/d/priorities";
 
 interface PrioritiesSetupProps {
-  /** Called after "Show me flights" or "Skip" (the home page moves on to the search form). */
+  /** Called after "Next", "Update" or "Skip for now" (the home page moves on to the search form). */
   onDone?: () => void;
   className?: string;
 }
@@ -24,8 +24,13 @@ export function PrioritiesSetup({ onDone, className }: PrioritiesSetupProps) {
   const hydrated = useHydrated();
   const priorities = usePriorities();
   const [editing, setEditing] = useState(false);
-  // Until the browser's answer is known, the question is shown (the common case for a first visit).
-  const showForm = !hydrated || !priorities.answered || editing;
+
+  // The browser's answer is only known on the client. Until then a quiet card the size of the summary
+  // holds the place: a returning visitor never sees the question flash and give way to their answer,
+  // and a first visit sees the question one tick later.
+  if (!hydrated) return <SetupPlaceholder className={className} />;
+
+  const showForm = !priorities.answered || editing;
 
   if (!showForm) {
     return (
@@ -162,7 +167,7 @@ function RankingForm({ initial, changing, onDone, className }: RankingFormProps)
           onClick={finish}
           className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-night-900 px-6 text-[15px] font-semibold text-white shadow-lift transition-colors hover:bg-night-800 active:bg-night-950 disabled:bg-ink-300 disabled:text-white/80 disabled:shadow-none"
         >
-          {changing ? "Update" : "Show me flights"}
+          {changing ? "Update" : "Next"}
           {changing ? <Check aria-hidden className="size-4" /> : <ArrowRight aria-hidden className="size-4" />}
         </button>
         {ranked.length > 0 ? (
@@ -187,5 +192,31 @@ function RankingForm({ initial, changing, onDone, className }: RankingFormProps)
       {/* Keeps the sort honest when fewer than four are ranked. */}
       <p className="sr-only">Unranked categories follow in this order: {completeOrder(ranked).map((c) => CATEGORY_LABELS[c]).join(", ")}.</p>
     </section>
+  );
+}
+
+/**
+ * The summary card's shape (heading, the four labels, the Change button) in
+ * quiet bars, shown until the browser's answer is known — so the card above the
+ * search form keeps its height for a returning visitor.
+ */
+function SetupPlaceholder({ className }: { className?: string }) {
+  return (
+    <div aria-hidden className={cn("rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80", className)}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="my-[3px] h-4 w-40 rounded-full bg-line/70" />
+          {/* The four labels' sizes ("Space & quiet", "Smooth takeoff & landing", "Smooth cruise", "Aircraft size"),
+              so the bars wrap into the same rows as the real list at every width. */}
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
+            <div className="h-[21px] w-[115px] rounded-full bg-canvas" />
+            <div className="h-[21px] w-[188px] rounded-full bg-canvas" />
+            <div className="h-[21px] w-[120px] rounded-full bg-canvas" />
+            <div className="h-[21px] w-[102px] rounded-full bg-canvas" />
+          </div>
+        </div>
+        <div className="h-11 w-[106px] shrink-0 rounded-full bg-canvas" />
+      </div>
+    </div>
   );
 }

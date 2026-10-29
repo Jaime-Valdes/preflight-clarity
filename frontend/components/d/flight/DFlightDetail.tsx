@@ -3,17 +3,18 @@
 import { Armchair, ChevronDown, ChevronLeft, Layers, Plane, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { compareToBenchmark, type Comparison } from "@preflight/shared/benchmarks";
 import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
 import { orderByPriorities, rateFlight } from "@preflight/shared/ratings";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import type { BodyType, Flight, SectionContext } from "@preflight/shared/types";
-import { daysToDeparture } from "@/components/c/common/availability";
+import { daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { crewLine, crewRules, openSeat, smoothestZone, yearsText } from "@/components/c/compare/facts";
 import { BenchmarkLine } from "@/components/c/flight/BenchmarkLine";
 import { flightContext, monthDay, routeText } from "@/components/c/flight/copy";
 import { FareCard } from "@/components/c/flight/FareCard";
 import type { FlightDetailProps } from "@/components/c/flight/FlightPage";
-import { FlightSections } from "@/components/c/flight/FlightSections";
+import { FlightSections, type CSectionId, type SectionOverride } from "@/components/c/flight/FlightSections";
 import { OtherFlights } from "@/components/c/flight/OtherFlights";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useHrefs } from "@/components/c/shell/ToolContext";
@@ -24,9 +25,11 @@ import { RatingPill } from "@/components/d/ratings/RatingPill";
 import { RatingRows } from "@/components/d/ratings/RatingRows";
 import { Card } from "@/components/ui/Card";
 import { track } from "@/lib/analytics";
+import { formatFare } from "@/lib/c/format";
 import type { CompareItem } from "@/lib/c/model";
 import { usePriorities } from "@/lib/d/priorities";
-import { ratingsByKey } from "@/lib/d/view";
+import { priceDeltaText, ratingsByKey } from "@/lib/d/view";
+import { useNowMs } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { TONE_CLASSES, type Tone } from "@/lib/theme";
 import { ChooseButton, priceStanding, tierProps } from "./ChooseButton";
@@ -46,14 +49,32 @@ const OTHERS_ID = "other-flights";
 /** The flight page's concrete ask (docs/INTEREST.md, version D). */
 export const D_FLIGHT_INTEREST = {
   title: "Get smoothness ratings for your real trip",
-  body: "Cloud9 is a prototype today. Leave your email and we’ll let you know when you can rate a real flight — one email, no spam.",
+  body: "Cloud9 is a prototype today. Leave your email and we’ll let you know when it can rate a real flight — one email, no spam.",
   button: "Notify me when it’s live",
 } as const;
+
+/** The one question the pick answers (the same words on phones and in the sticky column). */
+const PICK_QUESTION = "Would you take this flight, at this price, for how it is rated? Tell us with one tap.";
 
 /** What the body type means for a passenger, in one sentence (the ratings model treats a wide-body as never bumpier). */
 const BODY_SENTENCE: Record<BodyType, string> = {
   narrow: "Narrow-body means a single-aisle cabin — the everyday airliner on routes like this one.",
   wide: "Wide-body means two aisles and a bigger, heavier jet, which rides through bumps a little more steadily.",
+};
+
+/** The airline's comfort index in words (shared/src/benchmarks.ts): the verdict leads, the figure follows in small print. */
+const COMFORT_VERDICT: Record<Comparison["verdict"], string> = {
+  better: "Comfort above average",
+  "about average": "Comfort about average",
+  worse: "Comfort a little below average",
+};
+
+/**
+ * Under "More detail", the airline section is named plainly and its collapsed line gives the on-time
+ * figure only: no score for a named airline at the surface of the detail layer (the score stays inside).
+ */
+const SECTION_OVERRIDES: Partial<Record<CSectionId, SectionOverride>> = {
+  airline: { title: "Airline", teaser: (flight) => `${flight.airlineStats.onTimePct}% on time, last 12 months` },
 };
 
 /** "regulator oversight (FAA)"; a generic regulator name reads as is — the AirlineSection's wording. */
@@ -89,12 +110,20 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
   const aircraftRating = ratings.find((r) => r.category === "aircraft");
   const label = flightContext(flight, day);
 
-  // Where this flight stands among the day's results (analytics): its fare at this lead time, its rank and the
-  // dollars over the day's cheapest.
+  // Where this flight stands among the day's flights still to leave (the "vs cheapest" line and analytics):
+  // its fare at this lead time, its rank and the dollars over the cheapest. Flights that left earlier today
+  // are out of it, as on the results page, so a flight the results called cheapest is cheapest here too.
+  const nowMs = useNowMs();
+  const mayHaveLeft = daysUntil <= 1;
+  const live = useMemo(
+    () => (mayHaveLeft ? options.filter((o) => !hasLeft(o.flight, nowMs)) : options),
+    [options, mayHaveLeft, nowMs],
+  );
   const price = fareAt(option, daysUntil);
-  const fares = useMemo(() => options.map((o) => fareAt(o, daysUntil)), [options, daysUntil]);
+  const fares = useMemo(() => live.map((o) => fareAt(o, daysUntil)), [live, daysUntil]);
   const standing = priceStanding(price, fares);
   const isCheapest = standing.dollars_over_cheapest === 0;
+  const delta = priceDeltaText(price, fares.length ? Math.min(...fares) : null);
   const tiers = tierProps(ratings);
   useEffect(() => {
     track("d_flight_view", {
@@ -151,8 +180,24 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
   const rules = crewRules(flight.crew);
   const zone = smoothestZone(flight);
   const seat = openSeat(flight);
+  const comfort = compareToBenchmark("comfortScore", stats.comfortScore);
   const reassureId = useId();
   const ratedId = useId();
+
+  /** The pick, with everything the event needs (one on phones under the header, one in the sticky column). */
+  const chooseButton = (className: string) => (
+    <ChooseButton
+      item={item}
+      option={option}
+      options={live}
+      daysUntil={daysUntil}
+      ratings={ratings}
+      order={priorities.order}
+      position={position}
+      from="flight"
+      className={className}
+    />
+  );
 
   /** The other flights' top rating in the visitor's order, as a plain pill where version C shows the score. */
   const badge = (o: FlightOption) => {
@@ -185,6 +230,29 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
               className="animate-fade-up"
             />
           </div>
+
+          {/* Phones: the fare and the one question within reach of the first screen, not three screens down
+              (at lg the sticky column does this). The ratings follow; the pick can be changed any time. */}
+          <Card className="animate-fade-up p-4 [animation-delay:60ms] lg:hidden">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">Your pick</h2>
+                <p className="mt-1 text-sm leading-snug text-ink-700">{PICK_QUESTION}</p>
+              </div>
+              <p className="shrink-0 text-right">
+                <span className="block text-2xl font-bold leading-none tracking-tight text-ink-900 tabular-nums">{formatFare(price)}</span>
+                <span className="mt-1 block text-[11px] leading-snug text-ink-500">one way · illustrative</span>
+                {isCheapest ? (
+                  <span className="mt-1.5 inline-flex rounded-full bg-calm-50 px-2 py-0.5 text-[11px] font-semibold leading-4 text-calm-700 ring-1 ring-inset ring-calm-100">
+                    Cheapest
+                  </span>
+                ) : (
+                  <span className="mt-1 block text-xs font-semibold leading-snug text-ink-700 tabular-nums">{delta}</span>
+                )}
+              </p>
+            </div>
+            {chooseButton("mt-3")}
+          </Card>
 
           {/* Reassurance first: four plain cards, each a glance. */}
           <section aria-labelledby={reassureId} className="min-w-0 animate-fade-up [animation-delay:60ms] lg:col-start-1">
@@ -254,7 +322,8 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 icon={<ShieldCheck />}
                 tone="calm"
                 title="Airline record"
-                foot="On time means arriving within 15 minutes of schedule. The full airline section is under More detail."
+                // The airline's safety basis, worded as the airline section does — a footnote, never a rating or a figure here.
+                foot={`On time means arriving within 15 minutes of schedule. The airline section under More detail also covers the airline’s IOSA safety-audit status, ${oversightLabel(flight.crew.regulator)}, accident record and fleet age.`}
               >
                 <Facts>
                   <Fact
@@ -263,13 +332,9 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                     benchmark={<BenchmarkLine benchmark="onTimePct" value={stats.onTimePct} />}
                   />
                   <Fact
-                    main={`${stats.comfortScore.toFixed(1)} / 10 comfort`}
-                    sub="Legroom, seat width, cabin noise and what’s on board"
+                    main={COMFORT_VERDICT[comfort.verdict]}
+                    sub={`Legroom, seat width, cabin noise and what’s on board · ${stats.comfortScore.toFixed(1)} / 10`}
                     benchmark={<BenchmarkLine benchmark="comfortScore" value={stats.comfortScore} />}
-                  />
-                  <Fact
-                    main="Safety index"
-                    sub={`Our index for the airline, based on its IOSA safety-audit status, ${oversightLabel(flight.crew.regulator)}, accident record and fleet age.`}
                   />
                 </Facts>
               </ReassureCard>
@@ -295,31 +360,22 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
             <RatingRows ratings={ordered} flightLabel={label} from="flight" className="mt-3" />
           </section>
 
-          {/* The pick and the fare: after the ratings on phones, a sticky column on laptops. */}
+          {/* The fare (and, on laptops, the pick) after the ratings on phones; a sticky column on laptops. */}
           <div className="min-w-0 lg:col-start-2 lg:row-span-6 lg:row-start-1">
             <div className="flex flex-col gap-4 lg:sticky lg:top-6">
-              <Card className="animate-fade-up p-5 [animation-delay:60ms]">
+              {/* Phones have the pick under the header instead (one control, in sync through the choice store). */}
+              <Card className="hidden animate-fade-up p-5 [animation-delay:60ms] lg:block">
                 <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">Your pick</h2>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink-700">
-                  Would you take this flight, at this price, for how it is rated? Tell us with one tap.
-                </p>
-                <ChooseButton
-                  item={item}
-                  option={option}
-                  options={options}
-                  daysUntil={daysUntil}
-                  ratings={ratings}
-                  order={priorities.order}
-                  position={position}
-                  from="flight"
-                  className="mt-4"
-                />
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-700">{PICK_QUESTION}</p>
+                {chooseButton("mt-4")}
               </Card>
+              {/* The on-time and fleet-age facts are left out: the reassurance cards above already state them. */}
               <FareCard
                 option={option}
                 item={item}
                 daysUntil={daysUntil}
                 othersHref={`#${OTHERS_ID}`}
+                showFacts={false}
                 className="animate-fade-up [animation-delay:90ms]"
               />
             </div>
@@ -453,7 +509,7 @@ function MoreDetail({ flight, ctx, className }: { flight: Flight; ctx: SectionCo
             <p className="mb-3 px-1 text-[13px] leading-snug text-ink-500">
               The full sections for this flight. Open as much or as little as you like.
             </p>
-            <FlightSections flight={flight} ctx={ctx} />
+            <FlightSections flight={flight} ctx={ctx} overrides={SECTION_OVERRIDES} />
           </>
         ) : null}
       </div>

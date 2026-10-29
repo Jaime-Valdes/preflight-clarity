@@ -16,7 +16,7 @@ export const metadata: Metadata = {
  */
 export default function Page() {
   return (
-    <Suspense fallback={<CompareSkeleton />}>
+    <Suspense fallback={<CompareSkeleton showScore={false} />}>
       <DComparePage />
     </Suspense>
   );

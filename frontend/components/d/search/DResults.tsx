@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowRight, CalendarDays, Compass, Info, MapPin, Pencil, SlidersHorizontal, X } from "lucide-react";
+import { ArrowRight, CalendarDays, Compass, Info, MapPin, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
 import { getAirport } from "@preflight/shared/airports";
-import { CATEGORY_LABELS, orderByPriorities, type Rating } from "@preflight/shared/ratings";
+import { CATEGORY_LABELS, orderByPriorities, type Rating, type RatingCategory } from "@preflight/shared/ratings";
 import { searchFlights, type FlightOption, type SearchResults as DayResults } from "@preflight/shared/search";
 import { availabilityAt, daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { Sheet } from "@/components/c/common/Sheet";
@@ -366,6 +366,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                           ratings={orderByPriorities(ratings.get(option.key) ?? NO_RATINGS, order)}
                           cheapest={cheapest}
                           smoothestForYou={smoothest.has(option.key)}
+                          chosen={priorities.chosen}
                           campaign={campaign}
                           airframe={avail.airframe}
                           position={index + 1}
@@ -439,39 +440,50 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   );
 }
 
+/** The categories as they read mid-sentence: "Space & quiet first, then takeoff & landing". */
+const PRIORITY_WORDS: Record<RatingCategory, string> = {
+  cruise: "smooth cruise",
+  takeoff_landing: "takeoff & landing",
+  aircraft: "aircraft size",
+  space: "space & quiet",
+};
+
+function sentenceCase(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /**
- * One quiet line saying what the flights are rated for — the visitor's order
- * from the home's setup — with the way back to change it. Before the visitor
- * has ranked anything, the usual order, and an invitation rather than "Change".
+ * One quiet sentence saying what the flights are rated for — the visitor's
+ * order from the home's setup — with the way back to change it. Short on
+ * phones (the two categories the cards show; all four from sm), so the first
+ * card's ratings stay on the first screen. Before the visitor has ranked
+ * anything, the usual order and an invitation rather than "Change".
  */
 function PrioritiesStrip({ priorities }: { priorities: Priorities }) {
   const hrefs = useHrefs();
   const { chosen, order } = priorities;
+  const [first = "", second = "", third = "", fourth = ""] = order.map((category) => PRIORITY_WORDS[category]);
+  const heading = chosen ? "Rated for you" : "Rated in the usual order";
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl bg-surface/70 px-4 py-2 text-[13px] leading-snug ring-1 ring-inset ring-line/60">
-      <span className="font-semibold text-ink-900">{chosen ? "Rated for you" : "Rated in the usual order"}</span>
-      <ol aria-label="Your priorities, most important first" className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-ink-700">
-        {order.map((category, i) => (
-          <li key={category} className="inline-flex items-center gap-1 whitespace-nowrap">
-            <span
-              aria-hidden
-              className="inline-flex size-4 items-center justify-center rounded-full bg-night-900 text-[10px] font-bold leading-none text-white tabular-nums"
-            >
-              {i + 1}
-            </span>
-            <span className="sr-only">{i + 1}.</span>
-            {CATEGORY_LABELS[category]}
-          </li>
-        ))}
-      </ol>
+    <p className="rounded-2xl bg-surface/70 px-4 py-2 text-[13px] leading-snug text-ink-700 ring-1 ring-inset ring-line/60">
+      {/* Screen readers get the whole order, numbered; the sentence is the same thing at a glance. */}
+      <span className="sr-only">
+        {heading}: {order.map((category, i) => `${i + 1}. ${CATEGORY_LABELS[category]}`).join(", ")}.{" "}
+      </span>
+      <span aria-hidden>
+        <span className="font-semibold text-ink-900">{heading}:</span> {sentenceCase(first)} first, then {second}
+        <span className="hidden sm:inline">
+          , {third} and {fourth}
+        </span>
+        {" · "}
+      </span>
       <Link
         href={hrefs.home}
-        className="relative -my-0.5 inline-flex h-9 items-center gap-1 rounded-full px-2.5 font-semibold text-breeze-700 transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-breeze-50"
+        className="relative inline-block whitespace-nowrap font-semibold text-breeze-700 before:absolute before:inset-x-0 before:-inset-y-3.5 before:content-[''] hover:underline"
       >
-        <Pencil aria-hidden className="size-3.5" />
-        {chosen ? "Change" : "Choose what matters"}
+        {chosen ? "Change what matters" : "Choose what matters"}
       </Link>
-    </div>
+    </p>
   );
 }
 

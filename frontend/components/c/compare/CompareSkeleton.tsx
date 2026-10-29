@@ -1,12 +1,20 @@
 /** Placeholder rows under the column headers. */
 const ROWS = 6;
 
+interface CompareSkeletonProps {
+  /**
+   * The small score ring under each column head (version C). Version D, which never shows a
+   * score, passes false and gets a pill-shaped bar there instead. Default true.
+   */
+  showScore?: boolean;
+}
+
 /**
  * Version C: calm placeholder with the compare page's silhouette — the page's
  * Suspense fallback (static shell) and the state until the client knows
  * today's date and the compare list. No hooks, so it renders on the server.
  */
-export function CompareSkeleton() {
+export function CompareSkeleton({ showScore = true }: CompareSkeletonProps = {}) {
   return (
     <div role="status" aria-label="Loading the comparison" className="animate-pulse">
       <div className="h-7 w-48 rounded-full bg-line" />
@@ -20,7 +28,11 @@ export function CompareSkeleton() {
               <div className="mt-3 h-3 w-24 max-w-full rounded-full bg-line" />
               <div className="mt-2 h-2.5 w-14 rounded-full bg-line/80" />
               <div className="mt-5 h-5 w-16 rounded-full bg-line" />
-              <div className="mt-4 size-9 rounded-full border-[3.5px] border-calm-100" />
+              {showScore ? (
+                <div className="mt-4 size-9 rounded-full border-[3.5px] border-calm-100" />
+              ) : (
+                <div className="mt-4 h-8 w-20 max-w-full rounded-full bg-line/80" />
+              )}
               <div className="mt-4 h-10 w-full rounded-full bg-canvas" />
             </div>
           ))}

@@ -94,7 +94,7 @@ export function OtherFlights({
 
   const toggle = (item: CompareItem, label: string) => {
     const wasIn = list.has(itemId(item));
-    track(`${tool.events}_compare_toggle`, { from: "other_flights", added: !wasIn, key: item.key });
+    track(`${tool.events}_compare_toggle`, { from: "other_flights", added: !wasIn, key: item.key, has_scores: turbulence });
     if (!list.toggle(item)) {
       setAnnouncement(`You can compare up to ${MAX_COMPARE} flights.`);
       return;

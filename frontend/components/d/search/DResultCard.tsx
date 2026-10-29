@@ -28,6 +28,8 @@ interface DResultCardProps {
   cheapest: number | null;
   /** Leads the flights on screen for the visitor's priorities (ties all marked). */
   smoothestForYou: boolean;
+  /** The visitor ranked their priorities: the marker and the ratings' label say "for you"; otherwise "overall". */
+  chosen: boolean;
   /** Query parameters the Details link keeps (campaign tags from the link that opened the results). */
   campaign?: Record<string, string | undefined>;
   /** The airframe is assigned (≤ 1 day before departure): "assigned" instead of "scheduled". */
@@ -64,6 +66,7 @@ export function DResultCard({
   ratings,
   cheapest,
   smoothestForYou,
+  chosen,
   campaign,
   airframe,
   position,
@@ -84,6 +87,8 @@ export function DResultCard({
   const isCheapest = delta === "Cheapest";
   const flightLabel = flightContext(flight, item);
   const top = ratings.slice(0, SHOWN_RATINGS);
+  // "For you" only once the visitor has said what matters; until then the lead is on the usual order.
+  const smoothestText = chosen ? "Smoothest for you" : "Smoothest overall";
 
   return (
     <article aria-labelledby={titleId} className="rounded-3xl bg-surface p-4 shadow-soft ring-1 ring-line/80 sm:p-5">
@@ -100,7 +105,7 @@ export function DResultCard({
                 {flight.airline.name}
                 <span className="sr-only">
                   , {flight.flightNumber}, departs {depart}
-                  {smoothestForYou ? ", smoothest for you of these flights" : ""}
+                  {smoothestForYou ? `, ${smoothestText.toLowerCase()} of these flights` : ""}
                   {isCheapest ? ", cheapest this day" : ""}
                 </span>
               </h3>
@@ -111,7 +116,7 @@ export function DResultCard({
                     aria-hidden
                     className="inline-flex items-center rounded-full bg-calm-50 px-2 py-0.5 text-[11px] font-semibold text-calm-700 ring-1 ring-inset ring-calm-100"
                   >
-                    Smoothest for you
+                    {smoothestText}
                   </span>
                 ) : null}
               </p>
@@ -151,7 +156,7 @@ export function DResultCard({
           </div>
 
           {/* The ratings that matter most to this visitor, first one first. Each pill opens its detail sheet. */}
-          <ul aria-label="Rated for you" className="flex flex-wrap gap-1.5">
+          <ul aria-label={chosen ? "Rated for you" : "Ratings"} className="flex flex-wrap gap-1.5">
             {top.map((rating) => (
               <li key={rating.category} className="max-w-full">
                 <RatingButton rating={rating} flightLabel={flightLabel} from="results" size="sm" />

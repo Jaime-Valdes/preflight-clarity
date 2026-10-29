@@ -88,17 +88,20 @@ interface RatingButtonProps {
   flightLabel: string;
   from: RatingFrom;
   size?: "sm" | "md";
+  /** Just the tier on the pill (see RatingPill). */
+  labelOnly?: boolean;
   className?: string;
 }
 
 /** A pill that opens the rating's sheet; logs d_rating_open once per open (docs/ANALYTICS.md). */
-export function RatingButton({ rating, flightLabel, from, size, className }: RatingButtonProps) {
+export function RatingButton({ rating, flightLabel, from, size, labelOnly, className }: RatingButtonProps) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <RatingPill
         rating={rating}
         size={size}
+        labelOnly={labelOnly}
         className={className}
         onOpen={() => {
           setOpen(true);

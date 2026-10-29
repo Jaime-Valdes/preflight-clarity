@@ -14,6 +14,10 @@
  * fewer seats than a Smaller jet on the same day, no fleet age), the calmest-slot sentence in
  * step with the generator's slot, one time-of-day word on both smoothness cards, no seat counts in
  * the fullness band, calm copy (no banned words, no exclamation marks, sentence case, plain units),
+ * the voice of each basis (a booking-time meaning never says "Expect" or "this flight" and always
+ * speaks for the route or the airports at this time of year — usually, often, tend, most — while
+ * a forecast meaning predicts, and the two tables differ for every tier), "Nearly all" rather
+ * than "About 100%" for the smooth share,
  * the trait table on catalogue codes only and never behind the generator's coastal set and
  * mountain boxes, the helpers (forYouScore, orderByPriorities, parsePriorityOrder, priceRank,
  * tierLabel) and the speed budget (< 50 µs a call, warm). Exits non-zero on any failure.
@@ -88,6 +92,14 @@ const PROPER_AMENITY = /^(Wi-Fi|Swiss|Viennese|Nordic)\b/;
 const SLOT_OF_WORD: Record<string, string> = { Morning: "morning", Midday: "midday", Afternoon: "afternoon", "Early-evening": "evening", Evening: "evening", Overnight: "overnight" };
 /** The seat count from which a single-aisle jet is a Mid-size jet (restated from the module). */
 const MID_SIZE_SEATS = 185;
+/** Forecast voice — a prediction for this flight — which a booking-time (history) meaning never speaks. */
+const PREDICTION = /\bexpect\w*|\bthis flight\b/i;
+/** Climatology voice: what flights on the route, or at these airports, usually see at this time of year. */
+const CLIMATOLOGY = /\b(usually|often|tends?|most)\b/i;
+/** The smooth share from which the forecast sheet says "Nearly all" instead of a percentage (restated from the module). */
+const NEARLY_ALL_PCT = 99;
+/** A share of 100% is never shown as a figure ("About 100%" reads as over-precise). */
+const FULL_SHARE = /\b100%/;
 
 function stringsOf(r: Rating): Array<[string, string]> {
   const out: Array<[string, string]> = [
@@ -110,6 +122,7 @@ function checkCopy(tag: string, strings: Array<[string, string]>): void {
     check(/^[A-Z0-9]/.test(value), `${tag}: not sentence case at ${path}: "${value}"`);
     const j = JARGON.exec(value);
     check(!j, `${tag}: jargon "${j?.[0]}" at ${path}: "${value}"`);
+    check(!FULL_SHARE.test(value), `${tag}: a 100% share shown as a figure at ${path}: "${value}"`);
   }
 }
 
@@ -207,6 +220,9 @@ let summerCruisePairs = 0;
 let summerApproachPairs = 0;
 let summerApproachResidual = 0;
 let summerApproachResidualBumpier = 0;
+let nearlyAllShare = 0;
+/** Every meaning seen per "category|basis|tier": one static line each, and a different one per basis. */
+const meanings = new Map<string, Set<string>>();
 const sampleStart = performance.now();
 
 for (const [o, d] of routes) {
@@ -243,6 +259,18 @@ for (const [o, d] of routes) {
           check(r.numbers.length >= 2, `${rtag}: ${r.numbers.length} numbers`);
           check(r.meaning.endsWith(".") && r.meaning.split(". ").length <= 2, `${rtag}: meaning "${r.meaning}"`);
           check(r.basisText.startsWith("Based on"), `${rtag}: basisText "${r.basisText}"`);
+          // The voice follows the basis: at booking time the line speaks for the route or the airports at this time of year, never for this flight.
+          if (r.basis === "history") {
+            const p = PREDICTION.exec(r.meaning);
+            check(!p, `${rtag}: booking-time meaning says "${p?.[0]}": "${r.meaning}"`);
+            check(CLIMATOLOGY.test(r.meaning), `${rtag}: booking-time meaning without usually/often/tend/most: "${r.meaning}"`);
+          } else if (r.basis === "forecast") {
+            check(/^Expect\b/.test(r.meaning), `${rtag}: forecast meaning does not predict: "${r.meaning}"`);
+          }
+          if (r.basis === "history" || r.basis === "forecast") {
+            const key = `${r.category}|${r.basis}|${r.tier}`;
+            meanings.set(key, (meanings.get(key) ?? new Set()).add(r.meaning));
+          }
           checkCopy(rtag, stringsOf(r));
           bump(mode, r.category, r.tier);
         }
@@ -297,6 +325,14 @@ for (const [o, d] of routes) {
               `${mtag}: "${detail}" vs the moderate window at ${formatOffset(moderate.startMin)} for ${formatOffset(moderate.durationMin)}`,
             );
           }
+          // The smooth share: "Nearly all" from NEARLY_ALL_PCT (never "About 100%"), else the figure, in the factor and the number alike.
+          const share = f.turbulence.smoothMinutesPct;
+          const shareFactor = cruise.factors.find((x) => x.title === "Smooth share")?.detail ?? "";
+          const shareNumber = numberOf(cruise, "Smooth share of the flight") ?? "";
+          const expectedShare = share >= NEARLY_ALL_PCT ? "Nearly all" : `About ${share}%`;
+          if (share >= NEARLY_ALL_PCT) nearlyAllShare++;
+          check(shareFactor === `${expectedShare} of the time in the air is expected to be smooth`, `${mtag}: smooth share ${share}% as "${shareFactor}"`);
+          check(shareNumber === (share >= NEARLY_ALL_PCT ? "Nearly all" : `${share}%`), `${mtag}: smooth share ${share}% in the numbers as "${shareNumber}"`);
         }
         check(approach.basisText.includes(f.origin.code) && approach.basisText.includes(f.destination.code), `${mtag}: takeoff/landing basisText "${approach.basisText}" doesn't name the airports`);
 
@@ -391,6 +427,19 @@ check(airframeShown > 0, "the assigned aircraft never shows a day out");
 check(moderateCruise > 0, "no moderate cruise window in the sample");
 check(sizePairs > 0, "no mid-size / smaller pairs on the same day");
 check(summerCruisePairs > 0 && summerApproachPairs > 0, `summer pairs: ${summerCruisePairs} cruise, ${summerApproachPairs} takeoff & landing`);
+check(nearlyAllShare > 0, "no flight with a nearly-all smooth share a day out in the sample");
+
+// One static meaning per category, basis and tier, and never the same line for both bases: a booking-time card never speaks with forecast certainty.
+for (const category of ["cruise", "takeoff_landing"] as const) {
+  for (const tier of SMOOTH_TIERS) {
+    const history = meanings.get(`${category}|history|${tier}`);
+    const forecast = meanings.get(`${category}|forecast|${tier}`);
+    for (const [basis, set] of [["history", history], ["forecast", forecast]] as const) {
+      if (set) check(set.size === 1, `${category} ${tier} (${basis}): ${set.size} different meanings`);
+    }
+    if (history && forecast) check([...history].every((m) => !forecast.has(m)), `${category} ${tier}: the booking-time meaning is the forecast line: "${[...history][0]}"`);
+  }
+}
 
 // ── Horizon edges and odd input ─────────────────────────────────────────────
 
@@ -456,7 +505,8 @@ console.log(`Takeoff & landing · forecast ${line("forecast", "takeoff_landing",
 console.log(`Aircraft · ${line("booking", "aircraft", ["large", "mid", "smaller"])}`);
 console.log(`Space & quiet · ${line("booking", "space", ["roomy_quiet", "typical", "fuller"])}`);
 console.log(`Summer mornings vs afternoons · ${summerCruisePairs} cruise pairs · ${summerApproachPairs} takeoff & landing pairs with the same arrival window; of the ${summerApproachResidual} with different arrival windows, ${summerApproachResidualBumpier} rate the morning bumpier`);
-console.log(`Mid-size vs smaller jets on the same day · ${sizePairs} pairs · ${moderateCruise} moderate cruise windows a day out`);
+console.log(`Mid-size vs smaller jets on the same day · ${sizePairs} pairs · ${moderateCruise} moderate cruise windows a day out · ${nearlyAllShare} nearly-all smooth shares a day out`);
+console.log(`Meaning lines · ${[...meanings.keys()].filter((k) => k.includes("|history|")).length} booking-time and ${[...meanings.keys()].filter((k) => k.includes("|forecast|")).length} forecast category/tier lines seen, each in its own voice`);
 console.log(`Trait table · ${Object.keys(AIRPORT_TRAITS).length} airports (${generatorCoastal} coastal and ${generatorTerrain} in a mountain box in the generator)`);
 console.log(`Speed · rateFlight ${perCallUs.toFixed(1)} µs a call, warm (${CALLS} calls)`);
 

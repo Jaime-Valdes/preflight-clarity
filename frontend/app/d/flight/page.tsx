@@ -16,7 +16,7 @@ export const metadata: Metadata = {
  */
 export default function Page() {
   return (
-    <Suspense fallback={<FlightSkeleton />}>
+    <Suspense fallback={<FlightSkeleton showScore={false} />}>
       <DFlightPage />
     </Suspense>
   );
