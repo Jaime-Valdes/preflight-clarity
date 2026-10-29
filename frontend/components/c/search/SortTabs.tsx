@@ -4,24 +4,40 @@ import { useEffect, useId, useRef } from "react";
 import { SORT_KEYS, SORT_LABELS, type SortKey } from "@/lib/c/model";
 import { cn } from "@/lib/cn";
 
-interface SortTabsProps {
-  value: SortKey;
-  onChange: (sort: SortKey) => void;
+interface SortTabsProps<K extends string> {
+  value: K;
+  onChange: (sort: K) => void;
+  /** The sorts offered, in order. Default: version C's (Smoothest, Cheapest, Fastest, Departure time). */
+  keys?: readonly K[];
+  /** A label per sort. Default: version C's. */
+  labels?: Readonly<Record<string, string>>;
   /** Sorts that can't be used yet (Smoothest before the turbulence forecast is out): shown, but disabled. */
-  unavailable?: readonly SortKey[];
+  unavailable?: readonly K[];
   /** Why they can't — a quiet line under the pills (e.g. "Smoothest from Tue, Nov 24 · 2 days before departure"). */
   note?: string;
   className?: string;
 }
+
+/** Version C's sorts, for a caller that passes no `keys` (K is then SortKey). */
+const C_SORT_KEYS: readonly string[] = SORT_KEYS;
 
 /**
  * Sort order as a row of pills — native radio buttons underneath, so arrow
  * keys move between them and screen readers hear "1 of 4". Scrolls sideways
  * inside itself when the screen is narrow (never the page). A sort that
  * can't be used yet stays in its place, disabled, with the note saying when
- * (the row then wraps, so it stays in view).
+ * (the row then wraps, so it stays in view). The sorts are version C's unless
+ * a tool passes its own `keys` and `labels` (version D's "For you" sort).
  */
-export function SortTabs({ value, onChange, unavailable = [], note, className }: SortTabsProps) {
+export function SortTabs<K extends string = SortKey>({
+  value,
+  onChange,
+  keys = C_SORT_KEYS as readonly K[],
+  labels = SORT_LABELS,
+  unavailable = [],
+  note,
+  className,
+}: SortTabsProps<K>) {
   const name = useId();
   const noteId = useId();
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -51,7 +67,7 @@ export function SortTabs({ value, onChange, unavailable = [], note, className }:
           wrap ? "flex-wrap" : "overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         )}
       >
-        {SORT_KEYS.map((key) => {
+        {keys.map((key) => {
           const on = key === value;
           const off = unavailable.includes(key);
           return (
@@ -76,7 +92,7 @@ export function SortTabs({ value, onChange, unavailable = [], note, className }:
                       : "cursor-pointer bg-surface text-ink-700 ring-line-strong hover:bg-canvas hover:text-ink-900",
                 )}
               >
-                {SORT_LABELS[key]}
+                {labels[key] ?? key}
                 {off ? <span className="sr-only"> (not available yet)</span> : null}
               </span>
             </label>

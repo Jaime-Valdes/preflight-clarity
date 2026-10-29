@@ -36,6 +36,11 @@ interface DateStripProps {
   nowMs: number | null;
   /** Link for another date (keeps sort and filters). */
   hrefFor: (date: string) => string;
+  /**
+   * Show each day's best smoothness score once its forecast is out (version C). Version D passes
+   * false: every day shows its number of flights instead, and no score appears anywhere on the strip.
+   */
+  showScores?: boolean;
 }
 
 /**
@@ -47,13 +52,13 @@ interface DateStripProps {
  * Computed one tile at a time after the day's own results, so the first paint
  * isn't held up.
  */
-export function DateStrip({ day, stripDay, today, nowMs, hrefFor }: DateStripProps) {
+export function DateStrip({ day, stripDay, today, nowMs, hrefFor, showScores = true }: DateStripProps) {
   const scrollerRef = useRef<HTMLUListElement>(null);
   const sameRoute = stripDay !== null && stripDay.origin === day.origin && stripDay.destination === day.destination;
   const dates = sameRoute ? stripDates(stripDay.date, today) : null;
   const stale = !sameRoute || stripDay.date !== day.date;
   const firstDate = dates ? dates[0] : null;
-  const anyScores = availabilityAt(today, dates ? dates[0]! : day.date).turbulence;
+  const anyScores = showScores && availabilityAt(today, dates ? dates[0]! : day.date).turbulence;
 
   // Keep the chosen day in view when the strip scrolls sideways (phones).
   useEffect(() => {
@@ -81,7 +86,7 @@ export function DateStrip({ day, stripDay, today, nowMs, hrefFor }: DateStripPro
                 destination={day.destination}
                 date={date}
                 current={date === day.date}
-                scores={availabilityAt(today, date).turbulence}
+                scores={showScores && availabilityAt(today, date).turbulence}
                 daysUntil={daysToDeparture(today, date)}
                 nowMs={daysToDeparture(today, date) <= 1 ? nowMs : null}
                 href={hrefFor(date)}

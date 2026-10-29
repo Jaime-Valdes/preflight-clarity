@@ -13,6 +13,8 @@ interface FiltersProps {
   onChange: (view: ResultsView) => void;
   /** While the day has no smoothness scores yet: when they appear ("From Tue, Nov 24 · 2 days before departure"). */
   scoresNote?: string;
+  /** Leave out "Minimum smoothness" altogether (version D never filters by score). Default: shown, as version C does. */
+  hideScoreFilter?: boolean;
   className?: string;
 }
 
@@ -39,10 +41,11 @@ function marksBetween(from: number, to: number): number[] {
  * go, not on every step), airlines (each with its lowest fare today),
  * aircraft size (only when the day mixes wide- and narrow-bodies) and minimum
  * smoothness (once the day's turbulence forecast is out; before that a quiet
- * note says when). Every other change applies at once. A chosen airline the
- * day doesn't have stays listed, so it can be cleared.
+ * note says when — or not at all with `hideScoreFilter`, version D). Every
+ * other change applies at once. A chosen airline the day doesn't have stays
+ * listed, so it can be cleared.
  */
-export function Filters({ idPrefix, facets, view, onChange, scoresNote, className }: FiltersProps) {
+export function Filters({ idPrefix, facets, view, onChange, scoresNote, hideScoreFilter = false, className }: FiltersProps) {
   const { bounds } = facets;
   const airlines = [
     ...facets.airlines,
@@ -153,27 +156,29 @@ export function Filters({ idPrefix, facets, view, onChange, scoresNote, classNam
         </Group>
       ) : null}
 
-      <Group legend="Minimum smoothness">
-        {view.scores ? (
-          <>
-            <Segmented
-              name={`${idPrefix}-min`}
-              value={String(view.min)}
-              onChange={(v) => onChange({ ...view, min: Number(v) as MinScore })}
-              options={[
-                { value: "0", label: "Any", count: facets.total },
-                { value: "75", label: "75+", count: facets.atLeast[75] },
-                { value: "85", label: "85+", count: facets.atLeast[85] },
-              ]}
-            />
-            <p className="mt-2 text-xs leading-snug text-ink-500">Smoothness score out of 100 — higher is smoother.</p>
-          </>
-        ) : (
-          <p className="rounded-xl bg-canvas px-3 py-2.5 text-xs leading-snug text-ink-500 ring-1 ring-inset ring-line">
-            {scoresNote ?? "Available once the turbulence forecast for these flights is out."}
-          </p>
-        )}
-      </Group>
+      {hideScoreFilter ? null : (
+        <Group legend="Minimum smoothness">
+          {view.scores ? (
+            <>
+              <Segmented
+                name={`${idPrefix}-min`}
+                value={String(view.min)}
+                onChange={(v) => onChange({ ...view, min: Number(v) as MinScore })}
+                options={[
+                  { value: "0", label: "Any", count: facets.total },
+                  { value: "75", label: "75+", count: facets.atLeast[75] },
+                  { value: "85", label: "85+", count: facets.atLeast[85] },
+                ]}
+              />
+              <p className="mt-2 text-xs leading-snug text-ink-500">Smoothness score out of 100 — higher is smoother.</p>
+            </>
+          ) : (
+            <p className="rounded-xl bg-canvas px-3 py-2.5 text-xs leading-snug text-ink-500 ring-1 ring-inset ring-line">
+              {scoresNote ?? "Available once the turbulence forecast for these flights is out."}
+            </p>
+          )}
+        </Group>
+      )}
     </div>
   );
 }
