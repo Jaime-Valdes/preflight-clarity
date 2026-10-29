@@ -2,7 +2,7 @@
 
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { formatDuration, formatTime12 } from "@preflight/shared/dates";
 import type { FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
@@ -35,6 +35,14 @@ interface OtherFlightsProps {
   daysUntil: number;
   /** Anchor id, so the fare card can link here. */
   id: string;
+  /**
+   * Show the smoothness scores once the forecasts exist, smoothest first, and say when they start before
+   * that (the default). Version D passes false: no score and no note anywhere, the flights by departure
+   * time, and `badge` (if given) where the score would be.
+   */
+  showScores?: boolean;
+  /** Something small to show in a row where the score would be (version D: the flight's top rating pill). */
+  badge?: (option: FlightOption) => ReactNode;
   className?: string;
 }
 
@@ -54,7 +62,17 @@ function byDeparture(a: FlightOption, b: FlightOption): number {
  * departure time without scores, and a marker says when the forecasts start.
  * Flights that have already left are not offered.
  */
-export function OtherFlights({ day, options, currentKey, turbulence, daysUntil, id, className }: OtherFlightsProps) {
+export function OtherFlights({
+  day,
+  options,
+  currentKey,
+  turbulence,
+  daysUntil,
+  id,
+  showScores = true,
+  badge,
+  className,
+}: OtherFlightsProps) {
   const list = useCompareList();
   const tool = useTool();
   const hrefs = useHrefs();
@@ -62,13 +80,15 @@ export function OtherFlights({ day, options, currentKey, turbulence, daysUntil, 
   const noteId = useId();
   const [announcement, setAnnouncement] = useState("");
   const nowMs = useNowMs();
+  // Scores are shown (and the list sorted by them) only when they exist and this page shows them.
+  const scored = turbulence && showScores;
   const leftCount = useMemo(() => options.filter((o) => hasLeft(o.flight, nowMs)).length, [options, nowMs]);
   const others = useMemo(
     () =>
       options
         .filter((o) => o.key !== currentKey && !hasLeft(o.flight, nowMs))
-        .sort(turbulence ? smoothestFirst : byDeparture),
-    [options, currentKey, turbulence, nowMs],
+        .sort(scored ? smoothestFirst : byDeparture),
+    [options, currentKey, scored, nowMs],
   );
   const shown = others.slice(0, SHOWN);
 
@@ -93,10 +113,10 @@ export function OtherFlights({ day, options, currentKey, turbulence, daysUntil, 
           Other flights this day
         </h2>
         <p className="text-xs text-ink-500">
-          {turbulence ? "Smoothest first" : "By departure time"} · prices are illustrative
+          {scored ? "Smoothest first" : "By departure time"} · prices are illustrative
         </p>
       </div>
-      {!turbulence && shown.length > 0 ? (
+      {showScores && !turbulence && shown.length > 0 ? (
         <PendingNote item="turbulence" date={day.date} subject="Smoothness scores" className="mt-2 px-1" />
       ) : null}
 
@@ -118,7 +138,8 @@ export function OtherFlights({ day, options, currentKey, turbulence, daysUntil, 
                 daysUntil={daysUntil}
                 list={list}
                 noteId={noteId}
-                showScore={turbulence}
+                showScore={scored}
+                badge={badge}
                 onToggle={toggle}
               />
             </li>
@@ -150,12 +171,14 @@ interface OtherFlightRowProps {
   daysUntil: number;
   list: CompareList;
   noteId: string;
-  /** Only once flight-specific turbulence forecasts exist. */
+  /** Only once flight-specific turbulence forecasts exist (and the page shows scores). */
   showScore: boolean;
+  /** Shown where the score would be, when there is no score to show. */
+  badge?: (option: FlightOption) => ReactNode;
   onToggle: (item: CompareItem, label: string) => void;
 }
 
-function OtherFlightRow({ option, day, daysUntil, list, noteId, showScore, onToggle }: OtherFlightRowProps) {
+function OtherFlightRow({ option, day, daysUntil, list, noteId, showScore, badge, onToggle }: OtherFlightRowProps) {
   const hrefs = useHrefs();
   const f = option.flight;
   // The flight's own airports (a search from LGA can list JFK's long-haul flights): one flight, one compare item.
@@ -185,7 +208,7 @@ function OtherFlightRow({ option, day, daysUntil, list, noteId, showScore, onTog
             {f.airline.name} · <span className="whitespace-nowrap tabular-nums">{f.flightNumber}</span>
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            {showScore ? <ScoreBadge score={f.smoothness.score} label={f.smoothness.label} size="sm" /> : null}
+            {showScore ? <ScoreBadge score={f.smoothness.score} label={f.smoothness.label} size="sm" /> : (badge?.(option) ?? null)}
             <span className="text-xs text-ink-500 tabular-nums">{formatDuration(f.blockMin)} · Nonstop</span>
           </div>
         </div>

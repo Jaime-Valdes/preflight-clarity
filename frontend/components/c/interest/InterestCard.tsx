@@ -50,10 +50,26 @@ interface InterestCardProps {
   study?: StudySignup;
   /** Keep the phone layout (text above a full-width button) at every width — for a narrow column. Default: a row from `sm`. */
   stack?: boolean;
+  /**
+   * The card's (and its sheet's) copy. Defaults: the contract's strings (docs/INTEREST.md), so the study
+   * and version C are unchanged; version D's flight page asks for something more concrete.
+   */
+  title?: string;
+  body?: string;
+  button?: string;
   className?: string;
 }
 
-export function InterestCard({ placement, context, study, stack = false, className }: InterestCardProps) {
+export function InterestCard({
+  placement,
+  context,
+  study,
+  stack = false,
+  title = INTEREST_TITLE,
+  body = INTEREST_BODY,
+  button = INTEREST_BUTTON,
+  className,
+}: InterestCardProps) {
   const browserSignedUp = useSignedUp();
   /** The study: a submit from this card shows the done state at once, before the session state catches up. */
   const [submitted, setSubmitted] = useState(false);
@@ -152,9 +168,9 @@ export function InterestCard({ placement, context, study, stack = false, classNa
             </span>
             <div className="min-w-0">
               <h2 id={`c-interest-${placement}`} className="text-[17px] font-bold leading-snug text-ink-900 text-balance">
-                {INTEREST_TITLE}
+                {title}
               </h2>
-              <p className="mt-1.5 max-w-[56ch] text-sm leading-relaxed text-ink-700">{INTEREST_BODY}</p>
+              <p className="mt-1.5 max-w-[56ch] text-sm leading-relaxed text-ink-700">{body}</p>
             </div>
           </div>
           <button
@@ -166,7 +182,7 @@ export function InterestCard({ placement, context, study, stack = false, classNa
               !stack && "sm:mt-0 sm:h-11 sm:w-auto sm:text-sm",
             )}
           >
-            {INTEREST_BUTTON}
+            {button}
           </button>
         </>
       )}
@@ -175,6 +191,9 @@ export function InterestCard({ placement, context, study, stack = false, classNa
         <InterestSheet
           placement={placement}
           context={context}
+          title={title}
+          body={body}
+          button={button}
           onClose={closeSheet}
           fallbackFocus={() => rootRef.current}
           onSubmit={

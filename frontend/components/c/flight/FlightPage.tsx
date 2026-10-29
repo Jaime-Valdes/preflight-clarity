@@ -3,7 +3,7 @@
 import { CalendarDays, PlaneTakeoff, Search } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { addDays, formatTime12 } from "@preflight/shared/dates";
 import { findOption, searchFlights, type FlightOption } from "@preflight/shared/search";
@@ -20,12 +20,22 @@ import {
   type CompareItem,
   type RouteDay,
 } from "@/lib/c/model";
-import { useHrefs } from "@/components/c/shell/ToolContext";
+import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { LINK_BUTTON, flightContext, monthDay, routeText, shortDate } from "./copy";
 import { FlightDetail } from "./FlightDetail";
 import { FlightSkeleton } from "./FlightSkeleton";
 import { Notice } from "./Notice";
 import { OtherFlights } from "./OtherFlights";
+
+/** What a flight-detail component receives (version C's FlightDetail, or version D's stand-in). */
+export type FlightDetailProps = ComponentProps<typeof FlightDetail>;
+
+interface FlightPageProps {
+  /** The component that shows a flight the link leads to. Default: version C's FlightDetail; version D passes its own. */
+  Detail?: ComponentType<FlightDetailProps>;
+  /** Smoothness scores in the departed state's "Other flights" list (version D passes false). Default true. */
+  showScores?: boolean;
+}
 
 type View =
   | { kind: "loading" }
@@ -104,10 +114,11 @@ function dayContext(day: RouteDay): string {
 
 /** A calm message plus the sign-up card under it (docs/INTEREST.md: at the bottom of every page), in the message's column. */
 function WithSignup({ context, children }: { context: string; children: ReactNode }) {
+  const tool = useTool();
   return (
     <>
       {children}
-      <InterestCard placement="c_flight" context={context} className="mx-auto w-full max-w-[600px]" />
+      <InterestCard placement={tool.placements.flight} context={context} className="mx-auto w-full max-w-[600px]" />
     </>
   );
 }
@@ -118,7 +129,7 @@ function WithSignup({ context, children }: { context: string; children: ReactNod
  * for today's date, regenerates the day's results and shows the flight, or a
  * calm message when the link doesn't lead to one.
  */
-export function FlightPage() {
+export function FlightPage({ Detail = FlightDetail, showScores = true }: FlightPageProps = {}) {
   const params = useSearchParams();
   const hrefs = useHrefs();
   const today = useTodayISO();
@@ -171,7 +182,7 @@ export function FlightPage() {
       );
     case "found":
       return (
-        <FlightDetail
+        <Detail
           key={view.id}
           day={view.day}
           option={view.option}
@@ -181,7 +192,16 @@ export function FlightPage() {
         />
       );
     case "departed":
-      return <Departed day={view.day} option={view.option} options={view.options} today={view.today} next={view.next} />;
+      return (
+        <Departed
+          day={view.day}
+          option={view.option}
+          options={view.options}
+          today={view.today}
+          next={view.next}
+          showScores={showScores}
+        />
+      );
   }
 }
 
@@ -191,6 +211,8 @@ interface DepartedProps {
   options: readonly FlightOption[];
   today: string;
   next: CompareItem | null;
+  /** See FlightPageProps. */
+  showScores: boolean;
 }
 
 /**
@@ -198,8 +220,9 @@ interface DepartedProps {
  * fare and "Add to compare" (none of which exist after departure), and the
  * day's flights that are still to leave.
  */
-function Departed({ day, option, options, today, next }: DepartedProps) {
+function Departed({ day, option, options, today, next, showScores }: DepartedProps) {
   const hrefs = useHrefs();
+  const tool = useTool();
   const f = option.flight;
   const tomorrow = addDays(day.date, 1);
   const turbulence = availabilityAt(today, day.date).turbulence;
@@ -237,9 +260,10 @@ function Departed({ day, option, options, today, next }: DepartedProps) {
         currentKey={option.key}
         turbulence={turbulence}
         daysUntil={daysToDeparture(today, day.date)}
+        showScores={showScores}
         className="mx-auto w-full max-w-[600px] min-w-0"
       />
-      <InterestCard placement="c_flight" context={flightContext(f, day)} className="mx-auto mt-6 w-full max-w-[600px]" />
+      <InterestCard placement={tool.placements.flight} context={flightContext(f, day)} className="mx-auto mt-6 w-full max-w-[600px]" />
     </div>
   );
 }

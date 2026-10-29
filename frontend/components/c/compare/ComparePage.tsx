@@ -3,7 +3,7 @@
 import { Link2, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import { TURBULENCE_FORECAST_DAYS, WEATHER_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useCompareList } from "@/lib/c/compare-store";
@@ -19,6 +19,29 @@ import { assignSlots, flightNames, isFlightColumn, resolveColumns, spoken } from
 import { track } from "@/lib/analytics";
 
 const NO_IDS: ReadonlySet<string> = new Set();
+
+/** What the table and the empty state receive (version C's components, or version D's stand-ins). */
+export type CompareTableProps = ComponentProps<typeof CompareTable>;
+export type CompareEmptyProps = ComponentProps<typeof CompareEmpty>;
+
+interface ComparePageProps {
+  /** The side-by-side table. Default: version C's CompareTable; version D passes its own. */
+  Table?: ComponentType<CompareTableProps>;
+  /** The state with fewer than two flights to show. Default: version C's CompareEmpty. */
+  Empty?: ComponentType<CompareEmptyProps>;
+  /** The quiet paragraph under the table saying what its rows rest on. Default: version C's. */
+  note?: ReactNode;
+}
+
+const C_NOTE = (
+  <>
+    Each flight&rsquo;s turbulence forecast starts {TURBULENCE_FORECAST_DAYS} days before departure and its weather
+    forecast {WEATHER_FORECAST_DAYS} days before; until then the table says when. Safety scores reflect IOSA audit
+    status, regulator oversight, accident record and fleet age. Airlines don&rsquo;t publish who will fly a given
+    flight, so &ldquo;Who flies it&rdquo; lists the rules every airline pilot meets. Open seats are as of today and
+    change until check-in. All flights, prices and forecasts are illustrative — nothing can be booked here.
+  </>
+);
 
 function sameItems(a: readonly CompareItem[], b: readonly CompareItem[]): boolean {
   if (a.length !== b.length) return false;
@@ -38,7 +61,7 @@ function addHrefFor(items: readonly CompareItem[], today: string, hrefs: Hrefs):
  * routes and dates). Without `f` it shows the visitor's compare list, live.
  * Removing a flight updates the URL (router.replace) and the compare list.
  */
-export function ComparePage() {
+export function ComparePage({ Table = CompareTable, Empty = CompareEmpty, note = C_NOTE }: ComparePageProps = {}) {
   const params = useSearchParams();
   const router = useRouter();
   const today = useTodayISO();
@@ -183,9 +206,9 @@ export function ComparePage() {
 
       <div className="mt-5">
         {comparing ? (
-          <CompareTable columns={columns} slots={slots} names={names} onRemove={remove} />
+          <Table columns={columns} slots={slots} names={names} onRemove={remove} />
         ) : (
-          <CompareEmpty
+          <Empty
             columns={columns}
             badLink={url.fromUrl && url.raw.trim() !== "" && url.items.length === 0}
             addHref={addHref}
@@ -194,19 +217,11 @@ export function ComparePage() {
         )}
       </div>
 
-      {comparing ? (
-        <p className="mt-3 px-1 text-xs leading-relaxed text-ink-500">
-          Each flight&rsquo;s turbulence forecast starts {TURBULENCE_FORECAST_DAYS} days before departure and its weather
-          forecast {WEATHER_FORECAST_DAYS} days before; until then the table says when. Safety scores reflect IOSA audit
-          status, regulator oversight, accident record and fleet age. Airlines don&rsquo;t publish who will fly a given
-          flight, so &ldquo;Who flies it&rdquo; lists the rules every airline pilot meets. Open seats are as of today and
-          change until check-in. All flights, prices and forecasts are illustrative — nothing can be booked here.
-        </p>
-      ) : null}
+      {comparing ? <p className="mt-3 px-1 text-xs leading-relaxed text-ink-500">{note}</p> : null}
 
       {/* After the table or the empty state (docs/INTEREST.md): interest peaks right after comparing. */}
       <InterestCard
-        placement="c_compare"
+        placement={tool.placements.compare}
         context={comparing ? `${flights.length} flights compared` : flights.length === 1 ? "1 flight picked" : ""}
         className={cn("mt-6", !comparing && "mx-auto max-w-[640px]")}
       />

@@ -66,6 +66,10 @@ interface InterestSheetProps {
    * state with the study's wording. Absent: version C's own saving.
    */
   onSubmit?: (submission: InterestSubmission) => void;
+  /** The sheet's title, the line under it and the submit button. Defaults: the contract's strings (docs/INTEREST.md). */
+  title?: string;
+  body?: string;
+  button?: string;
 }
 
 /** A v4 UUID; the one browser without crypto.randomUUID (old Safari) gets the same shape from getRandomValues. */
@@ -78,7 +82,16 @@ function newId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export function InterestSheet({ placement, context, onClose, fallbackFocus, onSubmit }: InterestSheetProps) {
+export function InterestSheet({
+  placement,
+  context,
+  onClose,
+  fallbackFocus,
+  onSubmit,
+  title = INTEREST_TITLE,
+  body = INTEREST_BODY,
+  button = INTEREST_BUTTON,
+}: InterestSheetProps) {
   const tool = useTool();
   const study = onSubmit !== undefined;
   const formId = useId();
@@ -176,8 +189,8 @@ export function InterestSheet({ placement, context, onClose, fallbackFocus, onSu
 
   return (
     <Sheet
-      title={INTEREST_TITLE}
-      description={INTEREST_BODY}
+      title={title}
+      description={body}
       onClose={onClose}
       fallbackFocus={fallbackFocus}
       footer={
@@ -186,7 +199,7 @@ export function InterestSheet({ placement, context, onClose, fallbackFocus, onSu
           form={formId}
           className="inline-flex h-12 w-full items-center justify-center rounded-full bg-night-900 px-5 text-[15px] font-semibold text-white shadow-lift transition-colors hover:bg-night-800 active:bg-night-950"
         >
-          {INTEREST_BUTTON}
+          {button}
         </button>
       }
     >
