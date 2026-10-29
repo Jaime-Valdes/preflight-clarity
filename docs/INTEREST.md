@@ -11,6 +11,7 @@ sign-up, shown at the same point to everyone, measured as a rate.
 | Study (A and B) — briefing | A card at the **bottom of the dashboard** (placement `dashboard`, since 2026-10-24): after every section, before the sticky "I'm done exploring" footer. Identical in A and B — same copy, same form, same position — and never required to continue. | Interest peaks while people are looking at the briefing (team decision 2026-10-24, mirroring version C's bottom card). Because the card is identical in both arms and sits after all the content, the sign-up rate by variant still compares the dashboards, not the prompt. It does sit before the post-survey, so a share of participants now see a product prompt before rating their anxiety; the results page's Interest block says where each sign-up came from (`By placement`). |
 | Study (A and B) — debrief | The **debrief** screen, after the illustrative-data reminder. Someone who signed up on the briefing sees "You're on the list." here instead of the form. | A second, calmer chance after every answer is saved; identical in A and B. |
 | Version C | A card at the **bottom of every page** (home, results, flight, compare) and a "Get early access" link in the footer; tapping opens a sign-up sheet. | Interest peaks right after comparing flights; the card never covers content (the compare tray stays sticky). |
+| Version D (2026-10-28, docs/ITERATION_2.md) | The same card on every /d page (placements `d_home`, `d_results`, `d_flight`, `d_compare`, source `d`); on the flight page it carries a more concrete ask — **Get smoothness ratings for your real trip** — with the same form and storage. | Sprint 2: everyone saw the generic card, nobody signed up; the ask on the flight page says what they would get. |
 
 The study's existing "open to a 15-minute chat" email form becomes part of this: one form, the product
 sign-up as the primary action, the interview as an optional checkbox.
@@ -34,8 +35,8 @@ sign-up on the briefing card marks the session (`emailSent`) and the debrief sho
 
 ## Data
 
-- `Signup` (shared/src/types.ts): `id` (browser UUID), `createdAt`, `source` (`study` | `c`),
-  `placement` (`dashboard` | `debrief` | `c_home` | `c_results` | `c_flight` | `c_compare`), `email`, `firstName`,
+- `Signup` (shared/src/types.ts): `id` (browser UUID), `createdAt`, `source` (`study` | `c` | `d`),
+  `placement` (`dashboard` | `debrief` | `c_home` | `c_results` | `c_flight` | `c_compare` | `d_home` | `d_results` | `d_flight` | `d_compare`), `email`, `firstName`,
   `waitlist` (true), `interview`, `sessionId` + `variant` + `isTest` + `participant` (study), `context`
   (what they were looking at, e.g. `JFK → LAX · Nov 26 · 2 flights in compare`), `page`.
 - `shared/src/signup.ts`: `parseSignup` (validation), `signupsToCsv`, `signupStats` (total, unique

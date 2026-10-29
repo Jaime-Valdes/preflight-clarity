@@ -21,16 +21,22 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 | Event | When | Properties |
 | --- | --- | --- |
 | `study_step` | each study screen reached (incl. on reload) | `step` (welcome, pre, preFlying, setup, preparing, dashboard, post, postParts, postHabits, debrief; `preDetails` until 2026-10-24, when its screen was folded into `setup`), `step_index` |
-| `c_search` | a version C search is submitted | `origin`, `destination`, `date` |
-| `c_results_view` | sort or filters change on results | `sort`, `dep_from`, `dep_to` (departure window, HHMM), `max_price`, `airlines`, `wide`, `min_score` |
+| `c_search` | a version C search is submitted, or a popular route is tapped on the home | `origin`, `destination`, `date`, `from` (form, popular; absent before 2026-10-28) |
+| `c_results_view` | sort or filters change on results | `sort`, `dep_from`, `dep_to` (departure window as local minutes after midnight, e.g. 390 = 6:30 AM; null when not set), `max_price`, `airlines` (comma list), `wide`, `min_score` |
 | `c_score_sheet` | the "How the smoothness score works" sheet is opened from a result card | `from`, `key`, `score` |
 | `c_flight_view` | a flight page is shown | `key`, `origin`, `destination`, `days_until`, `has_scores`, `smoothness_score` (null until the forecast is out), `price` (the illustrative fare at that lead time), `is_cheapest` / `is_smoothest` (among that day's results; `is_smoothest` null without scores), `position` (1-based place in the results list it was opened from via `?pos=`; null from other-flights, compare or a shared link) |
 | `c_compare_toggle` | a flight is added to / removed from compare | `from` (results, flight, other_flights), `added`, `key`, `has_scores` |
 | `c_compare_view` | the compare page is shown | `flights`, `from_link` |
 | `dashboard_section_open` | a participant expands a dashboard section (not a section that only comes back into view on a flight switch or a reload) | `section` (turbulence, aircraft, seat, airline, pilot, weather, sounds, compare, alerts), `variant` |
 | `score_factors_open` | the "What goes into this score" panel under the smoothness score is expanded | `variant` |
-| `interest_cta_view` | the "notify me when it's live" card scrolls into view (once per page view; study placements count a view when 40% of the card is on screen, version C from its first visible pixel) | `source` (study, c), `placement` (dashboard, debrief, c_home, c_results, c_flight, c_compare) |
-| `interest_signup` | a sign-up is submitted successfully | `source`, `placement`, `interview` (ticked the interview box) |
+| `interest_cta_view` | the "notify me when it's live" card scrolls into view (once per page view; study placements count a view when 40% of the card is on screen, versions C and D from the first visible pixel) | `source` (study, c, d), `placement` (dashboard, debrief, c_home, c_results, c_flight, c_compare, d_home, d_results, d_flight, d_compare) |
+| `interest_signup` | a sign-up is submitted successfully | `source`, `placement`, `interview` (ticked the interview box), `is_test` |
+| `d_setup` | the "What matters to you" setup on /d is answered | `completed` (false = skipped), `order` ("cruise,takeoff_landing,aircraft,space" — the four categories, most important first), `changed` (an earlier answer was replaced) |
+| `d_search`, `d_results_view`, `d_compare_toggle`, `d_compare_view` | version D's counterparts of the `c_*` events above (same properties; `d_results_view` has no `min_score`, D has no score filter) | |
+| `d_sort` | a sort tab is picked on /d/search | `sort` (foryou, cheapest, fastest, departure), `from` |
+| `d_rating_open` | a rating's detail sheet is opened (the numbers and "how this is worked out") | `category` (cruise, takeoff_landing, aircraft, space), `tier`, `basis` (history, forecast, aircraft, cabin), `from` (results, flight, compare) |
+| `d_flight_view` | a /d flight page is shown | `key`, `origin`, `destination`, `days_until`, `has_scores`, `price`, `is_cheapest`, `position`, `price_rank`, `dollars_over_cheapest`, `cruise_tier`, `takeoff_landing_tier`, `aircraft_tier`, `space_tier` |
+| `d_flight_chosen` | "I'd pick this flight" on a /d flight or compare page (recorded only; nothing is booked) | `key`, `origin`, `destination`, `date`, `days_until`, `cruise_tier`, `takeoff_landing_tier`, `aircraft_tier`, `space_tier`, `price`, `price_rank` (1 = cheapest that day), `dollars_over_cheapest`, `position` (place in the results list it was opened from, null elsewhere), `from` (flight, compare), `priorities` (the visitor's order), `chosen` (false when the pick is withdrawn), `replaced_key` (the pick this one replaced on the same route and day, else null — count one pick per route and day by taking the last event per browser). The question the team is asking: do people pick a smoother flight over a cheaper one? Compare `price_rank` / `dollars_over_cheapest` against the tiers, broken down by `priorities`. |
 | `study_share` | "Share with a friend" on the debrief is used | `method` (native = the phone's share sheet, copy), `outcome` (shared, cancelled, copied, shown = the link was displayed because copying wasn't allowed). The shared link is the plain study link tagged `utm_source=share&utm_medium=friend`, so arrivals from a share carry those on their `$pageview`; the sharer's `?v=`, `?p=` and `?test=` never travel with it. |
 
 `placement = dashboard` is the sign-up card at the end of the study's briefing (after every section, before
@@ -40,9 +46,14 @@ debrief screen; a participant who already signed up on the briefing sees "You're
 Context on every study event once a session exists: `variant` (A/B), `is_test` (`?test=1`),
 `participant` (`?p=` label or null). Filter `is_test = false` for real participants.
 Every event sent from a /c page (custom events, pageviews, autocapture) carries `variant` "C" and
-`is_test` (the tab was opened with `?test=1`). These are stamped by URL in `before_send`, not
-registered as super properties, so the study's and version C's context never bleed into each other
-when one browser visits both.
+`is_test` (the tab was opened with `?test=1`); every event from a /d page carries `variant` "D" the
+same way (`frontend/lib/tool.ts`). These are stamped by URL in `before_send`, not registered as super
+properties, so the study's and the tools' context never bleed into each other when one browser visits
+them all.
+
+Version D (docs/ITERATION_2.md) funnel: `$pageview` /d → `d_setup` → `d_search` → `d_flight_view` →
+`d_flight_chosen`, broken down by `priorities`; `d_rating_open` by `category` shows which ratings
+people look into; `interest_signup` with placement `d_flight` is the concrete ask on the flight page.
 
 ## Funnels to build in PostHog
 

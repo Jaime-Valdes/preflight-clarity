@@ -74,6 +74,8 @@ screen. The record is saved to the backend after every step, every ~20 s on the 
 | `/?v=A` · `/?v=B` | Force a variant (recorded as `variant_source = forced`). |
 | `/?test=1` | Team test session: flagged `is_test` and hidden from the results by default. Use this for your own run-throughs. |
 | `/c?test=1` | Version C in test mode for that browser tab: sign-ups you make are flagged as tests and hidden from the results by default. |
+| `/d` | Version D, the smooth-flight finder ([docs/ITERATION_2.md](docs/ITERATION_2.md)): priorities, plain-language ratings, "I'd pick this flight". Share this link for the Sprint 3 test. |
+| `/d?test=1` | Version D in test mode for that tab (events and sign-ups flagged as tests). |
 | `/preview?origin=JFK&destination=LAX&date=YYYY-MM-DD&v=A` | The dashboard alone, for demos. No surveys, saves nothing. |
 | `/results?key=<ADMIN_KEY>` | Team results: table, CSV export, pre-vs-post numbers. |
 
