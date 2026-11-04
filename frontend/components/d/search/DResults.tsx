@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CalendarDays, Compass, Info, MapPin, SlidersHorizontal, X } from "lucide-react";
+import { ArrowRight, Info, MapPin, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
@@ -16,11 +16,12 @@ import { checkQuery, issueMessage, type QueryCheck, type SearchDraft } from "@/c
 import { airportSwapNote, nearbyRoutes, routeHasNoNonstops, sameArea } from "@/components/c/search/routes";
 import { SearchForm } from "@/components/c/search/SearchForm";
 import { SearchSummary } from "@/components/c/search/SearchSummary";
-import { ResultsSkeleton } from "@/components/c/search/Skeletons";
 import { SortTabs } from "@/components/c/search/SortTabs";
 import { airlineName, buildFacets, campaignParams, type Facets, type ResultsView } from "@/components/c/search/view";
 import { keepClearOfTray } from "@/components/c/shell/CompareTray";
 import { useHrefs } from "@/components/c/shell/ToolContext";
+import { CloudMascot } from "@/components/d/brand/CloudMascot";
+import { DLoading } from "@/components/d/brand/Loading";
 import { track } from "@/lib/analytics";
 import { useCompareList } from "@/lib/c/compare-store";
 import { formatFare, formatMinutes12 } from "@/lib/c/format";
@@ -60,7 +61,7 @@ type Params = ReturnType<typeof useSearchParams>;
 export function DResults() {
   const params = useSearchParams();
   const today = useTodayISO();
-  if (!today) return <ResultsSkeleton />;
+  if (!today) return <DLoading />;
   const check = checkQuery(params, today);
   if (!check.day) return <InvalidSearch key={params.toString()} check={check} today={today} params={params} />;
   return <Results day={check.day} params={params} today={today} />;
@@ -231,17 +232,17 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
       <div className="lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)] lg:items-start lg:gap-6">
         <aside
           aria-labelledby={FILTERS_TITLE_ID}
-          className="hidden rounded-3xl bg-surface/60 p-5 ring-1 ring-line/60 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto lg:overscroll-contain"
+          className="hidden rounded-[24px] bg-surface p-5 shadow-soft lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto lg:overscroll-contain"
         >
           <div className="mb-4 flex min-h-11 items-center justify-between gap-3">
-            <h2 id={FILTERS_TITLE_ID} tabIndex={-1} className="rounded-md text-base font-bold text-ink-900">
+            <h2 id={FILTERS_TITLE_ID} tabIndex={-1} className="rounded-md text-[17px] font-extrabold tracking-tight text-ink">
               Filters
             </h2>
             {filterCount > 0 ? (
               <button
                 type="button"
                 onClick={() => clearFilters(FILTERS_TITLE_ID)}
-                className="-mr-2 h-11 rounded-full px-3 text-sm font-semibold text-breeze-700 transition-colors hover:bg-breeze-50"
+                className="-mr-2 h-11 rounded-full px-3 text-sm font-bold text-ink underline decoration-2 underline-offset-4 transition-colors hover:bg-ink/5"
               >
                 Clear all
               </button>
@@ -274,15 +275,15 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
               type="button"
               onClick={() => setFiltersOpen(true)}
               aria-haspopup="dialog"
-              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full bg-surface px-4 text-sm font-semibold text-ink-900 ring-1 ring-inset ring-line-strong transition-colors hover:bg-canvas lg:hidden"
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-bold text-ink ring-2 ring-inset ring-ink transition-[background-color,transform] duration-[120ms] hover:bg-ink/5 active:scale-[0.98] lg:hidden"
             >
-              <SlidersHorizontal aria-hidden className="size-4 text-ink-500" />
+              <SlidersHorizontal aria-hidden className="size-4" strokeWidth={2.25} />
               Filters
               {filterCount > 0 ? (
                 <>
                   <span
                     aria-hidden
-                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-night-900 px-1.5 text-[11px] font-bold text-white tabular-nums"
+                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1.5 text-[11px] font-bold text-white tabular-nums"
                   >
                     {filterCount}
                   </span>
@@ -313,32 +314,28 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
           <div className="mt-3">
             {!search.ok ? (
               <Notice
-                icon={<Compass />}
                 title="These flights couldn’t be put together"
                 text="Something went wrong building this day’s illustrative flights. Try a nearby date or another route."
               />
             ) : total === 0 && leftCount > 0 ? (
               <Notice
-                icon={<CalendarDays />}
                 title={`The last nonstop flight ${dayWord} has left`}
                 text="Pick a later date above, or change the search."
               />
             ) : total === 0 ? (
               <Notice
-                icon={<CalendarDays />}
                 title="No nonstop flights this day"
                 text="Pick a nearby date above, or change the search."
               />
             ) : shown.length === 0 ? (
               <Notice
-                icon={<SlidersHorizontal />}
                 title="No flights match these filters"
                 text={`There ${total === 1 ? "is 1 nonstop flight" : `are ${total} nonstop flights`} this day. Clear a filter or two to see more.`}
                 action={
                   <button
                     type="button"
                     onClick={() => clearFilters(COUNT_ID)}
-                    className="mt-4 inline-flex h-11 items-center rounded-full bg-night-900 px-5 text-sm font-semibold text-white shadow-lift transition-colors hover:bg-night-800"
+                    className="mt-5 inline-flex h-12 items-center rounded-full bg-ink px-6 text-[15px] font-bold text-white transition-transform duration-[120ms] active:scale-[0.98]"
                   >
                     Clear filters
                   </button>
@@ -358,7 +355,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                     const id = itemId(item);
                     const inCompare = compare.has(id);
                     return (
-                      <li key={option.key}>
+                      <li key={option.key} className="animate-d-rise" style={{ animationDelay: `${Math.min(index, 8) * 60}ms` }}>
                         <DResultCard
                           option={option}
                           item={item}
@@ -465,39 +462,38 @@ function PrioritiesStrip({ priorities }: { priorities: Priorities }) {
   const [first = "", second = "", third = "", fourth = ""] = order.map((category) => PRIORITY_WORDS[category]);
   const heading = chosen ? "Rated for you" : "Rated in the usual order";
   return (
-    <p className="rounded-2xl bg-surface/70 px-4 py-2 text-[13px] leading-snug text-ink-700 ring-1 ring-inset ring-line/60">
-      {/* Screen readers get the whole order, numbered; the sentence is the same thing at a glance. */}
-      <span className="sr-only">
-        {heading}: {order.map((category, i) => `${i + 1}. ${CATEGORY_LABELS[category]}`).join(", ")}.{" "}
-      </span>
-      <span aria-hidden>
-        <span className="font-semibold text-ink-900">{heading}:</span> {sentenceCase(first)} first, then {second}
-        <span className="hidden sm:inline">
-          , {third} and {fourth}
+    <div className="flex items-center gap-3 rounded-[20px] bg-surface py-2.5 pl-3.5 pr-4 shadow-soft">
+      <CloudMascot className="w-10 shrink-0 sm:w-11" />
+      <p className="min-w-0 text-[13px] leading-snug text-ink-soft sm:text-[14px]">
+        {/* Screen readers get the whole order, numbered; the sentence is the same thing at a glance. */}
+        <span className="sr-only">
+          {heading}: {order.map((category, i) => `${i + 1}. ${CATEGORY_LABELS[category]}`).join(", ")}.{" "}
         </span>
-        {" · "}
-      </span>
-      <Link
-        href={hrefs.home}
-        className="relative inline-block whitespace-nowrap font-semibold text-breeze-700 before:absolute before:inset-x-0 before:-inset-y-3.5 before:content-[''] hover:underline"
-      >
-        {chosen ? "Change what matters" : "Choose what matters"}
-      </Link>
-    </p>
+        <span aria-hidden>
+          <span className="font-bold text-ink">{heading}:</span> {sentenceCase(first)} first, then {second}
+          <span className="hidden sm:inline">
+            , {third} and {fourth}
+          </span>
+          {" · "}
+        </span>
+        <Link
+          href={hrefs.home}
+          className="relative inline-block whitespace-nowrap font-bold text-ink underline decoration-2 underline-offset-4 before:absolute before:inset-x-0 before:-inset-y-3.5 before:content-['']"
+        >
+          {chosen ? "Change what matters" : "Choose what matters"}
+        </Link>
+      </p>
+    </div>
   );
 }
 
-function Notice({ icon, title, text, action }: { icon: ReactNode; title: string; text: string; action?: ReactNode }) {
+/** An empty state: the mascot, one bold line, one quiet line, and (sometimes) one way on. */
+function Notice({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
   return (
-    <div className="rounded-3xl bg-surface px-5 py-8 text-center shadow-soft ring-1 ring-line/80">
-      <span
-        aria-hidden
-        className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-breeze-50 text-breeze-700 ring-1 ring-inset ring-breeze-100 [&_svg]:size-5"
-      >
-        {icon}
-      </span>
-      <p className="mt-4 text-base font-bold text-ink-900">{title}</p>
-      <p className="mx-auto mt-1.5 max-w-[42ch] text-sm leading-relaxed text-ink-500">{text}</p>
+    <div className="animate-d-rise rounded-[24px] bg-surface px-5 py-8 text-center shadow-soft">
+      <CloudMascot className="mx-auto w-24" />
+      <p className="mt-4 text-balance text-[20px] font-extrabold leading-snug tracking-tight text-ink">{title}</p>
+      <p className="mx-auto mt-1.5 max-w-[42ch] text-[15px] leading-relaxed text-ink-soft">{text}</p>
       {action}
     </div>
   );
@@ -519,18 +515,13 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
   return (
     <section
       aria-labelledby="d-no-nonstops"
-      className="rounded-3xl bg-surface px-5 py-8 text-center shadow-soft ring-1 ring-line/80 sm:px-8"
+      className="animate-d-rise rounded-[24px] bg-surface px-5 py-8 text-center shadow-soft sm:px-8"
     >
-      <span
-        aria-hidden
-        className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-breeze-50 text-breeze-700 ring-1 ring-inset ring-breeze-100"
-      >
-        <Compass className="size-5" />
-      </span>
-      <h2 id="d-no-nonstops" className="mt-4 text-base font-bold text-ink-900">
+      <CloudMascot className="mx-auto w-24" />
+      <h2 id="d-no-nonstops" className="mt-4 text-balance text-[20px] font-extrabold leading-snug tracking-tight text-ink">
         {area ? "No flights between these airports" : "No nonstop flights on this route"}
       </h2>
-      <p className="mx-auto mt-1.5 max-w-[48ch] text-sm leading-relaxed text-ink-500">
+      <p className="mx-auto mt-1.5 max-w-[48ch] text-[15px] leading-relaxed text-ink-soft">
         {area ? (
           <>
             {day.origin} and {day.destination} are{" "}
@@ -551,27 +542,27 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
             <li key={`${route.origin}-${route.destination}`} className="min-w-0">
               <Link
                 href={hrefs.search(route, carry)}
-                className="flex min-h-14 items-center justify-between gap-3 rounded-2xl bg-canvas px-4 py-2 ring-1 ring-inset ring-line transition-colors hover:bg-line/40"
+                className="flex min-h-14 items-center justify-between gap-3 rounded-2xl bg-canvas/70 px-4 py-2 transition-colors hover:bg-canvas"
               >
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-ink-900">
+                  <span className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-ink">
                     {route.origin}
-                    <ArrowRight aria-hidden className="size-3.5 shrink-0 text-ink-400" />
+                    <ArrowRight aria-hidden className="size-3.5 shrink-0 text-ink-mute" />
                     <span className="sr-only"> to </span>
                     {route.destination}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-ink-500">
+                  <span className="mt-0.5 block truncate text-xs text-ink-mute">
                     {city(route.origin)} – {city(route.destination)}
                   </span>
                 </span>
-                <ArrowRight aria-hidden className="size-4 shrink-0 text-breeze-700" />
+                <ArrowRight aria-hidden className="size-4 shrink-0 text-ink" />
               </Link>
             </li>
           ))}
         </ul>
       ) : null}
-      <p className="mx-auto mt-4 flex max-w-[48ch] items-start justify-center gap-1.5 text-xs leading-relaxed text-ink-500">
-        <Info aria-hidden className="mt-0.5 size-3.5 shrink-0 text-ink-400" />
+      <p className="mx-auto mt-4 flex max-w-[48ch] items-start justify-center gap-1.5 text-xs leading-relaxed text-ink-mute">
+        <Info aria-hidden className="mt-0.5 size-3.5 shrink-0" />
         <span>{suggestions.length ? "Or use “Change” above to pick another route." : "Use “Change” above to pick another route."}</span>
       </p>
     </section>
@@ -654,23 +645,18 @@ function InvalidSearch({ check, today, params }: { check: QueryCheck; today: str
     <div className="flex flex-col gap-4 sm:gap-5">
       <section
         aria-labelledby="d-search-title"
-        className="rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80 sm:p-6"
+        className="animate-d-rise rounded-[24px] bg-surface p-5 shadow-soft sm:p-7"
       >
         <div className="flex items-start gap-4">
-          <span
-            aria-hidden
-            className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-breeze-50 text-breeze-700 ring-1 ring-inset ring-breeze-100"
-          >
-            <Compass className="size-5" />
-          </span>
+          <CloudMascot className="w-16 shrink-0 sm:w-20" />
           <div className="min-w-0">
-            <h1 id="d-search-title" className="text-xl font-bold leading-tight text-ink-900">
+            <h1 id="d-search-title" className="text-balance text-[22px] font-extrabold leading-snug tracking-tight text-ink sm:text-[26px]">
               {message.title}
             </h1>
-            <p className="mt-1.5 max-w-[60ch] text-[15px] leading-relaxed text-ink-700">{message.text}</p>
+            <p className="mt-1.5 max-w-[60ch] text-[15px] leading-relaxed text-ink-soft">{message.text}</p>
           </div>
         </div>
-        <div className="mt-5 border-t border-line/70 pt-5">
+        <div className="mt-5 border-t-2 border-dashed border-slate/50 pt-5">
           <SearchForm
             idPrefix="fix"
             today={today}

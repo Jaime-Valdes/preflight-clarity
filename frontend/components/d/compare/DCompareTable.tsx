@@ -23,7 +23,7 @@ import {
   type FlightColumn,
 } from "@/components/c/compare/facts";
 import { BenchmarkLine } from "@/components/c/flight/BenchmarkLine";
-import { LINK_BASE, LINK_TONE, dayOffsetMark, dayOffsetWords, daysAwayLabel, flightContext, routeText, shortDate } from "@/components/c/flight/copy";
+import { LINK_BASE, dayOffsetMark, dayOffsetWords, daysAwayLabel, flightContext, routeText, shortDate } from "@/components/c/flight/copy";
 import { useHrefs } from "@/components/c/shell/ToolContext";
 import { ChooseButton } from "@/components/d/flight/ChooseButton";
 import { RatingButton } from "@/components/d/ratings/RatingSheet";
@@ -33,7 +33,6 @@ import { usePriorities } from "@/lib/d/priorities";
 import { priceDeltaText } from "@/lib/d/view";
 import { useNowMs } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
-import { TONE_CLASSES, type Tone } from "@/lib/theme";
 
 /*
  * Version D's compare table (docs/ITERATION_2.md): 2–3 flights side by side —
@@ -43,7 +42,7 @@ import { TONE_CLASSES, type Tone } from "@/lib/theme";
  * pick this flight" per column. No score ring and no timeline chart. On
  * phones two columns fit at 390 px; a third scrolls sideways inside the
  * table, never the page. Same props as version C's table, so ComparePage can
- * show either.
+ * show either. Look: docs/ui-d-theme.md.
  */
 
 /* Row labels stay put while the flight columns scroll sideways on phones (the cell must be opaque). */
@@ -159,24 +158,20 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
     </tr>
   );
 
-  /** Group title in the label column (a tinted icon from sm up), and a small key per flight so a column stays recognisable. */
-  const groupHead = (title: string, icon: ReactNode, tone: Tone, sub?: string) => (
+    /** Group title in the label column (an outlined icon from sm up), and a small key per flight so a column stays recognisable. */
+  const groupHead = (title: string, icon: ReactNode, sub?: string) => (
     <tr>
       <th scope="rowgroup" className={cn(STICKY, "border-t border-line bg-canvas pb-2.5 pt-4 align-top")}>
-        <span className="flex items-center gap-2 text-xs font-bold leading-tight text-ink-900 sm:text-[13px]">
+        <span className="flex items-center gap-2 text-xs font-extrabold leading-tight text-ink sm:text-[13px]">
           <span
             aria-hidden
-            className={cn(
-              "hidden size-6 shrink-0 items-center justify-center rounded-lg sm:flex [&_svg]:size-3.5",
-              TONE_CLASSES[tone].bg,
-              TONE_CLASSES[tone].text,
-            )}
+            className="hidden size-7 shrink-0 items-center justify-center rounded-full bg-white text-ink ring-2 ring-ink sm:flex [&_svg]:size-3.5"
           >
             {icon}
           </span>
           {title}
         </span>
-        {sub ? <span className="mt-0.5 block text-[11px] font-normal leading-snug text-ink-500">{sub}</span> : null}
+        {sub ? <span className="mt-0.5 block text-[11px] font-normal leading-snug text-ink-mute">{sub}</span> : null}
       </th>
       {columns.map((c) => (
         <td key={c.id} className={cn(CELL, "border-t border-line bg-canvas pb-2.5 pt-4")}>
@@ -206,7 +201,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
           ref={scrollerRef}
           onFocus={revealFocused}
           onScroll={(event) => setEdge(edgeUpdate(event.currentTarget))}
-          className="relative overflow-x-auto overscroll-x-contain rounded-3xl bg-surface shadow-soft ring-1 ring-line/80 [--cmp-col:108px] [--cmp-label:92px] [scroll-padding-inline-start:var(--cmp-label)] [scrollbar-width:thin] min-[400px]:[--cmp-col:124px] min-[400px]:[--cmp-label:100px] sm:[--cmp-col:11rem] sm:[--cmp-label:9.5rem] lg:[--cmp-col:13rem] lg:[--cmp-label:12rem]"
+          className="relative overflow-x-auto overscroll-x-contain rounded-[24px] bg-surface shadow-soft [--cmp-col:108px] [--cmp-label:92px] [scroll-padding-inline-start:var(--cmp-label)] [scrollbar-width:thin] min-[400px]:[--cmp-col:124px] min-[400px]:[--cmp-label:100px] sm:[--cmp-col:11rem] sm:[--cmp-label:9.5rem] lg:[--cmp-col:13rem] lg:[--cmp-label:12rem]"
         >
           <table
             className="w-full table-fixed border-separate border-spacing-0 text-left"
@@ -280,7 +275,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
                   const delta = priceDeltaText(fare, cheapestFare);
                   return (
                     <td key={c.id} className={cn(CELL, "pb-3")}>
-                      <span className="block text-2xl font-bold leading-tight tracking-tight text-ink-900 tabular-nums">{formatFare(fare)}</span>
+                      <span className="block text-2xl font-extrabold leading-tight tracking-[-0.01em] text-ink tabular-nums">{formatFare(fare)}</span>
                       <span className="mt-0.5 block text-[11px] leading-snug text-ink-500">one way · illustrative</span>
                       {delta === "Cheapest" ? (
                         <Marker>Cheapest</Marker>
@@ -299,7 +294,10 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
                   <td key={c.id} className={cn(CELL, "pb-4")}>
                     <div className="flex flex-col gap-1.5 lg:flex-row lg:flex-wrap">
                       {isFlightColumn(c) ? (
-                        <Link href={hrefs.flight(c.item)} className={cn(LINK_BASE, LINK_TONE.secondary, "h-11 px-3 lg:flex-1")}>
+                        <Link
+                          href={hrefs.flight(c.item)}
+                          className={cn(LINK_BASE, "h-11 px-3 font-bold text-ink ring-2 ring-inset ring-ink hover:bg-ink/5 lg:flex-1")}
+                        >
                           Details<span className="sr-only"> for {nameOf(c)}</span>
                         </Link>
                       ) : (
@@ -323,7 +321,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
 
             {/* The four ratings in the visitor's order; a pill opens the rating's detail (numbers, how it is worked out). */}
             <tbody>
-              {groupHead(priorities.chosen ? "Rated for you" : "Ratings", <Sparkles />, "calm", priorities.chosen ? "In your order" : "In the usual order")}
+              {groupHead(priorities.chosen ? "Rated for you" : "Ratings", <Sparkles />, priorities.chosen ? "In your order" : "In the usual order")}
               {order.map((category) => {
                 const lead = rowLeaders(category);
                 return (
@@ -362,7 +360,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
             </tbody>
 
             <tbody>
-              {groupHead("Schedule", <CalendarClock />, "breeze")}
+              {groupHead("Schedule", <CalendarClock />)}
               {row("Departs", (c) => (
                 <Value main={formatTime12(c.flight.departTime)} sub={`${c.flight.origin.code} · ${shortDate(c.item.date)}`} />
               ))}
@@ -381,7 +379,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
             </tbody>
 
             <tbody>
-              {groupHead("Aircraft", <Plane />, "breeze")}
+              {groupHead("Aircraft", <Plane />)}
               {row("Type", (c) => (
                 <Value main={c.flight.aircraft.fullName} sub={c.avail.airframe ? "Assigned aircraft · can change" : "Scheduled aircraft"} />
               ))}
@@ -394,7 +392,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
             </tbody>
 
             <tbody>
-              {groupHead("Airline", <ShieldCheck />, "calm")}
+              {groupHead("Airline", <ShieldCheck />)}
               {row("On time", (c) => (
                 <Value
                   main={`${c.flight.airlineStats.onTimePct}%`}
@@ -405,7 +403,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
             </tbody>
 
             <tbody>
-              {groupHead("Who flies it", <UserRound />, "dusk")}
+              {groupHead("Who flies it", <UserRound />)}
               {row("Pilots", (c) => {
                 const line = crewLine(c.flight.crew, c.flight.aircraft.model);
                 return <Value main={line.main} sub={line.sub} />;
@@ -413,7 +411,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
             </tbody>
 
             <tbody>
-              {groupHead("Best seat", <Armchair />, "calm")}
+              {groupHead("Best seat", <Armchair />)}
               {row("Smoothest rows", (c) => {
                 const zone = smoothestZone(c.flight);
                 return <Value main={zone.main} sub={zone.sub} />;
@@ -426,7 +424,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
 
             {/* The choice signal, per column. Recorded only — nothing is booked. */}
             <tbody>
-              {groupHead("Your pick", <Heart />, "dusk", "Nothing is booked")}
+              {groupHead("Your pick", <Heart />, "Nothing is booked")}
               <tr>
                 <th scope="row" className={cn(LABEL, ROW_LINE, "py-3 text-xs font-semibold leading-snug text-ink-500")}>
                   I&rsquo;d pick
@@ -458,7 +456,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
         <div
           aria-hidden
           className={cn(
-            "pointer-events-none absolute inset-y-0 right-0 w-14 rounded-r-3xl bg-linear-to-l from-surface via-surface/75 to-surface/0 transition-opacity duration-200",
+            "pointer-events-none absolute inset-y-0 right-0 w-14 rounded-r-[24px] bg-linear-to-l from-surface via-surface/75 to-surface/0 transition-opacity duration-200",
             edge.more ? "opacity-100" : "opacity-0",
           )}
         />
@@ -513,7 +511,7 @@ function Marker({ children, className }: { children: ReactNode; className?: stri
   return (
     <span
       className={cn(
-        "mt-1.5 flex w-fit items-center rounded-full bg-calm-50 px-2 py-0.5 text-[11px] font-semibold leading-4 text-calm-700 ring-1 ring-inset ring-calm-100",
+        "mt-1.5 flex w-fit items-center rounded-full bg-leaf-100 px-2 py-0.5 text-[11px] font-bold leading-4 text-leaf-ink",
         className,
       )}
     >
@@ -555,7 +553,7 @@ function ArriveTime({ column }: { column: FlightColumn }) {
       {formatTime12(f.arriveTime)}
       {mark ? (
         <>
-          <sup aria-hidden className="ml-0.5 text-[10px] font-semibold text-calm-700">
+          <sup aria-hidden className="ml-0.5 text-[10px] font-bold text-ink-mute">
             {mark}
           </sup>
           <span className="sr-only"> ({dayOffsetWords(f.arriveDayOffset)})</span>

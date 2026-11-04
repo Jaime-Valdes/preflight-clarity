@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { CompareSkeleton } from "@/components/c/compare/CompareSkeleton";
+import { DLoading } from "@/components/d/brand/Loading";
 import { DComparePage } from "@/components/d/compare/DComparePage";
 
 export const metadata: Metadata = {
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
  */
 export default function Page() {
   return (
-    <Suspense fallback={<CompareSkeleton showScore={false} />}>
+    <Suspense fallback={<DLoading />}>
       <DComparePage />
     </Suspense>
   );

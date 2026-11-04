@@ -1,5 +1,4 @@
 import type { Rating, RatingCategory } from "@preflight/shared/ratings";
-import type { Tone } from "@/lib/theme";
 
 /*
  * How a rating looks in version D (docs/ui-d-theme.md): the top tiers in leaf
@@ -20,15 +19,6 @@ export const D_TIER: Record<DTier, { bg: string; text: string; ring: string; dot
   sun: { bg: "bg-sun-100", text: "text-sun-ink", ring: "ring-sun", dot: "bg-sun" },
   amber: { bg: "bg-amber-100", text: "text-amber-ink", ring: "ring-amber", dot: "bg-amber" },
 };
-
-/**
- * The same three steps on the shared semantic tokens (TONE_CLASSES), for the
- * components built on them: under the D theme calm is leaf, dusk is cream/sun
- * and sand is amber (app/globals.css).
- */
-export function ratingTone(rating: Pick<Rating, "value">): Tone {
-  return rating.value >= 3 ? "calm" : rating.value >= 2 ? "dusk" : "sand";
-}
 
 /** Short category nouns for pills and rows. */
 export const CATEGORY_SHORT: Record<RatingCategory, string> = {

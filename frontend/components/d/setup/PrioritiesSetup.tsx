@@ -3,6 +3,8 @@
 import { ArrowRight, Check, Pencil, RotateCcw } from "lucide-react";
 import { useId, useState } from "react";
 import { CATEGORY_LABELS, CATEGORY_PROMPTS, RATING_CATEGORIES, type RatingCategory } from "@preflight/shared/ratings";
+import { CategoryIcon } from "@/components/d/brand/CategoryIcon";
+import { ProgressDashes } from "@/components/d/brand/ProgressDashes";
 import { track } from "@/lib/analytics";
 import { useHydrated } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
@@ -14,11 +16,14 @@ interface PrioritiesSetupProps {
   className?: string;
 }
 
+/** The second of the home's three steps (the intro, this, where and when). */
+const STEP = { total: 3, active: 1, label: "Step 2 of 3: what matters to you" } as const;
+
 /**
  * "What matters to you on a flight?" — the four rating categories, tapped in
  * order of importance (docs/ITERATION_2.md, feature 1). Framed as preferences,
  * never as fears; skippable; remembered per browser. Once answered, a compact
- * summary with "Change" takes its place.
+ * summary with "Change" takes its place. Look: docs/ui-d-theme.md.
  */
 export function PrioritiesSetup({ onDone, className }: PrioritiesSetupProps) {
   const hydrated = useHydrated();
@@ -34,16 +39,17 @@ export function PrioritiesSetup({ onDone, className }: PrioritiesSetupProps) {
 
   if (!showForm) {
     return (
-      <section aria-labelledby="d-priorities-title" className={cn("rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80", className)}>
+      <section aria-labelledby="d-priorities-title" className={cn("rounded-[24px] bg-surface p-5 shadow-soft", className)}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 id="d-priorities-title" className="text-[15px] font-bold text-ink-900">
+            <ProgressDashes total={STEP.total} active={STEP.active} label={STEP.label} />
+            <h2 id="d-priorities-title" className="mt-3 text-[17px] font-extrabold leading-snug tracking-tight text-ink">
               {priorities.chosen ? "What matters to you" : "Rated in the usual order"}
             </h2>
-            <ol className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5 text-[14px] text-ink-700">
+            <ol className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5 text-[15px] leading-snug text-ink-soft">
               {priorities.order.map((category, i) => (
                 <li key={category} className="inline-flex items-center gap-1.5">
-                  <span aria-hidden className="inline-flex size-5 items-center justify-center rounded-full bg-night-900 text-[11px] font-bold text-white tabular-nums">
+                  <span aria-hidden className="inline-flex size-6 items-center justify-center rounded-full bg-ink text-[11px] font-extrabold text-white tabular-nums">
                     {i + 1}
                   </span>
                   <span className="sr-only">{i + 1}.</span>
@@ -55,7 +61,7 @@ export function PrioritiesSetup({ onDone, className }: PrioritiesSetupProps) {
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold text-breeze-700 transition-colors hover:bg-breeze-50"
+            className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-bold text-ink ring-2 ring-inset ring-ink transition-[background-color,transform] duration-[120ms] hover:bg-ink/5 active:scale-[0.98]"
           >
             <Pencil aria-hidden className="size-4" />
             Change
@@ -106,16 +112,16 @@ function RankingForm({ initial, changing, onDone, className }: RankingFormProps)
     onDone(false, RATING_CATEGORIES);
   }
 
-  const next = ranked.length + 1;
   return (
-    <section aria-labelledby={titleId} className={cn("rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80 sm:p-6", className)}>
-      <h2 id={titleId} className="text-[20px] font-bold leading-snug tracking-tight text-ink-900">
+    <section aria-labelledby={titleId} className={cn("rounded-[24px] bg-surface p-5 shadow-soft sm:p-7", className)}>
+      <ProgressDashes total={STEP.total} active={STEP.active} label={STEP.label} />
+      <h2 id={titleId} className="mt-4 text-balance text-[26px] font-extrabold leading-[1.12] tracking-[-0.02em] text-ink sm:text-[30px]">
         What matters most to you on a flight?
       </h2>
-      <p id={hintId} className="mt-1.5 text-[14px] leading-relaxed text-ink-500">
+      <p id={hintId} className="mt-2 max-w-[36rem] text-[15px] leading-relaxed text-ink-soft">
         Tap in order of importance. Flights are then sorted and rated for you. You can change this any time.
       </p>
-      <ul className="mt-4 grid gap-2 sm:grid-cols-2" aria-describedby={hintId}>
+      <ul className="mt-5 grid gap-2.5 sm:grid-cols-2" aria-describedby={hintId}>
         {RATING_CATEGORIES.map((category) => {
           const rank = ranked.indexOf(category);
           const picked = rank >= 0;
@@ -126,24 +132,23 @@ function RankingForm({ initial, changing, onDone, className }: RankingFormProps)
                 aria-pressed={picked}
                 onClick={() => toggle(category)}
                 className={cn(
-                  "flex min-h-14 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors duration-150",
-                  picked
-                    ? "bg-night-900 text-white shadow-soft"
-                    : "bg-surface text-ink-900 ring-1 ring-inset ring-line-strong hover:bg-canvas active:bg-line/60",
+                  "flex min-h-16 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-[background-color,transform] duration-[120ms] active:scale-[0.98]",
+                  picked ? "bg-ink text-white" : "bg-canvas/70 text-ink hover:bg-canvas",
                 )}
               >
+                {/* Unpicked: the category's outlined icon; picked: its place in the order. */}
                 <span
                   aria-hidden
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold tabular-nums",
-                    picked ? "bg-white text-night-900" : "bg-canvas text-ink-400 ring-1 ring-inset ring-line-strong",
+                    "flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-ink",
+                    picked ? "text-[15px] font-extrabold tabular-nums" : "ring-2 ring-ink",
                   )}
                 >
-                  {picked ? rank + 1 : next}
+                  {picked ? rank + 1 : <CategoryIcon category={category} />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[15px] font-semibold leading-snug">{CATEGORY_LABELS[category]}</span>
-                  <span className={cn("mt-0.5 block text-[13px] leading-snug", picked ? "text-white/70" : "text-ink-500")}>
+                  <span className="block text-[16px] font-bold leading-snug">{CATEGORY_LABELS[category]}</span>
+                  <span className={cn("mt-0.5 block text-[13px] leading-snug", picked ? "text-white/75" : "text-ink-mute")}>
                     {CATEGORY_PROMPTS[category]}
                   </span>
                 </span>
@@ -153,28 +158,28 @@ function RankingForm({ initial, changing, onDone, className }: RankingFormProps)
           );
         })}
       </ul>
-      <p className="mt-2 min-h-4 text-[13px] leading-snug text-ink-500" aria-live="polite">
+      <p className="mt-3 min-h-5 text-[13px] leading-snug text-ink-mute" aria-live="polite">
         {ranked.length === 0
           ? ""
           : ranked.length < 4
             ? `${ranked.length} of 4 picked — the rest follow in the usual order.`
             : "All four ranked."}
       </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <button
           type="button"
           disabled={ranked.length === 0}
           onClick={finish}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-night-900 px-6 text-[15px] font-semibold text-white shadow-lift transition-colors hover:bg-night-800 active:bg-night-950 disabled:bg-ink-300 disabled:text-white/80 disabled:shadow-none"
+          className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-full bg-ink px-6 text-[17px] font-bold text-white transition-transform duration-[120ms] active:scale-[0.98] disabled:bg-slate sm:w-auto sm:min-w-[14rem]"
         >
           {changing ? "Update" : "Next"}
-          {changing ? <Check aria-hidden className="size-4" /> : <ArrowRight aria-hidden className="size-4" />}
+          {changing ? <Check aria-hidden className="size-5" /> : <ArrowRight aria-hidden className="size-5" />}
         </button>
         {ranked.length > 0 ? (
           <button
             type="button"
             onClick={() => setRanked([])}
-            className="inline-flex h-11 items-center gap-1.5 rounded-full px-4 text-sm font-semibold text-ink-500 transition-colors hover:bg-canvas hover:text-ink-900"
+            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full px-4 text-sm font-bold text-ink-mute transition-colors hover:bg-ink/5 hover:text-ink"
           >
             <RotateCcw aria-hidden className="size-4" />
             Start over
@@ -183,7 +188,7 @@ function RankingForm({ initial, changing, onDone, className }: RankingFormProps)
           <button
             type="button"
             onClick={skip}
-            className="inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold text-ink-500 transition-colors hover:bg-canvas hover:text-ink-900"
+            className="inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-bold text-ink-mute transition-colors hover:bg-ink/5 hover:text-ink"
           >
             Skip for now
           </button>
@@ -196,23 +201,24 @@ function RankingForm({ initial, changing, onDone, className }: RankingFormProps)
 }
 
 /**
- * The summary card's shape (heading, the four labels, the Change button) in
- * quiet bars, shown until the browser's answer is known — so the card above the
- * search form keeps its height for a returning visitor.
+ * The summary card's shape (the dashes, the heading, the four labels, the
+ * Change button) in quiet bars, shown until the browser's answer is known —
+ * so the card above the search form keeps its height for a returning visitor.
  */
 function SetupPlaceholder({ className }: { className?: string }) {
   return (
-    <div aria-hidden className={cn("rounded-3xl bg-surface p-5 shadow-soft ring-1 ring-line/80", className)}>
+    <div aria-hidden className={cn("rounded-[24px] bg-surface p-5 shadow-soft", className)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="my-[3px] h-4 w-40 rounded-full bg-line/70" />
-          {/* The four labels' sizes ("Space & quiet", "Smooth takeoff & landing", "Smooth cruise", "Aircraft size"),
-              so the bars wrap into the same rows as the real list at every width. */}
+          <div className="h-1.5 w-[4.75rem] rounded-full bg-canvas" />
+          <div className="my-1 mt-4 h-[15px] w-44 rounded-full bg-line/70" />
+          {/* The four labels' sizes ("Space & quiet", "Smooth takeoff & landing", "Smooth cruise", "Aircraft size")
+              with their number badges, so the bars wrap into the same rows as the real list at every width. */}
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
-            <div className="h-[21px] w-[115px] rounded-full bg-canvas" />
-            <div className="h-[21px] w-[188px] rounded-full bg-canvas" />
-            <div className="h-[21px] w-[120px] rounded-full bg-canvas" />
-            <div className="h-[21px] w-[102px] rounded-full bg-canvas" />
+            <div className="h-6 w-[130px] rounded-full bg-canvas" />
+            <div className="h-6 w-[204px] rounded-full bg-canvas" />
+            <div className="h-6 w-[131px] rounded-full bg-canvas" />
+            <div className="h-6 w-[125px] rounded-full bg-canvas" />
           </div>
         </div>
         <div className="h-11 w-[106px] shrink-0 rounded-full bg-canvas" />

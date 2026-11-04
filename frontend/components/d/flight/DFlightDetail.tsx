@@ -18,12 +18,10 @@ import { FlightSections, type CSectionId, type SectionOverride } from "@/compone
 import { OtherFlights } from "@/components/c/flight/OtherFlights";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useHrefs } from "@/components/c/shell/ToolContext";
-import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
 import { possessive } from "@/components/dashboard/trust/format";
 import { RatingPill } from "@/components/d/ratings/RatingPill";
 import { RatingRows } from "@/components/d/ratings/RatingRows";
-import { Card } from "@/components/ui/Card";
 import { track } from "@/lib/analytics";
 import { formatFare } from "@/lib/c/format";
 import type { CompareItem } from "@/lib/c/model";
@@ -31,8 +29,9 @@ import { usePriorities } from "@/lib/d/priorities";
 import { priceDeltaText, ratingsByKey } from "@/lib/d/view";
 import { useNowMs } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
-import { TONE_CLASSES, type Tone } from "@/lib/theme";
+import type { Tone } from "@/lib/theme";
 import { ChooseButton, priceStanding, tierProps } from "./ChooseButton";
+import { DFlightHeader } from "./DFlightHeader";
 
 /*
  * Version D's flight page (docs/ITERATION_2.md): reassurance first — who
@@ -42,6 +41,7 @@ import { ChooseButton, priceStanding, tierProps } from "./ChooseButton";
  * the sign-up ask, "More detail" (the dashboard sections, collapsed) and the
  * day's other flights. No smoothness score and no timeline above the detail
  * layer. Same props as version C's FlightDetail, so FlightPage can show either.
+ * Look: docs/ui-d-theme.md.
  */
 
 const OTHERS_ID = "other-flights";
@@ -83,6 +83,18 @@ function oversightLabel(regulator: string): string {
   if (!name || /^the /i.test(name)) return `oversight by ${name || "the national aviation authority"}`;
   return `regulator oversight (${name})`;
 }
+
+/** The soft tint behind a reassurance card's outlined icon, per tone. */
+const CARD_TINT: Record<Tone, string> = {
+  dusk: "bg-cream",
+  breeze: "bg-sky",
+  calm: "bg-leaf-100",
+  sand: "bg-amber-100",
+  neutral: "bg-white",
+};
+
+/** A white card in the D look. */
+const CARD = "rounded-[24px] bg-surface shadow-soft";
 
 /** Version D has no exploration strip either: the sections only need neutral copy and somewhere to keep their state. */
 function noop(): void {}
@@ -209,7 +221,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
     <div className="mx-auto w-full max-w-[640px] lg:max-w-none">
       <Link
         href={hrefs.search(day)}
-        className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-sm font-semibold text-ink-700 transition-colors hover:text-ink-900"
+        className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-sm font-bold text-ink underline-offset-4 transition-colors hover:underline"
       >
         <ChevronLeft aria-hidden className="size-4 shrink-0" />
         <span>
@@ -221,41 +233,33 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
         {/* Phones: one column in reading order. Laptops: the pick and the fare in a sticky column on the right. */}
         <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-x-8">
           {/* Focus lands here when another flight is opened from this page (see FlightPage). */}
-          <div data-flight-top tabIndex={-1} className="min-w-0 rounded-3xl outline-none lg:col-start-1">
-            <DashboardHeader
-              flight={flight}
-              daysUntil={daysUntil}
-              briefingDaysUntil={daysUntil}
-              label="Flight details"
-              className="animate-fade-up"
-            />
+          <div data-flight-top tabIndex={-1} className="min-w-0 rounded-[24px] outline-none lg:col-start-1">
+            <DFlightHeader flight={flight} daysUntil={daysUntil} className="animate-d-rise" />
           </div>
 
           {/* Phones: the fare and the one question within reach of the first screen, not three screens down
               (at lg the sticky column does this). The ratings follow; the pick can be changed any time. */}
-          <Card className="animate-fade-up p-4 [animation-delay:60ms] lg:hidden">
+          <div className={cn(CARD, "animate-d-rise p-5 [animation-delay:60ms] lg:hidden")}>
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">Your pick</h2>
-                <p className="mt-1 text-sm leading-snug text-ink-700">{PICK_QUESTION}</p>
+                <h2 className="text-[12px] font-bold uppercase tracking-[0.08em] text-ink-mute">Your pick</h2>
+                <p className="mt-1 text-[14px] leading-snug text-ink-soft">{PICK_QUESTION}</p>
               </div>
               <p className="shrink-0 text-right">
-                <span className="block text-2xl font-bold leading-none tracking-tight text-ink-900 tabular-nums">{formatFare(price)}</span>
-                <span className="mt-1 block text-[11px] leading-snug text-ink-500">one way · illustrative</span>
+                <span className="block text-[26px] font-extrabold leading-none tracking-[-0.01em] text-ink tabular-nums">{formatFare(price)}</span>
+                <span className="mt-1 block text-[11px] leading-snug text-ink-mute">one way · illustrative</span>
                 {isCheapest ? (
-                  <span className="mt-1.5 inline-flex rounded-full bg-calm-50 px-2 py-0.5 text-[11px] font-semibold leading-4 text-calm-700 ring-1 ring-inset ring-calm-100">
-                    Cheapest
-                  </span>
+                  <span className="mt-1.5 inline-flex rounded-full bg-leaf-100 px-2 py-0.5 text-[11px] font-bold leading-4 text-leaf-ink">Cheapest</span>
                 ) : (
-                  <span className="mt-1 block text-xs font-semibold leading-snug text-ink-700 tabular-nums">{delta}</span>
+                  <span className="mt-1 block text-xs font-bold leading-snug text-ink-soft tabular-nums">{delta}</span>
                 )}
               </p>
             </div>
-            {chooseButton("mt-3")}
-          </Card>
+            {chooseButton("mt-4")}
+          </div>
 
           {/* Reassurance first: four plain cards, each a glance. */}
-          <section aria-labelledby={reassureId} className="min-w-0 animate-fade-up [animation-delay:60ms] lg:col-start-1">
+          <section aria-labelledby={reassureId} className="min-w-0 animate-d-rise [animation-delay:120ms] lg:col-start-1">
             <h2 id={reassureId} className="sr-only">
               Good to know
             </h2>
@@ -277,10 +281,10 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 {aircraftRating ? (
                   <>
                     <RatingPill rating={aircraftRating} />
-                    <p className="mt-2.5 text-[14px] leading-relaxed text-ink-700">{aircraftRating.meaning}</p>
+                    <p className="mt-2.5 text-[14px] leading-relaxed text-ink-soft">{aircraftRating.meaning}</p>
                   </>
                 ) : null}
-                <p className="mt-2 text-[13px] leading-snug text-ink-500">{BODY_SENTENCE[aircraft.bodyType]}</p>
+                <p className="mt-2 text-[13px] leading-snug text-ink-mute">{BODY_SENTENCE[aircraft.bodyType]}</p>
                 <Facts className="mt-3">
                   {availability.airframe ? (
                     <Fact
@@ -342,19 +346,19 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
           </section>
 
           {/* The four ratings, in the visitor's order; each opens its detail sheet. */}
-          <section aria-labelledby={ratedId} className="min-w-0 animate-fade-up [animation-delay:90ms] lg:col-start-1">
+          <section aria-labelledby={ratedId} className="min-w-0 animate-d-rise [animation-delay:180ms] lg:col-start-1">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
-              <h2 id={ratedId} className="text-lg font-bold leading-tight text-ink-900">
+              <h2 id={ratedId} className="text-[22px] font-extrabold leading-tight tracking-tight text-ink">
                 Rated for you
               </h2>
               <Link
                 href={hrefs.home}
-                className="-mr-2 inline-flex min-h-11 items-center rounded-full px-2 text-sm font-semibold text-calm-700 transition-colors hover:text-calm-800"
+                className="-mr-2 inline-flex min-h-11 items-center rounded-full px-2 text-sm font-bold text-ink underline decoration-2 underline-offset-4"
               >
                 Change what matters
               </Link>
             </div>
-            <p className="mt-0.5 px-1 text-[13px] leading-snug text-ink-500">
+            <p className="mt-0.5 px-1 text-[14px] leading-snug text-ink-mute">
               {priorities.chosen ? "In your order." : "In the usual order."} Tap a rating for how it is worked out.
             </p>
             <RatingRows ratings={ordered} flightLabel={label} from="flight" className="mt-3" />
@@ -364,11 +368,11 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
           <div className="min-w-0 lg:col-start-2 lg:row-span-6 lg:row-start-1">
             <div className="flex flex-col gap-4 lg:sticky lg:top-6">
               {/* Phones have the pick under the header instead (one control, in sync through the choice store). */}
-              <Card className="hidden animate-fade-up p-5 [animation-delay:60ms] lg:block">
-                <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">Your pick</h2>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink-700">{PICK_QUESTION}</p>
+              <div className={cn(CARD, "hidden animate-d-rise p-5 [animation-delay:60ms] lg:block")}>
+                <h2 className="text-[12px] font-bold uppercase tracking-[0.08em] text-ink-mute">Your pick</h2>
+                <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{PICK_QUESTION}</p>
                 {chooseButton("mt-4")}
-              </Card>
+              </div>
               {/* The on-time and fleet-age facts are left out: the reassurance cards above already state them. */}
               <FareCard
                 option={option}
@@ -376,7 +380,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 daysUntil={daysUntil}
                 othersHref={`#${OTHERS_ID}`}
                 showFacts={false}
-                className="animate-fade-up [animation-delay:90ms]"
+                className="animate-d-rise [animation-delay:120ms]"
               />
             </div>
           </div>
@@ -426,22 +430,21 @@ function ReassureCard({
   children: ReactNode;
 }) {
   const id = useId();
-  const t = TONE_CLASSES[tone];
   return (
-    <section aria-labelledby={id} className="flex flex-col rounded-3xl bg-surface p-4 shadow-soft ring-1 ring-line/80 sm:p-5">
+    <section aria-labelledby={id} className={cn(CARD, "flex flex-col p-4 sm:p-5")}>
       <div className="flex items-center gap-3">
         <span
           aria-hidden
-          className={cn("flex size-10 shrink-0 items-center justify-center rounded-2xl ring-1 ring-inset [&_svg]:size-5", t.bg, t.text, t.ring)}
+          className={cn("flex size-10 shrink-0 items-center justify-center rounded-full text-ink ring-2 ring-ink [&_svg]:size-5", CARD_TINT[tone])}
         >
           {icon}
         </span>
-        <h3 id={id} className="text-[15px] font-bold leading-snug text-ink-900">
+        <h3 id={id} className="text-[17px] font-extrabold leading-snug tracking-tight text-ink">
           {title}
         </h3>
       </div>
       <div className="mt-3">{children}</div>
-      {foot ? <p className="mt-3 text-xs leading-snug text-ink-500">{foot}</p> : null}
+      {foot ? <p className="mt-3 text-xs leading-snug text-ink-mute">{foot}</p> : null}
     </section>
   );
 }
@@ -454,8 +457,8 @@ function Facts({ children, className }: { children: ReactNode; className?: strin
 function Fact({ main, sub, benchmark }: { main: ReactNode; sub?: ReactNode; benchmark?: ReactNode }) {
   return (
     <li>
-      <span className="block text-[15px] font-semibold leading-snug text-ink-900 tabular-nums [overflow-wrap:anywhere]">{main}</span>
-      {sub ? <span className="mt-0.5 block text-[13px] leading-snug text-ink-700">{sub}</span> : null}
+      <span className="block text-[15px] font-bold leading-snug text-ink tabular-nums [overflow-wrap:anywhere]">{main}</span>
+      {sub ? <span className="mt-0.5 block text-[13px] leading-snug text-ink-soft">{sub}</span> : null}
       {benchmark ? <span className="mt-1 block">{benchmark}</span> : null}
     </li>
   );
@@ -486,27 +489,27 @@ function MoreDetail({ flight, ctx, className }: { flight: Flight; ctx: SectionCo
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={toggle}
-          className="flex w-full items-center gap-3.5 rounded-3xl bg-surface px-4 py-4 text-left shadow-soft ring-1 ring-line/80 transition-colors hover:bg-canvas"
+          className={cn(CARD, "flex w-full items-center gap-3.5 px-4 py-4 text-left transition-[background-color,transform] duration-[120ms] hover:bg-canvas/40 active:scale-[0.99]")}
         >
           <span
             aria-hidden
-            className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-canvas text-ink-700 ring-1 ring-inset ring-line [&_svg]:size-5"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-sky text-ink ring-2 ring-ink [&_svg]:size-5"
           >
-            <Layers />
+            <Layers strokeWidth={2.25} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[15px] font-bold leading-snug text-ink-900">More detail</span>
-            <span className="mt-0.5 block text-[13px] leading-snug text-ink-500">
+            <span className="block text-[17px] font-extrabold leading-snug tracking-tight text-ink">More detail</span>
+            <span className="mt-0.5 block text-[13px] leading-snug text-ink-mute">
               Turbulence, who flies this plane, aircraft, airline, weather, the seat map, what you&rsquo;ll hear and feel
             </span>
           </span>
-          <ChevronDown aria-hidden className={cn("size-5 shrink-0 text-ink-400 transition-transform duration-300", open && "rotate-180")} />
+          <ChevronDown aria-hidden className={cn("size-5 shrink-0 text-ink transition-transform duration-300", open && "rotate-180")} />
         </button>
       </h2>
       <div id={bodyId} hidden={!open} className="mt-3">
         {opened ? (
           <>
-            <p className="mb-3 px-1 text-[13px] leading-snug text-ink-500">
+            <p className="mb-3 px-1 text-[13px] leading-snug text-ink-mute">
               The full sections for this flight. Open as much or as little as you like.
             </p>
             <FlightSections flight={flight} ctx={ctx} overrides={SECTION_OVERRIDES} />

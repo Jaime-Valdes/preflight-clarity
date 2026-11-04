@@ -38,6 +38,8 @@ interface FlightPageProps {
    * skeleton (version D passes false). Default true.
    */
   showScores?: boolean;
+  /** What shows until the query and today's date are known. Default: the skeleton (version D passes its own). */
+  loading?: ReactNode;
 }
 
 type View =
@@ -132,7 +134,7 @@ function WithSignup({ context, children }: { context: string; children: ReactNod
  * for today's date, regenerates the day's results and shows the flight, or a
  * calm message when the link doesn't lead to one.
  */
-export function FlightPage({ Detail = FlightDetail, showScores = true }: FlightPageProps = {}) {
+export function FlightPage({ Detail = FlightDetail, showScores = true, loading }: FlightPageProps = {}) {
   const params = useSearchParams();
   const hrefs = useHrefs();
   const today = useTodayISO();
@@ -154,7 +156,7 @@ export function FlightPage({ Detail = FlightDetail, showScores = true }: FlightP
 
   switch (view.kind) {
     case "loading":
-      return <FlightSkeleton showScore={showScores} />;
+      return loading ?? <FlightSkeleton showScore={showScores} />;
     case "invalid":
       return (
         <WithSignup context="">

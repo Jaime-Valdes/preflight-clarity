@@ -33,6 +33,8 @@ interface ComparePageProps {
   note?: ReactNode;
   /** The score rings in the loading skeleton (version D, which never shows a score, passes false). Default true. */
   showScores?: boolean;
+  /** What shows until the list and today's date are known. Default: the skeleton (version D passes its own). */
+  loading?: ReactNode;
 }
 
 const C_NOTE = (
@@ -63,7 +65,7 @@ function addHrefFor(items: readonly CompareItem[], today: string, hrefs: Hrefs):
  * routes and dates). Without `f` it shows the visitor's compare list, live.
  * Removing a flight updates the URL (router.replace) and the compare list.
  */
-export function ComparePage({ Table = CompareTable, Empty = CompareEmpty, note = C_NOTE, showScores = true }: ComparePageProps = {}) {
+export function ComparePage({ Table = CompareTable, Empty = CompareEmpty, note = C_NOTE, showScores = true, loading }: ComparePageProps = {}) {
   const params = useSearchParams();
   const router = useRouter();
   const today = useTodayISO();
@@ -152,7 +154,7 @@ export function ComparePage({ Table = CompareTable, Empty = CompareEmpty, note =
     setFocusRequest({ id: null });
   };
 
-  if (!today || nowMs === null) return <CompareSkeleton showScore={showScores} />;
+  if (!today || nowMs === null) return loading ?? <CompareSkeleton showScore={showScores} />;
 
   const comparing = flights.length >= 2;
   const addHref = addHrefFor(visible, today, hrefs);

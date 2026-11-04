@@ -1,6 +1,7 @@
 "use client";
 
 import { ComparePage } from "@/components/c/compare/ComparePage";
+import { DLoading } from "@/components/d/brand/Loading";
 import { DCompareEmpty } from "./DCompareEmpty";
 import { DCompareTable } from "./DCompareTable";
 
@@ -17,6 +18,7 @@ export function DComparePage() {
       Empty={DCompareEmpty}
       note="Each flight is rated in plain words for what matters to you; tap a rating for how it is worked out. Airlines don’t publish who will fly a given flight, so “Who flies it” lists the rules every airline pilot meets. Open seats are as of today and change until check-in. All flights and prices are illustrative — nothing can be booked here."
       showScores={false}
+      loading={<DLoading />}
     />
   );
 }

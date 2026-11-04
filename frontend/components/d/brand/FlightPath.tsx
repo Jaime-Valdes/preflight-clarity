@@ -12,7 +12,8 @@ const PATH = "M-20 150C110 70 200 215 320 125S500 20 590 70";
 /** Where the path ends (the resting plane) and the stroke's direction there, for its heading. */
 const END = { x: 590, y: 70, angle: -24 };
 
-function Plane() {
+/** The tiny outlined paper plane, drawn around (0, 0) heading right; rotate it to the stroke's direction. */
+export function PaperPlane() {
   return (
     <>
       <path d="M11 0L-9-7L-5 0L-9 7Z" fill="#ffffff" stroke="var(--color-ink)" strokeWidth="2.4" strokeLinejoin="round" />
@@ -38,11 +39,11 @@ export function FlightPath({ className }: { className?: string }) {
       />
       {/* Flying: along the path with CSS motion (see globals.css for the fallbacks). */}
       <g className="d-plane-flying animate-d-fly" style={{ offsetPath: `path("${PATH}")` }}>
-        <Plane />
+        <PaperPlane />
       </g>
       {/* Resting: the same plane at the end of the stroke. */}
       <g className="d-plane-resting" transform={`translate(${END.x} ${END.y}) rotate(${END.angle})`}>
-        <Plane />
+        <PaperPlane />
       </g>
     </svg>
   );

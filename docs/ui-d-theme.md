@@ -90,7 +90,26 @@ animation on its resting frame (lines fully drawn, planes landed, eyes open, blo
   ring; headings stay semantic; buttons are buttons.
 - Inline SVG only, no new assets, no new runtime dependencies.
 
-## Phase 1 (this branch, `ui/milo-refresh-d`)
+## What each screen does with it (Phase 2, branch `ui/milo-refresh-d`)
 
-The intro screen on `/d` and the flight result card on `/d/search`. The rest of `/d` takes the palette
-through the token remap but keeps its layout until Phase 2.
+Every `/d` screen now wears the look; the shared version C pieces D borrows take it through the token
+remap and, where a visual needed a switch, an optional prop whose default is C's exact old look
+(`HomeSearch tone="light"`, `FlightPage` / `ComparePage` `loading`). Nothing behind the look changed —
+the same routes, query parameters, forms, PostHog event names, Supabase calls and sign-up (diffed against
+`main`: no analytics, routing or sign-up line differs).
+
+| Screen | The look |
+| --- | --- |
+| Intro (`/d`) | Phase 1: blobs, mascot on the drawing path, the headline, "Let's begin". Progress dashes 1 of 3. |
+| What matters (`PrioritiesSetup`) | Dashes 2 of 3; the question in the headline face; the four categories as soft sky tiles with the outlined category icon, which turns into the rank number on ink once tapped; "Next" is the black pill, "Skip for now" / "Start over" quiet text. Answered: the compact summary with ink number badges and an outline "Change". The placeholder keeps the summary's height. |
+| Where and when (`DHome` + `HomeSearch tone="light"`) | Dashes 3 of 3 on a white card; the form as it was (black "Search flights"); the popular routes as sky chips in ink instead of C's night block. |
+| Results (`DResults`) | Loading: the mascot and "Checking the skies…". The priorities strip is the small reassurance beat: the mascot beside "Rated for you: … · Change what matters". Filters: a white card on laptops, an outline pill on phones. The cards (Phase 1) rise in one after another, 60 ms apart. Empty states (no match, nothing left, no nonstops, a bad link) show the mascot, one bold line, one quiet line and at most one black pill. |
+| Flight (`DFlightDetail`) | `DFlightHeader`: the boarding-pass facts on a white card — airline, flight number, the route codes in the headline face with the ink path drawing itself between them and the paper plane at its end, countdown chip in leaf, date, a dashed slate rule, then departs / duration / arrives, aircraft and gate or terminal. "Your pick": the fare in the headline face, the black pill (leaf with a leaf-ink ring once picked). Reassurance cards: outlined icons on cream / sky / leaf tints. "Rated for you": rows with the category icon on the tier's tint, the tier in 20 px words in its dark hue, the meaning and the basis; each opens the sheet. "More detail": the same card shape with an outlined layers icon. |
+| Rating sheet (`RatingSheet`) | The tier on its tint with the outlined icon; factors marked leaf (helps), amber (weighs on it) or sky (neutral); the numbers on a soft sky list. |
+| Compare (`DCompareTable`, `DCompareEmpty`) | The table on a 24 px white card; group rows with outlined icons; markers ("Cheapest", "Smoothest for you") in leaf; "Details" as outline pills; "Pick" tiles in ink / leaf. Fewer than two flights: the mascot, the headline face, the black pill. |
+| Loading (`DLoading`) | The mascot floating over "Checking the skies…", in place of the three skeletons; `role="status"`. |
+| Everywhere | `h1` is weight 800 under the theme (the shared summary and compare headings included); a 2 px ink focus ring; sun text selection. |
+
+Known small inconsistency, left alone on purpose: the shared pills inside the results summary ("Swap", "Change")
+and the shared sign-up card keep C's thin line ring, since those components are shared with A, B and C and
+only tokens may change them.

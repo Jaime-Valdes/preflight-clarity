@@ -324,6 +324,11 @@
   background: var(--color-sun);
 }
 
+/* Every page heading inside D is set in the headline weight; the shared pages keep their own sizes. */
+[data-theme="d"] h1 {
+  font-weight: 800;
+}
+
 /* The flight path's plane rides the path with CSS motion; browsers without it show the resting plane instead. */
 [data-theme="d"] .d-plane-flying {
   display: none;

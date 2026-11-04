@@ -98,15 +98,13 @@ export function DHome() {
         <PrioritiesSetup className="mt-2" onDone={() => setAdvanced((n) => n + 1)} />
       </div>
 
-      {/* Dark like the primary button: the search form's popular routes are drawn for a dark background. */}
-      <div
-        ref={searchRef}
-        tabIndex={-1}
-        className="mt-4 scroll-mt-4 rounded-[28px] bg-ink px-4 py-5 text-white shadow-lift outline-none sm:px-6 sm:py-6 lg:px-8"
-      >
-        <h2 className="text-[22px] font-extrabold leading-snug tracking-tight text-white">Where and when?</h2>
-        <div className="mt-3">
-          <HomeSearch />
+      {/* The last step: the search form on a white card, the popular routes in ink. */}
+      <div ref={searchRef} tabIndex={-1} className="mt-4 scroll-mt-4 rounded-[24px] bg-surface p-5 shadow-soft outline-none sm:p-7">
+        <ProgressDashes total={3} active={2} label="Step 3 of 3: where and when" />
+        <h2 className="mt-4 text-[26px] font-extrabold leading-[1.12] tracking-[-0.02em] text-ink sm:text-[30px]">Where and when?</h2>
+        <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">Nonstop flights, one way, one traveller.</p>
+        <div className="mt-5">
+          <HomeSearch tone="light" />
         </div>
       </div>
     </>

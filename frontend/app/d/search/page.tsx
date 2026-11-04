@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { ResultsSkeleton } from "@/components/c/search/Skeletons";
+import { DLoading } from "@/components/d/brand/Loading";
 import { DResults } from "@/components/d/search/DResults";
 
 export const metadata: Metadata = {
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
  */
 export default function DSearchPage() {
   return (
-    <Suspense fallback={<ResultsSkeleton />}>
+    <Suspense fallback={<DLoading />}>
       <DResults />
     </Suspense>
   );

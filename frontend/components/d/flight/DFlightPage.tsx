@@ -1,6 +1,7 @@
 "use client";
 
 import { FlightPage } from "@/components/c/flight/FlightPage";
+import { DLoading } from "@/components/d/brand/Loading";
 import { DFlightDetail } from "./DFlightDetail";
 
 /**
@@ -11,5 +12,5 @@ import { DFlightDetail } from "./DFlightDetail";
  * detail component through.
  */
 export function DFlightPage() {
-  return <FlightPage Detail={DFlightDetail} showScores={false} />;
+  return <FlightPage Detail={DFlightDetail} showScores={false} loading={<DLoading />} />;
 }

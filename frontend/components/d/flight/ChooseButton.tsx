@@ -109,12 +109,10 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
         aria-pressed={chosen}
         onClick={toggle}
         className={cn(
-          "inline-flex w-full items-center justify-center font-semibold transition-colors duration-200",
+          "inline-flex w-full items-center justify-center font-bold transition-[background-color,transform] duration-[120ms] active:scale-[0.98]",
           // A table cell is about 88 px wide on phones: a soft tile with a short label, never a wrapped blob.
-          compact ? "min-h-11 rounded-2xl px-2 py-2 text-[13px] leading-tight" : "h-12 gap-2 rounded-full px-5 text-[15px]",
-          chosen
-            ? "bg-calm-50 text-calm-700 ring-1 ring-inset ring-calm-200 hover:bg-calm-100"
-            : "bg-night-900 text-white shadow-lift hover:bg-night-800 active:bg-night-950",
+          compact ? "min-h-11 rounded-2xl px-2 py-2 text-[13px] leading-tight" : "h-14 gap-2 rounded-full px-6 text-[17px]",
+          chosen ? "bg-leaf-100 text-leaf-ink ring-2 ring-inset ring-leaf-ink hover:bg-leaf-100/70" : "bg-ink text-white hover:bg-night-800",
         )}
       >
         {compact ? (
@@ -126,7 +124,7 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
                     Picked
                     <Check className="size-3.5 shrink-0" strokeWidth={2.5} />
                   </span>
-                  <span className="font-normal text-calm-700/80">
+                  <span className="font-semibold text-leaf-ink/80">
                     <span className="hidden sm:inline">· </span>change
                   </span>
                 </>
@@ -145,7 +143,7 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
                 <Check aria-hidden className="size-4 shrink-0" strokeWidth={2.5} />
                 <span className="min-w-0 text-center">
                   Your pick
-                  <span className="font-normal text-calm-700/80"> · change</span>
+                  <span className="font-semibold text-leaf-ink/80"> · change</span>
                 </span>
               </>
             ) : (
@@ -159,7 +157,7 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
         )}
       </button>
       {compact ? null : (
-        <p className={cn("mt-2 text-center text-xs leading-snug", chosen ? "text-calm-700" : "text-ink-500")}>
+        <p className={cn("mt-2 text-center text-xs leading-snug", chosen ? "text-leaf-ink" : "text-ink-mute")}>
           {chosen ? "Noted — nothing is booked" : "Just a note for us — nothing is booked here."}
         </p>
       )}
