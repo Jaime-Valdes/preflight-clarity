@@ -143,3 +143,205 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * ── Version D theme (docs/ui-d-theme.md) ─────────────────────────────────────
+ * The "calmer way to begin" look for the smooth-flight finder only. Two layers:
+ *   1. New tokens (sky, cream, sun, leaf, amber, ink, slate) used by D-only
+ *      components. Nothing outside /d references them.
+ *   2. Under [data-theme="d"] (set by app/d/layout.tsx) the semantic tokens the
+ *      shared components already use — canvas, surface, line, ink-*, night-*,
+ *      calm-*, breeze-*, dusk-*, sand-* and the shadows — are remapped to the
+ *      same palette, so a header or a search form rendered inside /d takes the
+ *      look without a line of its own changing. Versions A, B and C never set
+ *      the attribute and keep every value above exactly.
+ * Motion: every animation here is short, slow or barely there, and the global
+ * reduced-motion rule above ends all of them at their resting frame.
+ */
+@theme {
+  --color-sky: #d7e9f3;
+  --color-sky-deep: #bbd9ea;
+  --color-sky-ink: #355a70;
+  --color-cream: #f3e9d6;
+  --color-cream-deep: #eadbbe;
+  --color-sun: #f2d8a2;
+  --color-sun-100: #f8e7be;
+  --color-sun-ink: #6b4e12;
+  --color-leaf: #b9e2ba;
+  --color-leaf-100: #ddf1dd;
+  --color-leaf-ink: #2f6b36;
+  --color-amber: #ebc98f;
+  --color-amber-100: #f5e3c3;
+  --color-amber-ink: #6a4a14;
+  --color-ink: #1f1f1f;
+  --color-ink-soft: #3b3d3f;
+  --color-ink-mute: #4f6373;
+  --color-slate: #9cb1be;
+
+  --animate-d-rise: d-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-d-float: d-float 4.5s ease-in-out infinite;
+  --animate-d-blink: d-blink 4.2s ease-in-out 1.5s infinite;
+  --animate-d-draw: d-draw 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.25s backwards;
+  --animate-d-fly: d-fly 1.3s cubic-bezier(0.22, 1, 0.36, 1) 0.45s both;
+  --animate-d-drift: d-drift 24s ease-in-out infinite;
+  --animate-d-drift-slow: d-drift 32s ease-in-out -11s infinite reverse;
+
+  @keyframes d-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes d-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-4px);
+    }
+  }
+
+  /* Eyes open almost all the time; one quick blink per loop. */
+  @keyframes d-blink {
+    0%,
+    91%,
+    97%,
+    100% {
+      transform: scaleY(1);
+    }
+    94% {
+      transform: scaleY(0.08);
+    }
+  }
+
+  /* With pathLength="1" on the path, the dash offset runs from 1 (hidden) to 0 (drawn). */
+  @keyframes d-draw {
+    from {
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes d-fly {
+    from {
+      offset-distance: 0%;
+      opacity: 0;
+    }
+    12% {
+      opacity: 1;
+    }
+    to {
+      offset-distance: 100%;
+      opacity: 1;
+    }
+  }
+
+  @keyframes d-drift {
+    0%,
+    100% {
+      transform: translate(0, 0);
+    }
+    50% {
+      transform: translate(6px, -5px);
+    }
+  }
+}
+
+[data-theme="d"] {
+  --color-canvas: var(--color-sky);
+  --color-surface: #ffffff;
+  --color-line: #c6dae6;
+  --color-line-strong: #a9c3d2;
+
+  --color-ink-900: var(--color-ink);
+  --color-ink-700: var(--color-ink-soft);
+  --color-ink-500: var(--color-ink-mute);
+  --color-ink-400: #6b8292;
+  --color-ink-300: var(--color-slate);
+
+  --color-night-950: #141414;
+  --color-night-900: var(--color-ink);
+  --color-night-800: #2e2e2e;
+  --color-night-700: #3d3d3d;
+
+  --color-calm-50: #eef8ee;
+  --color-calm-100: var(--color-leaf-100);
+  --color-calm-200: var(--color-leaf);
+  --color-calm-300: #9ad39c;
+  --color-calm-400: #7cc27f;
+  --color-calm-500: #5fae63;
+  --color-calm-600: #46924b;
+  --color-calm-700: var(--color-leaf-ink);
+  --color-calm-800: #26532b;
+
+  --color-breeze-50: #eef5fa;
+  --color-breeze-100: var(--color-sky);
+  --color-breeze-200: var(--color-sky-deep);
+  --color-breeze-300: #9cc4db;
+  --color-breeze-400: #7fafc9;
+  --color-breeze-500: #5f93b1;
+  --color-breeze-600: #4a7893;
+  --color-breeze-700: var(--color-sky-ink);
+
+  --color-dusk-50: #faf5ea;
+  --color-dusk-100: var(--color-cream);
+  --color-dusk-200: var(--color-cream-deep);
+  --color-dusk-400: #d2b98a;
+  --color-dusk-500: #b89a62;
+  --color-dusk-600: #967a44;
+  --color-dusk-700: var(--color-sun-ink);
+
+  --color-sand-50: #fbf4e6;
+  --color-sand-100: var(--color-amber-100);
+  --color-sand-200: var(--color-amber);
+  --color-sand-300: #dfb570;
+  --color-sand-400: #cf9d52;
+  --color-sand-500: #b4833b;
+  --color-sand-600: #8f672a;
+  --color-sand-700: var(--color-amber-ink);
+
+  --shadow-soft: 0 2px 4px rgb(31 31 31 / 0.04), 0 14px 34px -18px rgb(31 31 31 / 0.22);
+  --shadow-lift: 0 2px 6px rgb(31 31 31 / 0.05), 0 24px 48px -22px rgb(31 31 31 / 0.32);
+
+  background-color: var(--color-sky);
+  color: var(--color-ink);
+}
+
+[data-theme="d"] :focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+}
+
+[data-theme="d"] ::selection {
+  background: var(--color-sun);
+}
+
+/* The flight path's plane rides the path with CSS motion; browsers without it show the resting plane instead. */
+[data-theme="d"] .d-plane-flying {
+  display: none;
+}
+@supports (offset-path: path("M0 0h1")) {
+  [data-theme="d"] .d-plane-flying {
+    display: block;
+    offset-rotate: auto;
+  }
+  [data-theme="d"] .d-plane-resting {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="d"] .d-plane-flying {
+    display: none;
+  }
+  [data-theme="d"] .d-plane-resting {
+    display: block;
+  }
+}

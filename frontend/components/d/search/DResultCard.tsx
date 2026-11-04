@@ -1,16 +1,17 @@
 "use client";
 
-import { Check, ChevronRight, Plane, Plus } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Plane, Plus } from "lucide-react";
 import Link from "next/link";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { formatDuration, formatTime12 } from "@preflight/shared/dates";
 import type { Rating } from "@preflight/shared/ratings";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
-import { flightContext } from "@/components/c/flight/copy";
 import { useHrefs } from "@/components/c/shell/ToolContext";
-import { RatingButton } from "@/components/d/ratings/RatingSheet";
-import { Pill } from "@/components/ui/Pill";
+import { CategoryIcon } from "@/components/d/brand/CategoryIcon";
+import { RatingPill } from "@/components/d/ratings/RatingPill";
+import { CATEGORY_SHORT, D_TIER, dTierTone } from "@/components/d/ratings/tone";
+import { track } from "@/lib/analytics";
 import { formatFare } from "@/lib/c/format";
 import { MAX_COMPARE, type CompareItem } from "@/lib/c/model";
 import { priceDeltaText } from "@/lib/d/view";
@@ -28,7 +29,7 @@ interface DResultCardProps {
   cheapest: number | null;
   /** Leads the flights on screen for the visitor's priorities (ties all marked). */
   smoothestForYou: boolean;
-  /** The visitor ranked their priorities: the marker and the ratings' label say "for you"; otherwise "overall". */
+  /** The visitor ranked their priorities: the marker says "for you"; otherwise "overall". */
   chosen: boolean;
   /** Query parameters the Details link keeps (campaign tags from the link that opened the results). */
   campaign?: Record<string, string | undefined>;
@@ -52,12 +53,12 @@ function dayOffset(offset: number): string | null {
 }
 
 /**
- * One flight in version D's results (docs/ITERATION_2.md): airline and flight
- * number, the times, the two ratings that matter most to the visitor as calm
- * pills (a tap opens "what this means" and how it is worked out), the aircraft,
- * and the fare with its distance from the day's cheapest. No score, no
- * timeline, no forecast talk. Two separate actions — Compare (a toggle) and
- * Details (a link); the card itself is not a link.
+ * One flight in version D's results (docs/ITERATION_2.md; look: docs/ui-d-theme.md).
+ * The eye lands on one thing: the rating that matters most to this visitor, in
+ * words, on a soft tint with its outlined icon and its one-line meaning. The
+ * second rating sits under it as a pill; "Why?" slides the basis and the
+ * factors open in place. Then the times, and two quiet actions — Compare (a
+ * toggle) and Details (a link). No score, no timeline, no forecast talk.
  */
 export function DResultCard({
   option,
@@ -78,6 +79,8 @@ export function DResultCard({
   const { flight } = option;
   const titleId = useId();
   const noteId = useId();
+  const whyId = useId();
+  const [why, setWhy] = useState(false);
   const depart = formatTime12(flight.departTime);
   const arrive = formatTime12(flight.arriveTime);
   const offset = dayOffset(flight.arriveDayOffset);
@@ -85,100 +88,134 @@ export function DResultCard({
   const fareText = formatFare(fare);
   const delta = priceDeltaText(fare, cheapest);
   const isCheapest = delta === "Cheapest";
-  const flightLabel = flightContext(flight, item);
-  const top = ratings.slice(0, SHOWN_RATINGS);
+  const [lead, second] = ratings.slice(0, SHOWN_RATINGS);
+  const tone = D_TIER[dTierTone(lead)];
   // "For you" only once the visitor has said what matters; until then the lead is on the usual order.
   const smoothestText = chosen ? "Smoothest for you" : "Smoothest overall";
 
+  function toggleWhy() {
+    if (!why) track("d_rating_open", { category: lead.category, tier: lead.tier, basis: lead.basis, from: "results" });
+    setWhy((v) => !v);
+  }
+
   return (
-    <article aria-labelledby={titleId} className="rounded-3xl bg-surface p-4 shadow-soft ring-1 ring-line/80 sm:p-5">
-      {/* Phones: one column — airline, times, ratings, aircraft, then the actions under a rule. Wider: the
-          fare and actions move into a column on the right; the rest keeps its order on the left, with the
-          ratings on a full-width row so even the longest label ("Slightly bumpy takeoff & landing") never
-          has to be cut short. */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_9rem] md:gap-x-5 lg:grid-cols-[minmax(0,1fr)_8.5rem] lg:gap-x-4 xl:gap-x-5">
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex items-start gap-3">
-            <AirlineMark code={flight.airline.code} />
-            <div className="min-w-0 flex-1">
-              <h3 id={titleId} className="text-[15px] font-bold leading-snug text-ink-900 [overflow-wrap:anywhere]">
-                {flight.airline.name}
-                <span className="sr-only">
-                  , {flight.flightNumber}, departs {depart}
-                  {smoothestForYou ? `, ${smoothestText.toLowerCase()} of these flights` : ""}
-                  {isCheapest ? ", cheapest this day" : ""}
-                </span>
-              </h3>
-              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-500">
-                <span className="tabular-nums">{flight.flightNumber}</span>
-                {smoothestForYou ? (
-                  <span
-                    aria-hidden
-                    className="inline-flex items-center rounded-full bg-calm-50 px-2 py-0.5 text-[11px] font-semibold text-calm-700 ring-1 ring-inset ring-calm-100"
-                  >
-                    {smoothestText}
-                  </span>
-                ) : null}
-              </p>
-            </div>
-            <p className="shrink-0 text-right md:hidden">
-              <span className="block text-2xl font-bold leading-none text-ink-900 tabular-nums">{fareText}</span>
-              <span className={cn("mt-1 block text-[11px] tabular-nums", isCheapest ? "font-semibold text-ink-700" : "text-ink-500")}>{delta}</span>
-            </p>
-          </div>
-
-          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 md:max-w-[28rem]">
-            <p>
-              <span className="block whitespace-nowrap text-lg font-bold leading-none text-ink-900 tabular-nums">{depart}</span>
-              <span className="mt-1 block text-xs text-ink-500">{flight.origin.code}</span>
-            </p>
-            <div className="min-w-0 text-center">
-              <p className="whitespace-nowrap text-xs font-semibold text-ink-700 tabular-nums">{formatDuration(flight.blockMin)}</p>
-              <div aria-hidden className="my-1 flex items-center gap-1 text-ink-300">
-                <span className="h-px flex-1 bg-line" />
-                <Plane className="size-3 rotate-45" />
-                <span className="h-px flex-1 bg-line" />
-              </div>
-              <p className="text-[11px] text-ink-500">Nonstop</p>
-            </div>
-            <p className="text-right">
-              <span className="block whitespace-nowrap text-lg font-bold leading-none text-ink-900 tabular-nums">
-                {arrive}
-                {offset ? (
-                  <sup className="ml-0.5 text-[11px] font-semibold text-calm-700">
-                    {offset}
-                    <span className="sr-only"> day</span>
-                  </sup>
-                ) : null}
-              </span>
-              <span className="mt-1 block text-xs text-ink-500">{flight.destination.code}</span>
-            </p>
-          </div>
-
-          {/* The ratings that matter most to this visitor, first one first. Each pill opens its detail sheet. */}
-          <ul aria-label={chosen ? "Rated for you" : "Ratings"} className="flex flex-wrap gap-1.5">
-            {top.map((rating) => (
-              <li key={rating.category} className="max-w-full">
-                <RatingButton rating={rating} flightLabel={flightLabel} from="results" size="sm" />
-              </li>
-            ))}
-          </ul>
-
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            <span className="text-[13px] font-semibold text-ink-700">
-              {flight.aircraft.fullName}
-              <span className="font-normal text-ink-500"> · {airframe ? "assigned" : "scheduled"}</span>
+    <article aria-labelledby={titleId} className="rounded-[24px] bg-surface p-5 shadow-soft">
+      {/* Who and how much. */}
+      <div className="flex items-start gap-3">
+        <AirlineMark code={flight.airline.code} />
+        <div className="min-w-0 flex-1">
+          <h3 id={titleId} className="text-[15px] font-bold leading-snug text-ink [overflow-wrap:anywhere]">
+            {flight.airline.name}
+            <span className="sr-only">
+              , {flight.flightNumber}, departs {depart}
+              {smoothestForYou ? `, ${smoothestText.toLowerCase()} of these flights` : ""}
+              {isCheapest ? ", cheapest this day" : ""}
             </span>
-            {flight.aircraft.bodyType === "wide" ? <Pill tone="breeze">Wide-body</Pill> : null}
+          </h3>
+          <p className="mt-0.5 text-[13px] leading-snug text-ink-mute">
+            <span className="tabular-nums">{flight.flightNumber}</span> · {flight.aircraft.fullName}
+            {flight.aircraft.bodyType === "wide" ? " · wide-body" : ""}
+            <span className="sr-only"> · {airframe ? "assigned aircraft" : "scheduled aircraft"}</span>
+          </p>
+        </div>
+        <p className="shrink-0 text-right">
+          <span className="block text-[24px] font-extrabold leading-none tracking-[-0.01em] text-ink tabular-nums">{fareText}</span>
+          <span className={cn("mt-1 block text-[12px] tabular-nums", isCheapest ? "font-bold text-ink" : "text-ink-mute")}>{delta}</span>
+        </p>
+      </div>
+
+      {/* The focal point: the rating that matters most, in words. */}
+      <div className={cn("mt-4 rounded-2xl p-4", tone.bg)}>
+        <div className="flex items-start gap-3">
+          <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white ring-2 ring-ink">
+            <CategoryIcon category={lead.category} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-ink-mute">
+              {CATEGORY_SHORT[lead.category]}
+              {smoothestForYou ? <span className="font-semibold normal-case tracking-normal"> · {smoothestText}</span> : null}
+            </p>
+            <p className={cn("mt-0.5 text-[24px] font-extrabold leading-tight tracking-[-0.015em]", tone.text)}>{lead.label}</p>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{lead.meaning}</p>
           </div>
         </div>
 
-        {/* Fare and actions */}
-        <div className="flex flex-wrap items-center gap-2 border-t border-line/70 pt-3 md:flex-col md:flex-nowrap md:items-stretch md:justify-center md:border-l md:border-t-0 md:pl-5 md:pt-0 lg:pl-4 xl:pl-5">
-          <p className="mb-1 hidden text-right md:block">
-            <span className="block text-[26px] font-bold leading-none text-ink-900 tabular-nums">{fareText}</span>
-            <span className={cn("mt-1 block text-[11px] tabular-nums", isCheapest ? "font-semibold text-ink-700" : "text-ink-500")}>{delta}</span>
-          </p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          {second ? (
+            <span className="inline-flex items-center gap-1.5">
+              <CategoryIcon category={second.category} size="sm" />
+              <RatingPill rating={second} size="sm" />
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-expanded={why}
+            aria-controls={whyId}
+            onClick={toggleWhy}
+            className="ml-auto inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-[14px] font-bold text-ink underline decoration-2 underline-offset-4 transition-transform duration-[120ms] active:scale-[0.98]"
+          >
+            Why?
+            <ChevronDown aria-hidden className={cn("size-4 transition-transform duration-300", why && "rotate-180")} />
+          </button>
+        </div>
+
+        {/* Slides open in place: the basis and the reasons, in the same words the sheet uses. */}
+        <div id={whyId} className={cn("grid transition-[grid-template-rows] duration-300 ease-out", why ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+          <div className="min-h-0 overflow-hidden">
+            <div className="mt-3 border-t-2 border-ink/10 pt-3 text-[13px] leading-relaxed text-ink-soft" inert={!why}>
+              <p className="font-semibold text-ink">{lead.basisText}</p>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {lead.factors.map((f) => (
+                  <li key={f.title} className="flex gap-2">
+                    <span aria-hidden className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", tone.dot)} />
+                    <span>
+                      <span className="font-semibold text-ink">{f.title}.</span> {f.detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {second ? (
+                <p className="mt-3 text-ink-mute">
+                  <span className="font-semibold text-ink">{CATEGORY_SHORT[second.category]}:</span> {second.meaning} {second.basisText}.
+                </p>
+              ) : null}
+              <p className="mt-2 text-ink-mute">The numbers and the other two ratings are on the flight page.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* The times, quietly. */}
+      <div className="mt-4 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-1">
+        <p>
+          <span className="block whitespace-nowrap text-[17px] font-bold leading-none text-ink tabular-nums">{depart}</span>
+          <span className="mt-1 block text-[12px] text-ink-mute">{flight.origin.code}</span>
+        </p>
+        <div className="min-w-0 text-center">
+          <p className="whitespace-nowrap text-[12px] font-semibold text-ink-soft tabular-nums">{formatDuration(flight.blockMin)} · Nonstop</p>
+          <div aria-hidden className="mt-1 flex items-center gap-1.5 text-ink">
+            <span className="h-0.5 flex-1 rounded-full bg-slate/70" />
+            <Plane className="size-3.5 rotate-45" strokeWidth={2.25} />
+            <span className="h-0.5 flex-1 rounded-full bg-slate/70" />
+          </div>
+        </div>
+        <p className="text-right">
+          <span className="block whitespace-nowrap text-[17px] font-bold leading-none text-ink tabular-nums">
+            {arrive}
+            {offset ? (
+              <sup className="ml-0.5 text-[11px] font-semibold text-ink-mute">
+                {offset}
+                <span className="sr-only"> day</span>
+              </sup>
+            ) : null}
+          </span>
+          <span className="mt-1 block text-[12px] text-ink-mute">{flight.destination.code}</span>
+        </p>
+      </div>
+
+      {/* Two quiet actions. */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
           <button
             type="button"
             aria-pressed={inCompare}
@@ -188,12 +225,12 @@ export function DResultCard({
               if (!compareLocked) onToggleCompare(e.currentTarget);
             }}
             className={cn(
-              "inline-flex h-11 items-center justify-center gap-1.5 rounded-full px-4 text-sm font-semibold ring-1 ring-inset transition-colors",
+              "inline-flex h-11 items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-bold ring-2 ring-inset transition-[background-color,transform] duration-[120ms] active:scale-[0.98]",
               compareLocked
-                ? "cursor-not-allowed bg-canvas text-ink-400 ring-line"
+                ? "cursor-not-allowed bg-transparent text-ink-mute ring-slate"
                 : inCompare
-                  ? "bg-calm-50 text-calm-700 ring-calm-200 hover:bg-calm-100"
-                  : "bg-surface text-ink-900 ring-line-strong hover:bg-canvas",
+                  ? "bg-leaf-100 text-leaf-ink ring-leaf-ink"
+                  : "bg-transparent text-ink ring-ink hover:bg-ink/5",
             )}
           >
             {inCompare ? <Check aria-hidden className="size-4" /> : <Plus aria-hidden className="size-4" />}
@@ -201,19 +238,19 @@ export function DResultCard({
             <span className="sr-only"> {flight.flightNumber}</span>
           </button>
           {compareLocked ? (
-            <p id={noteId} className="text-xs text-ink-500 md:text-center">
+            <p id={noteId} className="text-xs text-ink-mute">
               Up to {MAX_COMPARE} flights
             </p>
           ) : null}
-          <Link
-            href={hrefs.flight(item, { ...campaign, pos: String(position) })}
-            className="ml-auto inline-flex h-11 items-center justify-center gap-0.5 rounded-full pl-4 pr-3 text-sm font-semibold text-breeze-700 transition-colors hover:bg-breeze-50 md:ml-0"
-          >
-            Details
-            <span className="sr-only"> for {flight.flightNumber}</span>
-            <ChevronRight aria-hidden className="size-4" />
-          </Link>
         </div>
+        <Link
+          href={hrefs.flight(item, { ...campaign, pos: String(position) })}
+          className="inline-flex h-11 items-center gap-1 rounded-full px-2 text-[15px] font-bold text-ink underline-offset-4 transition-colors hover:underline"
+        >
+          Details
+          <span className="sr-only"> for {flight.flightNumber}</span>
+          <ArrowRight aria-hidden className="size-4" />
+        </Link>
       </div>
     </article>
   );

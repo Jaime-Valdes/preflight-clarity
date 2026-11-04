@@ -22,12 +22,13 @@ export const metadata: Metadata = {
  * tray and the footer — with the tool context set to "d", so links, events,
  * sign-ups and the compare list are D's own. Pages render inside <main>; each
  * has one <h1>. The main keeps C's id: the sheets and the tray use it as their
- * focus fallback.
+ * focus fallback. `data-theme="d"` switches the design tokens to D's calm
+ * palette for everything inside (docs/ui-d-theme.md); A, B and C never set it.
  */
 export default function DLayout({ children }: { children: ReactNode }) {
   return (
     <ToolProvider version="d">
-      <div className="flex min-h-dvh w-full flex-1 flex-col">
+      <div data-theme="d" className="flex min-h-dvh w-full flex-1 flex-col bg-canvas text-ink-900">
         <TestFlag />
         <Header />
         <main

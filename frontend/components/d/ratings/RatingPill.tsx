@@ -3,8 +3,7 @@
 import { ChevronRight } from "lucide-react";
 import type { Rating } from "@preflight/shared/ratings";
 import { cn } from "@/lib/cn";
-import { TONE_CLASSES } from "@/lib/theme";
-import { ratingPhrase, ratingTone } from "./tone";
+import { D_TIER, dTierTone, ratingPhrase } from "./tone";
 
 interface RatingPillProps {
   rating: Rating;
@@ -17,11 +16,11 @@ interface RatingPillProps {
 }
 
 /**
- * A rating as a calm tinted pill: "Very smooth cruise", "Large jet". Tappable
+ * A rating as a soft tinted pill (leaf / sun / amber): "Very smooth cruise", "Large jet". Tappable
  * where the detail sheet is offered (the chevron says so); plain text elsewhere.
  */
 export function RatingPill({ rating, size = "md", onOpen, labelOnly = false, className }: RatingPillProps) {
-  const tone = TONE_CLASSES[ratingTone(rating)];
+  const tone = D_TIER[dTierTone(rating)];
   const base = cn(
     "inline-flex max-w-full items-center gap-1 rounded-full font-semibold leading-tight ring-1 ring-inset",
     size === "sm" ? "min-h-8 px-2.5 text-[12px]" : "min-h-9 px-3 text-[13px]",
