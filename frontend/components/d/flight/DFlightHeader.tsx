@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { countdownLabel, formatDuration, formatLongDate, formatTime12 } from "@preflight/shared/dates";
 import { availabilityFor } from "@preflight/shared/forecast";
 import type { Flight } from "@preflight/shared/types";
+import { dayOffsetWords } from "@/components/c/flight/copy";
 import { PaperPlane } from "@/components/d/brand/FlightPath";
 import { cn } from "@/lib/cn";
 
@@ -64,7 +65,7 @@ export function DFlightHeader({ flight, daysUntil, className }: DFlightHeaderPro
         <h1 className="min-w-0">
           <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-mute">Flight details</span>
           <span className="block text-[17px] font-extrabold leading-snug tracking-tight text-ink [overflow-wrap:anywhere]">{flight.airline.name}</span>
-          <span className="mt-0.5 block text-[13px] text-ink-mute tabular-nums">Flight {flight.flightNumber}</span>
+          <span className="mt-0.5 block text-[13px] font-medium text-ink-mute tabular-nums">Flight {flight.flightNumber}</span>
           <span className="sr-only">
             , {origin.code} to {destination.code}
           </span>
@@ -120,7 +121,7 @@ export function DFlightHeader({ flight, daysUntil, className }: DFlightHeaderPro
         </div>
         <div className="min-w-0 text-center">
           <Eyebrow>Duration</Eyebrow>
-          <p className="mt-1 whitespace-nowrap text-[15px] font-bold leading-none text-ink tabular-nums">{formatDuration(flight.blockMin)}</p>
+          <p className="mt-1 whitespace-nowrap text-[20px] font-bold leading-none text-ink tabular-nums">{formatDuration(flight.blockMin)}</p>
           <p className="mt-1 whitespace-nowrap text-[12px] text-ink-mute tabular-nums">{flight.distanceMi.toLocaleString("en-US")} mi</p>
         </div>
         <div className="text-right">
@@ -128,9 +129,12 @@ export function DFlightHeader({ flight, daysUntil, className }: DFlightHeaderPro
           <p className="mt-1 whitespace-nowrap text-[20px] font-extrabold leading-none text-ink tabular-nums">
             {formatTime12(flight.arriveTime)}
             {offset ? (
-              <sup className="ml-0.5 text-[11px] font-bold text-ink-mute" title="Lands on another calendar day">
-                {offset}
-              </sup>
+              <>
+                <sup aria-hidden className="ml-0.5 text-[11px] font-bold text-ink-mute">
+                  {offset}
+                </sup>
+                <span className="sr-only"> ({dayOffsetWords(flight.arriveDayOffset)})</span>
+              </>
             ) : null}
           </p>
           <p className="mt-1 text-[12px] text-ink-mute">{destination.code}</p>

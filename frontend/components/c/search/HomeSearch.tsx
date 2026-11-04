@@ -38,9 +38,10 @@ const POPULAR_ROUTES: ReadonlyArray<readonly [string, string]> = [
 export type HomeSearchTone = "dark" | "light";
 
 /** The parts that change with the tone (the form itself is the same on both). */
-const TONES: Record<HomeSearchTone, { card: string; heading: string; sub: string; route: string; codes: string; arrow: string; cities: string; skeletonHeading: string; skeletonRoute: string }> = {
+const TONES: Record<HomeSearchTone, { card: string; skeletonCard: string; heading: string; sub: string; route: string; codes: string; arrow: string; cities: string; skeletonHeading: string; skeletonRoute: string }> = {
   dark: {
     card: "rounded-3xl bg-surface p-4 text-ink-900 shadow-lift ring-1 ring-line/80 sm:p-5",
+    skeletonCard: "rounded-3xl bg-surface p-4 shadow-lift ring-1 ring-line/80 sm:p-5",
     heading: "text-[13px] font-semibold text-white/80",
     sub: "font-normal text-white/60",
     route: "bg-white/[0.08] ring-1 ring-inset ring-white/15 hover:bg-white/[0.16] focus-visible:outline-white",
@@ -52,6 +53,7 @@ const TONES: Record<HomeSearchTone, { card: string; heading: string; sub: string
   },
   light: {
     card: "text-ink-900",
+    skeletonCard: "",
     heading: "text-[13px] font-bold text-ink-700",
     sub: "font-normal text-ink-500",
     route: "bg-canvas/70 hover:bg-canvas",
@@ -142,7 +144,7 @@ function HomeSearchSkeleton({ tone }: { tone: HomeSearchTone }) {
   const t = TONES[tone];
   return (
     <div aria-hidden>
-      <div className={t.card}>
+      <div className={t.skeletonCard || undefined}>
         <div className="@container">
           <div className="grid grid-cols-1 gap-4 @min-[52rem]:grid-cols-[1fr_3rem_1fr_12.5rem_10rem] @min-[52rem]:gap-3">
             {[0, 1, 2, 3].map((i) => (

@@ -264,7 +264,7 @@
   --color-ink-900: var(--color-ink);
   --color-ink-700: var(--color-ink-soft);
   --color-ink-500: var(--color-ink-mute);
-  --color-ink-400: #6b8292;
+  --color-ink-400: #5b7385;
   --color-ink-300: var(--color-slate);
 
   --color-night-950: #141414;
@@ -277,7 +277,7 @@
   --color-calm-200: var(--color-leaf);
   --color-calm-300: #9ad39c;
   --color-calm-400: #7cc27f;
-  --color-calm-500: #5fae63;
+  --color-calm-500: #357a3b;
   --color-calm-600: #46924b;
   --color-calm-700: var(--color-leaf-ink);
   --color-calm-800: #26532b;
@@ -287,7 +287,7 @@
   --color-breeze-200: var(--color-sky-deep);
   --color-breeze-300: #9cc4db;
   --color-breeze-400: #7fafc9;
-  --color-breeze-500: #5f93b1;
+  --color-breeze-500: #4a7a97;
   --color-breeze-600: #4a7893;
   --color-breeze-700: var(--color-sky-ink);
 
@@ -296,7 +296,7 @@
   --color-dusk-200: var(--color-cream-deep);
   --color-dusk-400: #d2b98a;
   --color-dusk-500: #b89a62;
-  --color-dusk-600: #967a44;
+  --color-dusk-600: #6f5118;
   --color-dusk-700: var(--color-sun-ink);
 
   --color-sand-50: #fbf4e6;
@@ -318,6 +318,10 @@
 [data-theme="d"] :focus-visible {
   outline: 2px solid var(--color-ink);
   outline-offset: 3px;
+}
+/* Text fields and selects draw the shared form ring on focus; one ring, not two. Checkboxes and sliders keep the ink outline. */
+[data-theme="d"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus-visible {
+  outline: none;
 }
 
 [data-theme="d"] ::selection {
@@ -348,5 +352,11 @@
   }
   [data-theme="d"] .d-plane-resting {
     display: block;
+  }
+  /* The staggered entrances start at once: with their delays, D's cards would still appear one after another. */
+  [data-theme="d"] *,
+  [data-theme="d"] *::before,
+  [data-theme="d"] *::after {
+    animation-delay: 0s !important;
   }
 }

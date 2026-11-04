@@ -39,7 +39,7 @@ export function PrioritiesSetup({ onDone, className }: PrioritiesSetupProps) {
 
   if (!showForm) {
     return (
-      <section aria-labelledby="d-priorities-title" className={cn("rounded-[24px] bg-surface p-5 shadow-soft", className)}>
+      <section aria-labelledby="d-priorities-title" className={cn("rounded-[24px] bg-surface p-5 shadow-soft sm:p-7", className)}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <ProgressDashes total={STEP.total} active={STEP.active} label={STEP.label} />
@@ -207,7 +207,7 @@ function RankingForm({ initial, changing, onDone, className }: RankingFormProps)
  */
 function SetupPlaceholder({ className }: { className?: string }) {
   return (
-    <div aria-hidden className={cn("rounded-[24px] bg-surface p-5 shadow-soft", className)}>
+    <div aria-hidden className={cn("rounded-[24px] bg-surface p-5 shadow-soft sm:p-7", className)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="h-1.5 w-[4.75rem] rounded-full bg-canvas" />

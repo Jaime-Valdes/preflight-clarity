@@ -1,4 +1,3 @@
-import { useId } from "react";
 import { cn } from "@/lib/cn";
 
 /*
@@ -23,11 +22,9 @@ export function PaperPlane() {
 }
 
 export function FlightPath({ className }: { className?: string }) {
-  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   return (
     <svg viewBox="0 0 600 200" aria-hidden className={cn("block h-auto w-full overflow-visible", className)}>
       <path
-        id={`fp-${id}`}
         d={PATH}
         pathLength={1}
         fill="none"

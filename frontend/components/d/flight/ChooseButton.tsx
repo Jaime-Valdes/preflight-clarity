@@ -124,7 +124,7 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
                     Picked
                     <Check className="size-3.5 shrink-0" strokeWidth={2.5} />
                   </span>
-                  <span className="font-semibold text-leaf-ink/80">
+                  <span className="font-semibold">
                     <span className="hidden sm:inline">· </span>change
                   </span>
                 </>
@@ -143,7 +143,7 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
                 <Check aria-hidden className="size-4 shrink-0" strokeWidth={2.5} />
                 <span className="min-w-0 text-center">
                   Your pick
-                  <span className="font-semibold text-leaf-ink/80"> · change</span>
+                  <span className="font-semibold"> · change</span>
                 </span>
               </>
             ) : (

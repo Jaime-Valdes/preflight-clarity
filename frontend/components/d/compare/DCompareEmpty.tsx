@@ -7,8 +7,9 @@ import { orderByPriorities, rateFlight } from "@preflight/shared/ratings";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
 import type { CompareEmptyProps } from "@/components/c/compare/ComparePage";
 import { isFlightColumn, unavailableNote, type FlightColumn, type UnavailableColumn } from "@/components/c/compare/facts";
-import { LINK_BASE, fareFor, routeText, shortDate } from "@/components/c/flight/copy";
+import { fareFor, routeText, shortDate } from "@/components/c/flight/copy";
 import { useHrefs } from "@/components/c/shell/ToolContext";
+import { D_PILL_OUTLINE, D_PILL_PRIMARY } from "@/components/d/brand/buttons";
 import { CloudMascot } from "@/components/d/brand/CloudMascot";
 import { RatingPill } from "@/components/d/ratings/RatingPill";
 import { formatFare } from "@/lib/c/format";
@@ -23,8 +24,7 @@ import { cn } from "@/lib/cn";
  */
 
 /** The one primary action: a full-width black pill on phones. */
-const PRIMARY =
-  "inline-flex h-14 w-full items-center justify-center gap-2 rounded-full bg-ink px-6 text-[17px] font-bold text-white transition-transform duration-[120ms] active:scale-[0.98] sm:w-auto sm:min-w-[14rem]";
+const PRIMARY = cn(D_PILL_PRIMARY, "h-14 w-full px-6 text-[17px] sm:w-auto sm:min-w-[14rem]");
 export function DCompareEmpty({ columns, badLink, addHref, onRemove }: CompareEmptyProps) {
   const hrefs = useHrefs();
   const flight = columns.find(isFlightColumn);
@@ -104,7 +104,7 @@ function PickedFlight({ column, onRemove }: { column: FlightColumn; onRemove: (i
         <p className="shrink-0 text-base font-extrabold text-ink tabular-nums">{formatFare(fareFor(column.option, column.daysUntil))}</p>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Link href={hrefs.flight(column.item)} className={cn(LINK_BASE, "h-11 px-3 font-bold text-ink ring-2 ring-inset ring-ink hover:bg-ink/5")}>
+        <Link href={hrefs.flight(column.item)} className={cn(D_PILL_OUTLINE, "h-11 px-3 text-sm")}>
           Details<span className="sr-only"> for {label}</span>
         </Link>
         <RemoveButton id={column.id} label={label} onRemove={onRemove} />

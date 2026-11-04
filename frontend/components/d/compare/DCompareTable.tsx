@@ -23,8 +23,9 @@ import {
   type FlightColumn,
 } from "@/components/c/compare/facts";
 import { BenchmarkLine } from "@/components/c/flight/BenchmarkLine";
-import { LINK_BASE, dayOffsetMark, dayOffsetWords, daysAwayLabel, flightContext, routeText, shortDate } from "@/components/c/flight/copy";
+import { dayOffsetMark, dayOffsetWords, daysAwayLabel, flightContext, routeText, shortDate } from "@/components/c/flight/copy";
 import { useHrefs } from "@/components/c/shell/ToolContext";
+import { D_PILL_OUTLINE } from "@/components/d/brand/buttons";
 import { ChooseButton } from "@/components/d/flight/ChooseButton";
 import { RatingButton } from "@/components/d/ratings/RatingSheet";
 import { CATEGORY_SHORT } from "@/components/d/ratings/tone";
@@ -296,7 +297,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
                       {isFlightColumn(c) ? (
                         <Link
                           href={hrefs.flight(c.item)}
-                          className={cn(LINK_BASE, "h-11 px-3 font-bold text-ink ring-2 ring-inset ring-ink hover:bg-ink/5 lg:flex-1")}
+                          className={cn(D_PILL_OUTLINE, "h-11 px-3 text-sm lg:flex-1")}
                         >
                           Details<span className="sr-only"> for {nameOf(c)}</span>
                         </Link>
