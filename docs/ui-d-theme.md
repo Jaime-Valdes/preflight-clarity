@@ -77,6 +77,7 @@ animation on its resting frame (lines fully drawn, planes landed, eyes open, blo
 | Blobs | `animate-d-drift` / `-slow` 24–32 s, 6 px |
 | Buttons | scale 0.98 on press, 120 ms |
 | "Why?" on a card | grid-rows 0fr → 1fr, 300 ms ease-out; chevron turns |
+| Reduced motion | the global rule ends every animation on its resting frame; inside the theme the entrance delays are zeroed too, so nothing appears late |
 | Never | bounces, shakes, pulses, anything fast, anything red or orange |
 
 ## Rules that outrank fidelity to the reference
@@ -108,7 +109,7 @@ the same routes, query parameters, forms, PostHog event names, Supabase calls an
 | Rating sheet (`RatingSheet`) | The tier on its tint with the outlined icon; factors marked leaf (helps), amber (weighs on it) or sky (neutral); the numbers on a soft sky list. |
 | Compare (`DCompareTable`, `DCompareEmpty`) | The table on a 24 px white card; group rows with outlined icons; markers ("Cheapest", "Smoothest for you") in leaf; "Details" as outline pills; "Pick" tiles in ink / leaf. Fewer than two flights: the mascot, the headline face, the black pill. |
 | Loading (`DLoading`) | The mascot floating over "Checking the skies…", in place of the three skeletons; `role="status"`. |
-| Everywhere | `h1` is weight 800 under the theme (the shared summary and compare headings included); a 2 px ink focus ring; sun text selection. |
+| Everywhere | `h1` is weight 800 under the theme (the shared summary and compare headings included; inner lines set their own weight). A 2 px ink focus ring, except on text fields, selects and the date picker, which keep the shared blue ring so a focused field never shows two rings. Sun text selection. Under reduced motion the staggered entrances start at once (their delays are zeroed inside the theme). The remapped `calm-500`, `breeze-500`, `dusk-600` and `ink-400` are darker than a straight hue swap, so white or small text on them (the top bar's compare count, airline tiles, placeholders) stays at AA. |
 
 Known small inconsistency, left alone on purpose: the shared pills inside the results summary ("Swap", "Change")
 and the shared sign-up card keep C's thin line ring, since those components are shared with A, B and C and
