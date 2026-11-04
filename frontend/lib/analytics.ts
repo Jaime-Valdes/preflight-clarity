@@ -73,6 +73,9 @@ export function startAnalytics(): void {
     },
     // Visitors stay anonymous: one distinct id per browser, no person profiles.
     person_profiles: "never",
+    // The SDK's localhost hook would mark a "test user" on the person profile we never create, and
+    // logs an error about it on every dev page; nothing to set, so the hook never matches.
+    internal_or_test_user_hostname: /(?!)/,
     capture_pageview: "history_change",
     capture_pageleave: true,
     autocapture: true,
