@@ -3,6 +3,7 @@
 import { Armchair, ChevronDown, ChevronLeft, Layers, Plane, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { displayAircraftName } from "@preflight/shared/aircraft";
 import { compareToBenchmark, type Comparison } from "@preflight/shared/benchmarks";
 import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
 import { orderByPriorities, rateFlight } from "@preflight/shared/ratings";
@@ -18,6 +19,7 @@ import { FlightSections, type CSectionId, type SectionOverride } from "@/compone
 import { OtherFlights } from "@/components/c/flight/OtherFlights";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useHrefs } from "@/components/c/shell/ToolContext";
+import { scheduleAttribution } from "@/components/d/brand/attribution";
 import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
 import { possessive } from "@/components/dashboard/trust/format";
 import { RatingPill } from "@/components/d/ratings/RatingPill";
@@ -27,6 +29,7 @@ import { formatFare } from "@/lib/c/format";
 import type { CompareItem } from "@/lib/c/model";
 import { usePriorities } from "@/lib/d/priorities";
 import { priceDeltaText, ratingsByKey } from "@/lib/d/view";
+import { useRouteDay } from "@/lib/flights/store";
 import { useNowMs } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import type { Tone } from "@/lib/theme";
@@ -121,6 +124,8 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
   const ordered = useMemo(() => orderByPriorities(ratings, priorities.order), [ratings, priorities.order]);
   const aircraftRating = ratings.find((r) => r.category === "aircraft");
   const label = flightContext(flight, day);
+  // Where this day's schedule came from, for the credit under the header.
+  const { provider } = useRouteDay({ origin: flight.origin.code, destination: flight.destination.code, date: day.date });
 
   // Where this flight stands among the day's flights still to leave (the "vs cheapest" line and analytics):
   // its fare at this lead time, its rank and the dollars over the cheapest. Flights that left earlier today
@@ -235,6 +240,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
           {/* Focus lands here when another flight is opened from this page (see FlightPage). */}
           <div data-flight-top tabIndex={-1} className="min-w-0 rounded-[24px] outline-none lg:col-start-1">
             <DFlightHeader flight={flight} daysUntil={daysUntil} className="animate-d-rise" />
+            <p className="mt-2 px-1 text-xs leading-snug text-ink-mute">{scheduleAttribution(provider)}</p>
           </div>
 
           {/* Phones: the fare and the one question within reach of the first screen, not three screens down
@@ -290,7 +296,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                     <Fact
                       main={
                         <>
-                          {aircraft.fullName} · <span className="whitespace-nowrap">{aircraft.tailNumber}</span>
+                          {displayAircraftName(aircraft)} · <span className="whitespace-nowrap">{aircraft.tailNumber}</span>
                         </>
                       }
                       sub={`Assigned aircraft · ${yearsText(aircraft.ageYears)} old, delivered ${aircraft.deliveredYear} · can change before departure`}
@@ -298,8 +304,12 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                     />
                   ) : (
                     <Fact
-                      main={aircraft.fullName}
-                      sub={`Scheduled aircraft · ${possessive(flight.airline.name)} ${aircraft.model}s average ${yearsText(aircraft.fleetAvgAgeYears)} old`}
+                      main={displayAircraftName(aircraft)}
+                      sub={
+                        aircraft.listedAs
+                          ? `Scheduled aircraft · the facts here are for a similar type, the ${aircraft.fullName}`
+                          : `Scheduled aircraft · ${possessive(flight.airline.name)} ${aircraft.model}s average ${yearsText(aircraft.fleetAvgAgeYears)} old`
+                      }
                       benchmark={<BenchmarkLine benchmark="fleetAgeYears" value={aircraft.fleetAvgAgeYears} />}
                     />
                   )}

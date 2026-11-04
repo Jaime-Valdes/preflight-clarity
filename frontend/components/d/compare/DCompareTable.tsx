@@ -3,9 +3,10 @@
 import { ArrowRight, Armchair, CalendarClock, Heart, Plane, ShieldCheck, Sparkles, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from "react";
+import { displayAircraftName } from "@preflight/shared/aircraft";
 import { addDays, formatDuration, formatTime12 } from "@preflight/shared/dates";
 import { forYouScore, rateFlight, type Rating, type RatingCategory } from "@preflight/shared/ratings";
-import { fareAt, searchFlights, type FlightOption } from "@preflight/shared/search";
+import { fareAt, type FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { hasLeft } from "@/components/c/common/availability";
 import type { CompareTableProps } from "@/components/c/compare/ComparePage";
@@ -24,14 +25,17 @@ import {
 } from "@/components/c/compare/facts";
 import { BenchmarkLine } from "@/components/c/flight/BenchmarkLine";
 import { dayOffsetMark, dayOffsetWords, daysAwayLabel, flightContext, routeText, shortDate } from "@/components/c/flight/copy";
-import { useHrefs } from "@/components/c/shell/ToolContext";
+import { useFlightSource, useHrefs } from "@/components/c/shell/ToolContext";
 import { D_PILL_OUTLINE } from "@/components/d/brand/buttons";
+import { scheduleAttributionFor } from "@/components/d/brand/attribution";
 import { ChooseButton } from "@/components/d/flight/ChooseButton";
 import { RatingButton } from "@/components/d/ratings/RatingSheet";
 import { CATEGORY_SHORT } from "@/components/d/ratings/tone";
 import { formatFare } from "@/lib/c/format";
 import { usePriorities } from "@/lib/d/priorities";
 import { priceDeltaText } from "@/lib/d/view";
+import { readRouteDay } from "@/lib/flights/store";
+import type { FlightSource } from "@/lib/flights/source";
 import { useNowMs } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 
@@ -76,10 +80,10 @@ function todayFor(column: FlightColumn): string {
   return addDays(column.item.date, -column.daysUntil);
 }
 
-/** Every flight on the column's day (cached by the generator), for the pick's price rank. */
-function optionsOn(column: FlightColumn): readonly FlightOption[] {
+/** Every flight on the column's day through the tool's source (the page waited for every day), for the pick's price rank. */
+function optionsOn(column: FlightColumn, source: FlightSource): readonly FlightOption[] {
   try {
-    return searchFlights({ origin: column.item.origin, destination: column.item.destination, date: column.item.date }).options;
+    return source.searchFlights({ origin: column.item.origin, destination: column.item.destination, date: column.item.date })?.options ?? [column.option];
   } catch {
     return [column.option];
   }
@@ -113,9 +117,10 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
   );
   // The flights still to leave that day: the pick's price rank is against the same set the results page prices against.
   const nowMs = useNowMs();
+  const source = useFlightSource();
   const dayOptions = useMemo(
-    () => new Map(flights.map((c) => [c.id, optionsOn(c).filter((o) => !hasLeft(o.flight, nowMs))])),
-    [flights, nowMs],
+    () => new Map(flights.map((c) => [c.id, optionsOn(c, source).filter((o) => !hasLeft(o.flight, nowMs))])),
+    [flights, nowMs, source],
   );
 
   // On phones a third column sits off-screen: a fade at the right edge says there is more while there is,
@@ -132,6 +137,8 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
     return () => observer.disconnect();
   }, []);
   const tags = useMemo(() => flightTags(flights, names), [flights, names]);
+  // Where each column's day came from (the store is read on every render; the table re-renders when a day settles).
+  const attribution = scheduleAttributionFor(flights.map((c) => readRouteDay(c.item).provider));
   // Fares as shown: the base fare moved by each flight's own lead time (they can be on different dates).
   const fares = flights.map((c) => fareAt(c.option, c.daysUntil));
   const cheapestFare = fares.length ? Math.min(...fares) : null;
@@ -382,7 +389,10 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
             <tbody>
               {groupHead("Aircraft", <Plane />)}
               {row("Type", (c) => (
-                <Value main={c.flight.aircraft.fullName} sub={c.avail.airframe ? "Assigned aircraft · can change" : "Scheduled aircraft"} />
+                <Value
+                  main={displayAircraftName(c.flight.aircraft)}
+                  sub={c.flight.aircraft.listedAs ? `Scheduled aircraft · facts for a similar type, the ${c.flight.aircraft.fullName}` : c.avail.airframe ? "Assigned aircraft · can change" : "Scheduled aircraft"}
+                />
               ))}
               {row("Size", (c) => (
                 <Value
@@ -454,6 +464,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
           </table>
         </div>
         {/* The fade: there is more table to the right. Gone once the end is on screen. */}
+        <p className="mt-2 px-1 text-xs leading-snug text-ink-mute">{attribution}</p>
         <div
           aria-hidden
           className={cn(

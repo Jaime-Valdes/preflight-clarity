@@ -26,6 +26,11 @@ export interface ToolInfo {
   compareKey: string;
   /** For labels: "Cloud9, flight search". */
   name: string;
+  /**
+   * Where the pages get a day's flights (frontend/lib/flights/source.ts): the generator in the
+   * browser, or version D's day store fed by /api/flights/day (docs/REAL_DATA.md).
+   */
+  flights: "generator" | "store";
 }
 
 export const TOOLS: Record<ToolVersion, ToolInfo> = {
@@ -38,6 +43,7 @@ export const TOOLS: Record<ToolVersion, ToolInfo> = {
     placements: { home: "c_home", results: "c_results", flight: "c_flight", compare: "c_compare" },
     compareKey: "pfc.c.compare.v1",
     name: "flight search",
+    flights: "generator",
   },
   d: {
     version: "d",
@@ -48,6 +54,7 @@ export const TOOLS: Record<ToolVersion, ToolInfo> = {
     placements: { home: "d_home", results: "d_results", flight: "d_flight", compare: "d_compare" },
     compareKey: "pfc.d.compare.v1",
     name: "smooth-flight finder",
+    flights: "store",
   },
 };
 

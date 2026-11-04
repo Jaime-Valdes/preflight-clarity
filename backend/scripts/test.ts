@@ -6,13 +6,17 @@
  * tsx does. Covers: parseSessionRecord and parseSignup (accept, reject,
  * sanitize), the local file store (upsert, stale writes, ordering, concurrency,
  * sign-ups), the Supabase row mappings (pure), and the HTTP routes through
- * Hono's app.request() against temporary data files.
+ * Hono's app.request() against temporary data files. Version D's schedules
+ * (docs/REAL_DATA.md, step 1): the query validation, the providers (the
+ * generator, the AeroDataBox fixture mapping, the adapter over a fetch double),
+ * the route-day cache and GET /flights/day.
  */
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CSV_COLUMNS, csvCell, recordToRow as csvRow, recordsToCsv } from "@preflight/shared/csv";
+import { addDays, toISODate } from "@preflight/shared/dates";
 import {
   MAX_COMPARE_PAIRS,
   MAX_EVENTS,
@@ -20,6 +24,7 @@ import {
   MAX_TEXT_CHARS,
   parseSessionRecord,
 } from "@preflight/shared/record";
+import { generatedSchedule, optionsFromSchedule, type RouteDaySchedule, type ScheduleRow } from "@preflight/shared/schedule";
 import { SECTION_IDS } from "@preflight/shared/sections";
 import {
   emailKey,
@@ -49,8 +54,36 @@ import type {
   SessionRecord,
   Signup,
 } from "@preflight/shared/types";
-import { createFileStore, SIGNUPS_FILE } from "../src/lib/store/file";
-import { isMissingColumn, recordToRow, rowToRecord, rowToSignup, signupToRow, withoutNewerColumns } from "../src/lib/store/supabase";
+import {
+  aeroDataBoxConfig,
+  createAeroDataBoxProvider,
+  fidsHeaders,
+  fidsUrls,
+  parseAdbTime,
+  retryAfterMs,
+  scheduleFromFids,
+  splitFlightNumber,
+  type AdbFids,
+  type AdbFlight,
+  type AdbMovement,
+} from "../src/lib/flights/aerodatabox";
+import { MEMORY_CAPACITY, recordOf, RouteDayCache } from "../src/lib/flights/cache";
+import { createFixtureProvider, defaultFixtureDir, fixtureFile } from "../src/lib/flights/fixture";
+import { createGeneratorProvider } from "../src/lib/flights/generator";
+import { currentProvider, providerName, routeDayCache, validateDayQuery } from "../src/lib/flights/index";
+import { ProviderError, ROUTE_DAY_MAX_AGE_MS, ROUTE_DAY_TTL_MS, type RouteDayStore, type ScheduleProvider } from "../src/lib/flights/types";
+import { createFileStore, ROUTE_DAYS_FILE, SIGNUPS_FILE } from "../src/lib/store/file";
+import { createMemoryRouteDayStore } from "../src/lib/store/memory";
+import {
+  isMissingColumn,
+  recordToRow,
+  routeDayToRow,
+  rowToRecord,
+  rowToRouteDay,
+  rowToSignup,
+  signupToRow,
+  withoutNewerColumns,
+} from "../src/lib/store/supabase";
 
 // ── Harness ─────────────────────────────────────────────────────────────────
 
@@ -1404,6 +1437,626 @@ group("file store: sign-ups", () => {
   });
 });
 
+// ── Flights: validation (docs/REAL_DATA.md, step 1) ─────────────────────────
+
+/** A fixed server day for the validation tests: local noon, so the calendar day is unambiguous. */
+const SERVER_TODAY = new Date(2026, 10, 4, 12, 0, 0);
+const TODAY_ISO = toISODate(SERVER_TODAY);
+
+group("flights: validation", () => {
+  test("accepts catalogue codes with a date from yesterday to a day past 330 days ahead", () => {
+    // One day either side of the window: a traveller west of the server is still on yesterday, one east is already on tomorrow.
+    for (const date of [addDays(TODAY_ISO, -1), TODAY_ISO, addDays(TODAY_ISO, 330), addDays(TODAY_ISO, 331)]) {
+      assert.deepEqual(validateDayQuery({ from: "JFK", to: "LAX", date }, SERVER_TODAY), { ok: true, query: { from: "JFK", to: "LAX", date } });
+    }
+  });
+
+  test("rejects a date outside that window", () => {
+    for (const date of [addDays(TODAY_ISO, -2), addDays(TODAY_ISO, 332), "2020-01-01"]) {
+      assert.deepEqual(validateDayQuery({ from: "JFK", to: "LAX", date }, SERVER_TODAY), { ok: false, error: "date_out_of_range" });
+    }
+  });
+
+  test("rejects malformed or unknown airports and dates with one short code each", () => {
+    const expect = (raw: { from?: string; to?: string; date?: string }, error: string) =>
+      assert.deepEqual(validateDayQuery(raw, SERVER_TODAY), { ok: false, error }, JSON.stringify(raw));
+    expect({ to: "LAX", date: TODAY_ISO }, "invalid_from");
+    expect({ from: "jfk", to: "LAX", date: TODAY_ISO }, "invalid_from");
+    expect({ from: "JFKX", to: "LAX", date: TODAY_ISO }, "invalid_from");
+    expect({ from: "ZZZ", to: "LAX", date: TODAY_ISO }, "unknown_from");
+    expect({ from: "JFK", date: TODAY_ISO }, "invalid_to");
+    expect({ from: "JFK", to: "LAX ", date: TODAY_ISO }, "invalid_to");
+    expect({ from: "JFK", to: "QQQ", date: TODAY_ISO }, "unknown_to");
+    expect({ from: "JFK", to: "JFK", date: TODAY_ISO }, "same_airport");
+    expect({ from: "JFK", to: "LAX" }, "invalid_date");
+    expect({ from: "JFK", to: "LAX", date: "2026-2-3" }, "invalid_date");
+    expect({ from: "JFK", to: "LAX", date: "2026-02-30" }, "invalid_date");
+    expect({ from: "JFK", to: "LAX", date: "26/11/2026" }, "invalid_date");
+  });
+});
+
+// ── Flights: providers ──────────────────────────────────────────────────────
+
+const FETCHED_MS = Date.UTC(2026, 10, 4, 12, 0, 0);
+const FETCHED_AT = new Date(FETCHED_MS).toISOString();
+const FIXTURE_DAY = "2026-11-26";
+const JFK_LAX = { from: "JFK", to: "LAX", date: FIXTURE_DAY };
+const clockAt = (ms: number) => () => ms;
+
+/** JFK → LAX on the fixture day, as the mapping should read backend/fixtures/aerodatabox/JFK-2026-11-26.json. */
+function fixtureRows(): ScheduleRow[] {
+  const base = { origin: "JFK", destination: "LAX", date: FIXTURE_DAY, arriveDayOffset: 0 };
+  return [
+    { ...base, airline: "DL", airlineName: "Delta Air Lines", number: "423", departTime: "06:00", arriveTime: "09:25", blockMin: 385, aircraft: { name: "Boeing 767-300(ER)" }, terminal: "4" },
+    { ...base, airline: "B6", airlineName: "JetBlue Airways", number: "23", departTime: "07:00", arriveTime: "10:28", blockMin: 388, aircraft: { name: "Airbus A321-231" }, terminal: "5" },
+    { ...base, airline: "AA", airlineName: "American Airlines", number: "1", departTime: "08:00", arriveTime: "11:30", blockMin: 390, aircraft: { name: "Airbus A321" }, terminal: "8" },
+    { ...base, airline: "YX", airlineName: "Republic Airways", number: "4512", departTime: "10:15", arriveTime: "13:52", blockMin: 397, aircraft: { name: "Embraer 175" } },
+    { ...base, airline: "UA", airlineName: "United Airlines", number: "1455", departTime: "21:10", arriveTime: "00:35", arriveDayOffset: 1, blockMin: 385, aircraft: { name: "Boeing 757-200" }, terminal: "7" },
+  ];
+}
+
+function fixtureDay(): RouteDaySchedule {
+  return { origin: "JFK", destination: "LAX", date: FIXTURE_DAY, provider: "aerodatabox", fetchedAt: FETCHED_AT, rows: fixtureRows(), served: true };
+}
+
+/** The fixture's departures, as the file lists them. */
+async function fixtureDepartures(): Promise<AdbFlight[]> {
+  const fids = JSON.parse(await readFile(fixtureFile(defaultFixtureDir(), "JFK", FIXTURE_DAY), "utf8")) as AdbFids;
+  return fids.departures ?? [];
+}
+
+/** A listed departure at noon to LAX (the minute both windows share), with the parts a test may swap. */
+function noonFlight(number: string, overrides: Partial<AdbFlight> = {}): AdbFlight {
+  const departure: AdbMovement = { scheduledTime: { utc: `${FIXTURE_DAY} 17:00Z`, local: `${FIXTURE_DAY} 12:00-05:00` }, terminal: "8", quality: ["Basic"] };
+  const arrival: AdbMovement = { airport: { iata: "LAX" }, scheduledTime: { utc: `${FIXTURE_DAY} 23:30Z`, local: `${FIXTURE_DAY} 15:30-08:00` }, quality: ["Basic"] };
+  return {
+    number,
+    status: "Expected",
+    codeshareStatus: "IsOperator",
+    isCargo: false,
+    departure,
+    arrival,
+    aircraft: { model: "Airbus A321" },
+    airline: { name: "American Airlines", iata: "AA", icao: "AAL" },
+    ...overrides,
+  };
+}
+
+group("flights: providers", () => {
+  test("providerName follows FLIGHT_PROVIDER, the generator by default and for anything unknown", () => {
+    assert.equal(providerName({}), "generator");
+    assert.equal(providerName({ FLIGHT_PROVIDER: "aerodatabox" }), "aerodatabox");
+    assert.equal(providerName({ FLIGHT_PROVIDER: " Fixture " }), "fixture");
+    assert.equal(providerName({ FLIGHT_PROVIDER: "nope" }), "generator");
+  });
+
+  test("currentProvider: each name; AeroDataBox without a key fails as a provider rather than falling back", async () => {
+    assert.equal(currentProvider({}).name, "generator");
+    assert.equal(currentProvider({ FLIGHT_PROVIDER: "fixture" }).name, "fixture");
+    assert.equal(currentProvider({ FLIGHT_PROVIDER: "aerodatabox", AERODATABOX_API_KEY: "k" }).name, "aerodatabox");
+    const keyless = currentProvider({ FLIGHT_PROVIDER: "aerodatabox" });
+    assert.equal(keyless.name, "aerodatabox");
+    await assert.rejects(keyless.fetchDay("JFK", "LAX", FIXTURE_DAY), (err: unknown) => err instanceof ProviderError && /AERODATABOX_API_KEY/.test(err.message));
+  });
+
+  test("the generator provider is generatedSchedule with the clock as fetchedAt", async () => {
+    const schedule = await createGeneratorProvider(clockAt(FETCHED_MS)).fetchDay("JFK", "LAX", FIXTURE_DAY);
+    assert.deepEqual(schedule, generatedSchedule({ origin: "JFK", destination: "LAX", date: FIXTURE_DAY }, FETCHED_AT));
+    assert.equal(schedule.provider, "generator");
+    assert.equal(schedule.served, true);
+    assert.ok(schedule.rows.length > 0);
+  });
+
+  test("the fixture provider maps JFK → LAX: local times, the overnight offset, block minutes, terminals; the codeshare, the cargo flight and the other destination left out", async () => {
+    const provider = createFixtureProvider(defaultFixtureDir(), clockAt(FETCHED_MS));
+    assert.equal(provider.name, "fixture");
+    const schedule = await provider.fetchDay("JFK", "LAX", FIXTURE_DAY);
+    assert.deepEqual(schedule, fixtureDay());
+    const numbers = schedule.rows.map((r) => `${r.airline} ${r.number}`);
+    for (const left of ["VS 4423", "5Y 741", "B6 615"]) assert.equal(numbers.includes(left), false, `${left} is not shown`);
+    assert.equal((await fixtureDepartures()).length, 8, "the fixture lists eight departures");
+  });
+
+  test("the fixture's other destination is its own day; a destination nobody flies has no rows and an unknown served", async () => {
+    const provider = createFixtureProvider(defaultFixtureDir(), clockAt(FETCHED_MS));
+    const sfo = await provider.fetchDay("JFK", "SFO", FIXTURE_DAY);
+    assert.deepEqual(sfo.rows, [
+      { airline: "B6", airlineName: "JetBlue Airways", number: "615", origin: "JFK", destination: "SFO", date: FIXTURE_DAY, departTime: "08:40", arriveTime: "12:17", arriveDayOffset: 0, blockMin: 397, aircraft: { name: "Airbus A321-231" }, terminal: "5" },
+    ]);
+    assert.equal(sfo.served, true);
+    const bos = await provider.fetchDay("JFK", "BOS", FIXTURE_DAY);
+    assert.deepEqual(bos, { origin: "JFK", destination: "BOS", date: FIXTURE_DAY, provider: "aerodatabox", fetchedAt: FETCHED_AT, rows: [], served: null });
+  });
+
+  test("a day without a fixture is a provider failure", async () => {
+    const provider = createFixtureProvider(defaultFixtureDir());
+    await assert.rejects(provider.fetchDay("JFK", "LAX", "2026-11-27"), (err: unknown) => err instanceof ProviderError && /no fixture for JFK on 2026-11-27/.test(err.message));
+    await assert.rejects(createFixtureProvider(join(tempDir, "nowhere")).fetchDay("JFK", "LAX", FIXTURE_DAY), ProviderError);
+  });
+
+  test("the mapped day builds version D's options through the shared path, the regional carrier on its fallback profile", () => {
+    const results = optionsFromSchedule(fixtureDay());
+    assert.deepEqual(results.options.map((o) => o.key), ["DL423", "B623", "AA1", "YX4512", "UA1455"]);
+    const regional = results.options[3].flight;
+    assert.equal(regional.airline.name, "Republic Airways");
+    assert.equal(regional.flightNumber, "YX 4512");
+    const overnight = results.options[4].flight;
+    assert.equal(overnight.departTime, "21:10");
+    assert.equal(overnight.arriveTime, "00:35");
+    assert.equal(overnight.arriveDayOffset, 1);
+    assert.equal(overnight.blockMin, 385);
+    assert.equal(overnight.terminal, "7");
+  });
+
+  test("parseAdbTime reads AeroDataBox's forms and the ISO one; the instant follows the offset", () => {
+    assert.deepEqual(parseAdbTime("2026-11-26 06:00-05:00"), { date: "2026-11-26", time: "06:00", ms: Date.UTC(2026, 10, 26, 11, 0) });
+    assert.deepEqual(parseAdbTime("2026-11-26 11:00Z"), { date: "2026-11-26", time: "11:00", ms: Date.UTC(2026, 10, 26, 11, 0) });
+    assert.deepEqual(parseAdbTime("2026-11-27T00:35:00+05:30"), { date: "2026-11-27", time: "00:35", ms: Date.UTC(2026, 10, 26, 19, 5) });
+    assert.deepEqual(parseAdbTime(" 2026-11-26 06:00 "), { date: "2026-11-26", time: "06:00", ms: null });
+    for (const bad of [undefined, null, "", "06:00", "2026-11-26", "2026-11-26 25:00Z", "yesterday"]) assert.equal(parseAdbTime(bad), null, String(bad));
+  });
+
+  test("splitFlightNumber: the airline's IATA code wins; the digits as published", () => {
+    assert.deepEqual(splitFlightNumber("DL 423", "DL"), { airline: "DL", number: "423" });
+    assert.deepEqual(splitFlightNumber("DL1423"), { airline: "DL", number: "1423" });
+    assert.deepEqual(splitFlightNumber("5Y 741", "5Y"), { airline: "5Y", number: "741" });
+    assert.deepEqual(splitFlightNumber("5y741", null), { airline: "5Y", number: "741" });
+    assert.deepEqual(splitFlightNumber("GTI 741", "5Y"), { airline: "5Y", number: "741" });
+    assert.deepEqual(splitFlightNumber("GTI 741"), { airline: "GTI", number: "741" });
+    assert.deepEqual(splitFlightNumber("423", "DL"), { airline: "DL", number: "423" });
+    assert.deepEqual(splitFlightNumber("423"), { airline: "", number: "423" });
+    assert.deepEqual(splitFlightNumber("???"), { airline: "", number: "" });
+  });
+
+  test("scheduleFromFids: pages merge, a flight on the shared minute is listed once, a 204 page is empty, listings missing what a row needs are left out", async () => {
+    const all = await fixtureDepartures();
+    const morning = all.filter((f) => (f.departure?.scheduledTime?.local ?? "") < `${FIXTURE_DAY} 12:00`);
+    const evening = all.filter((f) => !morning.includes(f));
+    const pages = [{ departures: [...morning, noonFlight("AA 171")] }, { departures: [noonFlight("AA 171"), ...evening] }];
+    const expected = fixtureRows();
+    expected.splice(4, 0, {
+      airline: "AA", airlineName: "American Airlines", number: "171", origin: "JFK", destination: "LAX", date: FIXTURE_DAY,
+      departTime: "12:00", arriveTime: "15:30", arriveDayOffset: 0, blockMin: 390, aircraft: { name: "Airbus A321" }, terminal: "8",
+    });
+    assert.deepEqual(scheduleFromFids("JFK", "LAX", FIXTURE_DAY, pages, FETCHED_AT).rows, expected);
+    assert.deepEqual(scheduleFromFids("JFK", "LAX", FIXTURE_DAY, [null, null], FETCHED_AT), {
+      origin: "JFK", destination: "LAX", date: FIXTURE_DAY, provider: "aerodatabox", fetchedAt: FETCHED_AT, rows: [], served: null,
+    });
+    const base = noonFlight("AA 172");
+    const unusable: AdbFlight[] = [
+      noonFlight("AA 172", { departure: { ...base.departure, scheduledTime: null } }),
+      noonFlight("AA 173", { arrival: { ...base.arrival, scheduledTime: { local: `${FIXTURE_DAY} 15:30` } } }),
+      noonFlight("AA 174", { departure: undefined, arrival: undefined, movement: base.arrival }),
+      noonFlight("AA 175", { departure: { ...base.departure, scheduledTime: { utc: "2026-11-27 17:00Z", local: "2026-11-27 12:00-05:00" } } }),
+      noonFlight("AA 176", { arrival: { ...base.arrival, scheduledTime: { utc: `${FIXTURE_DAY} 16:00Z`, local: `${FIXTURE_DAY} 08:00-08:00` } } }),
+      noonFlight("AA 177", { arrival: { ...base.arrival, airport: { iata: "SFO" } } }),
+      noonFlight("", { airline: null }),
+      noonFlight("AA 178", { codeshareStatus: "IsCodeshared" }),
+      noonFlight("AA 179", { isCargo: true }),
+    ];
+    assert.deepEqual(scheduleFromFids("JFK", "LAX", FIXTURE_DAY, [{ departures: unusable }], FETCHED_AT).rows, []);
+    const noModel = scheduleFromFids("JFK", "LAX", FIXTURE_DAY, [{ departures: [noonFlight("AA 180", { aircraft: null, departure: { ...base.departure, terminal: null } })] }], FETCHED_AT);
+    assert.deepEqual(noModel.rows[0].aircraft, {});
+    assert.equal("terminal" in noModel.rows[0], false);
+  });
+});
+
+// ── Flights: AeroDataBox adapter (no network: a fetch double) ───────────────
+
+const API_KEY = "test-key-0123456789abcdef";
+
+interface FetchCall {
+  url: string;
+  headers: Record<string, string>;
+}
+
+/** A fetch double answering from a queue in the order asked, recording each request. */
+function fetchDouble(answers: Array<() => Response>) {
+  const calls: FetchCall[] = [];
+  const queue = [...answers];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    calls.push({ url: String(input), headers: { ...((init?.headers as Record<string, string> | undefined) ?? {}) } });
+    const next = queue.shift();
+    if (!next) throw new Error("fetch double: nothing left to answer");
+    return next();
+  };
+  return { calls, fetchImpl };
+}
+
+const answer = (status: number, body?: unknown, headers?: Record<string, string>) => () =>
+  new Response(body === undefined ? null : JSON.stringify(body), { status, headers });
+
+/** The fixture split into the two windows the adapter asks for. */
+async function fixturePages(): Promise<[AdbFids, AdbFids]> {
+  const all = await fixtureDepartures();
+  const morning = all.filter((f) => (f.departure?.scheduledTime?.local ?? "") < `${FIXTURE_DAY} 12:00`);
+  return [{ departures: morning }, { departures: all.filter((f) => !morning.includes(f)) }];
+}
+
+/** A provider over the double, with a sleep spy instead of waiting. */
+function adapter(answers: Array<() => Response>, host: "rapidapi" | "direct" = "rapidapi") {
+  const { calls, fetchImpl } = fetchDouble(answers);
+  const sleeps: number[] = [];
+  const provider = createAeroDataBoxProvider(
+    { apiKey: API_KEY, host },
+    {
+      fetch: fetchImpl,
+      now: clockAt(FETCHED_MS),
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    },
+  );
+  return { provider, calls, sleeps };
+}
+
+group("flights: aerodatabox adapter", () => {
+  test("fidsUrls: the two windows of the local day, departures with their leg, operators and passengers only", () => {
+    const query = "direction=Departure&withLeg=true&withCodeshared=false&withCargo=false&withPrivate=false&withCancelled=false";
+    assert.deepEqual(fidsUrls("rapidapi", "JFK", FIXTURE_DAY), [
+      `https://aerodatabox.p.rapidapi.com/flights/airports/iata/JFK/2026-11-26T00:00/2026-11-26T12:00?${query}`,
+      `https://aerodatabox.p.rapidapi.com/flights/airports/iata/JFK/2026-11-26T12:00/2026-11-26T23:59?${query}`,
+    ]);
+    assert.equal(fidsUrls("direct", "JFK", FIXTURE_DAY)[0].startsWith("https://api.aerodatabox.com/flights/airports/iata/JFK/"), true);
+  });
+
+  test("fidsHeaders and aeroDataBoxConfig: the key goes where each host expects it, rapidapi by default", () => {
+    assert.deepEqual(fidsHeaders({ apiKey: API_KEY, host: "rapidapi" }), { Accept: "application/json", "x-rapidapi-key": API_KEY, "x-rapidapi-host": "aerodatabox.p.rapidapi.com" });
+    assert.deepEqual(fidsHeaders({ apiKey: API_KEY, host: "direct" }), { Accept: "application/json", "X-Api-Key": API_KEY });
+    assert.equal(aeroDataBoxConfig({}), null);
+    assert.equal(aeroDataBoxConfig({ AERODATABOX_API_KEY: "  " }), null);
+    assert.deepEqual(aeroDataBoxConfig({ AERODATABOX_API_KEY: ` ${API_KEY} ` }), { apiKey: API_KEY, host: "rapidapi" });
+    assert.deepEqual(aeroDataBoxConfig({ AERODATABOX_API_KEY: API_KEY, AERODATABOX_HOST: "Direct" }), { apiKey: API_KEY, host: "direct" });
+    assert.deepEqual(aeroDataBoxConfig({ AERODATABOX_API_KEY: API_KEY, AERODATABOX_HOST: "other" }), { apiKey: API_KEY, host: "rapidapi" });
+  });
+
+  test("a day: both windows fetched with the key in the headers only, the pages mapped like the fixture", async () => {
+    const [morning, evening] = await fixturePages();
+    const { provider, calls, sleeps } = adapter([answer(200, morning), answer(200, evening)]);
+    assert.equal(provider.name, "aerodatabox");
+    assert.deepEqual(await provider.fetchDay("JFK", "LAX", FIXTURE_DAY), fixtureDay());
+    assert.deepEqual(calls.map((c) => c.url), fidsUrls("rapidapi", "JFK", FIXTURE_DAY));
+    for (const call of calls) {
+      assert.equal(call.headers["x-rapidapi-key"], API_KEY);
+      assert.equal(call.headers["x-rapidapi-host"], "aerodatabox.p.rapidapi.com");
+      assert.equal(call.url.includes(API_KEY), false, "the key is never in the URL");
+    }
+    assert.deepEqual(sleeps, []);
+  });
+
+  test("the direct gateway: X-Api-Key, no RapidAPI headers", async () => {
+    const { provider, calls } = adapter([answer(204), answer(204)], "direct");
+    await provider.fetchDay("JFK", "LAX", FIXTURE_DAY);
+    assert.deepEqual(calls.map((c) => c.headers), [{ Accept: "application/json", "X-Api-Key": API_KEY }, { Accept: "application/json", "X-Api-Key": API_KEY }]);
+    assert.equal(calls[0].url.startsWith("https://api.aerodatabox.com/"), true);
+  });
+
+  test("204 on both windows is a day with no rows", async () => {
+    const { provider } = adapter([answer(204), answer(204)]);
+    assert.deepEqual(await provider.fetchDay("JFK", "LAX", FIXTURE_DAY), {
+      origin: "JFK", destination: "LAX", date: FIXTURE_DAY, provider: "aerodatabox", fetchedAt: FETCHED_AT, rows: [], served: null,
+    });
+  });
+
+  test("a 429 is retried once after Retry-After: capped at 5 s, 1 s when it says nothing", async () => {
+    const [morning, evening] = await fixturePages();
+    // The windows are asked together: the first answer is the first window's 429, the second the other window's page, the third the retry.
+    let run = adapter([answer(429, undefined, { "retry-after": "2" }), answer(200, evening), answer(200, morning)]);
+    assert.deepEqual(await run.provider.fetchDay("JFK", "LAX", FIXTURE_DAY), fixtureDay());
+    assert.deepEqual(run.sleeps, [2000]);
+    assert.equal(run.calls.length, 3);
+    assert.equal(run.calls[2].url, run.calls[0].url, "the same window again");
+    run = adapter([answer(429, undefined, { "retry-after": "30" }), answer(204), answer(204)]);
+    await run.provider.fetchDay("JFK", "LAX", FIXTURE_DAY);
+    assert.deepEqual(run.sleeps, [5000]);
+    run = adapter([answer(429), answer(204), answer(204)]);
+    await run.provider.fetchDay("JFK", "LAX", FIXTURE_DAY);
+    assert.deepEqual(run.sleeps, [1000]);
+  });
+
+  test("retryAfterMs: seconds, an HTTP date, nothing, nonsense", () => {
+    assert.equal(retryAfterMs(null, FETCHED_MS), 1000);
+    assert.equal(retryAfterMs("", FETCHED_MS), 1000);
+    assert.equal(retryAfterMs("3", FETCHED_MS), 3000);
+    assert.equal(retryAfterMs("0", FETCHED_MS), 0);
+    assert.equal(retryAfterMs("120", FETCHED_MS), 5000);
+    assert.equal(retryAfterMs(new Date(FETCHED_MS + 2500).toUTCString(), FETCHED_MS), 2000);
+    assert.equal(retryAfterMs(new Date(FETCHED_MS - 60_000).toUTCString(), FETCHED_MS), 0);
+    assert.equal(retryAfterMs("soon", FETCHED_MS), 1000);
+  });
+
+  test("a second 429 is a provider failure", async () => {
+    const { provider, sleeps } = adapter([answer(429, undefined, { "retry-after": "1" }), answer(204), answer(429)]);
+    await assert.rejects(provider.fetchDay("JFK", "LAX", FIXTURE_DAY), (err: unknown) => err instanceof ProviderError && err.status === 429);
+    assert.deepEqual(sleeps, [1000]);
+  });
+
+  test("a status other than 200 or 204 is a provider failure whose message never shows the key", async () => {
+    const { provider } = adapter([answer(401, { message: `Invalid key ${API_KEY}` }), answer(204)]);
+    await assert.rejects(provider.fetchDay("JFK", "LAX", FIXTURE_DAY), (err: unknown) => {
+      assert.ok(err instanceof ProviderError);
+      assert.equal(err.status, 401);
+      assert.match(err.message, /^AeroDataBox answered 401: Invalid key \[redacted\]$/);
+      assert.equal(err.message.includes(API_KEY), false);
+      return true;
+    });
+    const empty = adapter([answer(200), answer(204)]);
+    await assert.rejects(empty.provider.fetchDay("JFK", "LAX", FIXTURE_DAY), /not JSON/);
+  });
+
+  test("a network error, or no answer within the timeout, is a provider failure", async () => {
+    const down = adapter([
+      () => {
+        throw new Error("ECONNRESET");
+      },
+      answer(204),
+    ]);
+    await assert.rejects(down.provider.fetchDay("JFK", "LAX", FIXTURE_DAY), (err: unknown) => err instanceof ProviderError && /ECONNRESET/.test(err.message));
+    const sleeps: number[] = [];
+    const silent = createAeroDataBoxProvider(
+      { apiKey: API_KEY, host: "rapidapi" },
+      {
+        timeoutMs: 20,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        fetch: (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+          }),
+      },
+    );
+    await assert.rejects(silent.fetchDay("JFK", "LAX", FIXTURE_DAY), (err: unknown) => err instanceof ProviderError && /no answer within 0.02 s/.test(err.message));
+    assert.deepEqual(sleeps, []);
+  });
+});
+
+// ── Flights: cache ──────────────────────────────────────────────────────────
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A provider double answering the day asked for (or failing), counting calls. */
+function providerDouble(answer: (to: string) => RouteDaySchedule | Error): ScheduleProvider & { calls: number } {
+  const double = {
+    name: "generator" as const,
+    calls: 0,
+    async fetchDay(_from: string, to: string) {
+      double.calls += 1;
+      const out = answer(to);
+      if (out instanceof Error) throw out;
+      return out;
+    },
+  };
+  return double;
+}
+
+/** The generator's day from JFK, fetched at `ms`. */
+const dayAt = (ms: number, to = "LAX") => generatedSchedule({ origin: "JFK", destination: to, date: FIXTURE_DAY }, new Date(ms).toISOString());
+
+/** A cache over a memory store, a movable clock and a provider that answers the day at the clock (or fails on request). */
+function cacheRig(options: { durable?: boolean; capacity?: number } = {}) {
+  const state = { clock: FETCHED_MS, failing: false };
+  const store = createMemoryRouteDayStore();
+  const warnings: string[] = [];
+  const provider = providerDouble((to) => (state.failing ? new ProviderError("the provider is away") : dayAt(state.clock, to)));
+  const cache = new RouteDayCache({
+    store: options.durable === false ? undefined : () => store,
+    now: () => state.clock,
+    capacity: options.capacity,
+    warn: (message) => warnings.push(message),
+  });
+  return { state, store, warnings, provider, cache };
+}
+
+group("flights: cache", () => {
+  test("a miss asks the provider and keeps the day in memory and in the store; a hit asks nobody", async () => {
+    const { state, store, warnings, provider, cache } = cacheRig();
+    const first = await cache.get(JFK_LAX, provider);
+    assert.equal(first.cached, false);
+    assert.equal(provider.calls, 1);
+    assert.deepEqual(first.schedule, dayAt(FETCHED_MS));
+    assert.deepEqual(await store.getRouteDay("JFK-LAX", FIXTURE_DAY, "generator"), {
+      route: "JFK-LAX",
+      date: FIXTURE_DAY,
+      provider: "generator",
+      fetchedAt: FETCHED_AT,
+      expiresAt: new Date(FETCHED_MS + ROUTE_DAY_TTL_MS).toISOString(),
+      payload: first.schedule,
+    });
+    assert.equal(cache.size, 1);
+    state.clock += 60_000;
+    const second = await cache.get(JFK_LAX, provider);
+    assert.equal(second.cached, true);
+    assert.deepEqual(second.schedule, first.schedule);
+    assert.equal(provider.calls, 1);
+    // Another process over the same store: a hit from the durable layer.
+    const other = new RouteDayCache({ store: () => store, now: () => state.clock, warn: (m) => warnings.push(m) });
+    const third = await other.get(JFK_LAX, provider);
+    assert.equal(third.cached, true);
+    assert.deepEqual(third.schedule, first.schedule);
+    assert.equal(provider.calls, 1);
+    assert.equal(other.size, 1);
+    assert.deepEqual(warnings, []);
+  });
+
+  test("a paid provider is asked at most budgetPerHour times an hour; past it a stale day stands in, else the request fails with reason budget", async () => {
+    const { state, store, warnings } = cacheRig();
+    const paid = { name: "aerodatabox" as const, calls: 0, fetchDay: async (_from: string, to: string) => { paid.calls += 1; return dayAt(state.clock, to); } };
+    const cache = new RouteDayCache({ store: () => store, now: () => state.clock, warn: (m) => warnings.push(m), budgetPerHour: () => 2 });
+    // A day fetched 25 hours ago: past its TTL, well inside the 7-day ceiling.
+    const staleAt = state.clock - ROUTE_DAY_TTL_MS - 60 * 60 * 1000;
+    await store.putRouteDay(recordOf("JFK-BOS", FIXTURE_DAY, "aerodatabox", dayAt(staleAt, "BOS"), staleAt));
+    await cache.get(JFK_LAX, paid);
+    await cache.get({ ...JFK_LAX, to: "SFO" }, paid);
+    assert.equal(paid.calls, 2);
+    await assert.rejects(cache.get({ ...JFK_LAX, to: "MIA" }, paid), (err: unknown) => err instanceof ProviderError && err.reason === "budget");
+    const stale = await cache.get({ ...JFK_LAX, to: "BOS" }, paid);
+    assert.equal(stale.cached, true);
+    assert.equal(stale.schedule.destination, "BOS");
+    assert.equal(paid.calls, 2);
+    assert.ok(warnings.some((m) => m.includes("budget")));
+    assert.equal((await cache.get(JFK_LAX, paid)).cached, true, "a fresh day keeps answering");
+    // The hour rolls on and the provider may be asked again.
+    state.clock += 60 * 60 * 1000 + 1;
+    await cache.get({ ...JFK_LAX, to: "MIA" }, paid);
+    assert.equal(paid.calls, 3);
+    // The generator is never counted.
+    const { provider: free, cache: freeCache } = cacheRig();
+    for (const to of ["SFO", "BOS", "MIA"]) await freeCache.get({ ...JFK_LAX, to }, free);
+    assert.equal(free.calls, 3);
+  });
+
+  test("the key is the route, the date and the provider", async () => {
+    const { provider, cache } = cacheRig();
+    await cache.get(JFK_LAX, provider);
+    await cache.get({ ...JFK_LAX, to: "SFO" }, provider);
+    await cache.get({ ...JFK_LAX, date: addDays(FIXTURE_DAY, 1) }, provider);
+    await cache.get(JFK_LAX, { ...provider, name: "fixture" });
+    assert.equal(provider.calls, 4);
+    assert.equal((await cache.get(JFK_LAX, provider)).cached, true);
+    assert.equal(provider.calls, 4);
+  });
+
+  test("after 24 hours the provider is asked again and the record overwritten", async () => {
+    const { state, store, provider, cache } = cacheRig();
+    await cache.get(JFK_LAX, provider);
+    state.clock = FETCHED_MS + ROUTE_DAY_TTL_MS - 1000;
+    assert.equal((await cache.get(JFK_LAX, provider)).cached, true, "just inside the TTL");
+    state.clock = FETCHED_MS + ROUTE_DAY_TTL_MS + 1000;
+    const refreshed = await cache.get(JFK_LAX, provider);
+    assert.equal(refreshed.cached, false);
+    assert.equal(provider.calls, 2);
+    assert.equal(refreshed.schedule.fetchedAt, new Date(state.clock).toISOString());
+    const stored = await store.getRouteDay("JFK-LAX", FIXTURE_DAY, "generator");
+    assert.equal(stored?.fetchedAt, refreshed.schedule.fetchedAt);
+    assert.equal(stored?.expiresAt, new Date(state.clock + ROUTE_DAY_TTL_MS).toISOString());
+    assert.equal(store.size, 1);
+  });
+
+  test("a stale day within 7 days stands in when the provider fails, from memory or from the store", async () => {
+    const { state, store, warnings, provider, cache } = cacheRig();
+    const first = await cache.get(JFK_LAX, provider);
+    state.clock = FETCHED_MS + 2 * DAY_MS;
+    state.failing = true;
+    const stale = await cache.get(JFK_LAX, provider);
+    assert.equal(stale.cached, true);
+    assert.deepEqual(stale.schedule, first.schedule);
+    assert.equal(provider.calls, 2, "the provider was asked first");
+    assert.deepEqual(warnings, [`route-day cache: generator failed (the provider is away); JFK-LAX ${FIXTURE_DAY} served as fetched ${FETCHED_AT}`]);
+    const other = new RouteDayCache({ store: () => store, now: () => state.clock, warn: (m) => warnings.push(m) });
+    const fromStore = await other.get(JFK_LAX, provider);
+    assert.equal(fromStore.cached, true);
+    assert.deepEqual(fromStore.schedule, first.schedule);
+    assert.equal(provider.calls, 3);
+  });
+
+  test("nothing older than 7 days is served, even when the provider fails; it is replaced once the provider answers", async () => {
+    const { state, store, provider, cache } = cacheRig();
+    await cache.get(JFK_LAX, provider);
+    state.clock = FETCHED_MS + ROUTE_DAY_MAX_AGE_MS + 1000;
+    state.failing = true;
+    await assert.rejects(cache.get(JFK_LAX, provider), (err: unknown) => err instanceof ProviderError && err.message === "the provider is away");
+    assert.equal(cache.size, 0, "the old day is gone from memory");
+    const other = new RouteDayCache({ store: () => store, now: () => state.clock, warn: () => undefined });
+    await assert.rejects(other.get(JFK_LAX, provider), ProviderError);
+    state.failing = false;
+    const fresh = await cache.get(JFK_LAX, provider);
+    assert.equal(fresh.cached, false);
+    assert.equal(fresh.schedule.fetchedAt, new Date(state.clock).toISOString());
+    assert.equal((await store.getRouteDay("JFK-LAX", FIXTURE_DAY, "generator"))?.fetchedAt, fresh.schedule.fetchedAt);
+  });
+
+  test("a storage failure is noted and the provider asked; the answer still comes", async () => {
+    const warnings: string[] = [];
+    const broken: RouteDayStore = {
+      getRouteDay: async () => {
+        throw new Error("db away");
+      },
+      putRouteDay: async () => {
+        throw new Error("db away");
+      },
+    };
+    const provider = providerDouble(() => dayAt(FETCHED_MS));
+    const cache = new RouteDayCache({ store: () => broken, now: clockAt(FETCHED_MS), warn: (m) => warnings.push(m) });
+    const result = await cache.get(JFK_LAX, provider);
+    assert.equal(result.cached, false);
+    assert.equal(provider.calls, 1);
+    assert.deepEqual(warnings, ["route-day cache: read failed, asking the provider (db away)", "route-day cache: write failed (db away)"]);
+    assert.equal((await cache.get(JFK_LAX, provider)).cached, true, "memory still answers");
+    assert.equal(provider.calls, 1);
+  });
+
+  test("requests for one route-day in flight share a fetch", async () => {
+    const { provider, cache } = cacheRig();
+    const [a, b, c] = await Promise.all([cache.get(JFK_LAX, provider), cache.get(JFK_LAX, provider), cache.get({ ...JFK_LAX, to: "SFO" }, provider)]);
+    assert.equal(provider.calls, 2);
+    assert.equal(a.schedule, b.schedule);
+    assert.equal(c.schedule.destination, "SFO");
+  });
+
+  test("memory keeps the most recently used route-days (256 of them); without storage it works alone", async () => {
+    assert.equal(MEMORY_CAPACITY, 256);
+    const { provider, cache } = cacheRig({ durable: false, capacity: 2 });
+    const [a, b, c] = [JFK_LAX, { ...JFK_LAX, to: "SFO" }, { ...JFK_LAX, to: "BOS" }];
+    await cache.get(a, provider);
+    await cache.get(b, provider);
+    await cache.get(a, provider); // a is the most recently used now
+    await cache.get(c, provider); // so b goes
+    assert.equal(provider.calls, 3);
+    assert.equal(cache.size, 2);
+    assert.equal((await cache.get(a, provider)).cached, true);
+    assert.equal((await cache.get(c, provider)).cached, true);
+    assert.equal((await cache.get(b, provider)).cached, false);
+    assert.equal(provider.calls, 4);
+  });
+});
+
+// ── Supabase row mapping: route days (pure) ─────────────────────────────────
+
+group("supabase row mapping: route days", () => {
+  test("routeDayToRow / rowToRouteDay round-trip; Postgres timestamps and a JSON-string payload come back as the record", () => {
+    const record = recordOf("JFK-LAX", FIXTURE_DAY, "aerodatabox", fixtureDay(), FETCHED_MS);
+    const row = routeDayToRow(record);
+    assert.deepEqual(row, {
+      route: "JFK-LAX",
+      date: FIXTURE_DAY,
+      provider: "aerodatabox",
+      fetched_at: FETCHED_AT,
+      expires_at: new Date(FETCHED_MS + ROUTE_DAY_TTL_MS).toISOString(),
+      payload: fixtureDay(),
+    });
+    assert.deepEqual(rowToRouteDay(row), record);
+    assert.deepEqual(rowToRouteDay({ ...row, fetched_at: "2026-11-04T12:00:00+00:00", expires_at: "2026-11-05T07:00:00-05:00", payload: JSON.stringify(row.payload) }), record);
+    assert.throws(() => rowToRouteDay({ ...row, payload: null }), /payload/);
+    assert.throws(() => rowToRouteDay({ ...row, route: 5 }), /route/);
+    assert.throws(() => rowToRouteDay(null), /not an object/);
+  });
+});
+
+// ── File store: route days ──────────────────────────────────────────────────
+
+group("file store: route days", () => {
+  test("keeps route-days in route_days.json next to the data file; anything fetched over 7 days ago is dropped on sight", async () => {
+    const store = createFileStore(join(tempDir, "days", "responses.json"));
+    assert.equal(store.routeDaysPath, join(tempDir, "days", ROUTE_DAYS_FILE));
+    assert.equal(await store.getRouteDay("JFK-LAX", FIXTURE_DAY, "generator"), null);
+    const now = Date.now();
+    const old = recordOf("JFK-SFO", FIXTURE_DAY, "generator", dayAt(now - ROUTE_DAY_MAX_AGE_MS - 60_000, "SFO"), now);
+    const fresh = recordOf("JFK-LAX", FIXTURE_DAY, "generator", dayAt(now), now);
+    await store.putRouteDay(old);
+    assert.equal(await store.getRouteDay("JFK-SFO", FIXTURE_DAY, "generator"), null, "over the ceiling: dropped on sight");
+    assert.deepEqual(Object.keys(JSON.parse(await readFile(store.routeDaysPath, "utf8"))), [], "and gone from the file");
+    await store.putRouteDay(old);
+    await store.putRouteDay(fresh);
+    assert.deepEqual(await store.getRouteDay("JFK-LAX", FIXTURE_DAY, "generator"), fresh);
+    assert.equal(await store.getRouteDay("JFK-SFO", FIXTURE_DAY, "generator"), null, "dropped by the next write too");
+    assert.equal(await store.getRouteDay("JFK-LAX", FIXTURE_DAY, "fixture"), null, "another provider is another key");
+    const raw = JSON.parse(await readFile(store.routeDaysPath, "utf8"));
+    assert.deepEqual(Object.keys(raw), [`JFK-LAX|${FIXTURE_DAY}|generator`]);
+    assert.deepEqual(await store.list(), [], "the responses file is separate");
+  });
+});
+
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 type App = typeof import("../src/app").app;
@@ -1600,6 +2253,82 @@ group("routes: sign-ups", () => {
   });
 });
 
+// ── Routes: flights ─────────────────────────────────────────────────────────
+
+/** A client address of its own, so these tests never share a rate-limit bucket with the ones above. */
+const FLIGHTS_IP = { "x-forwarded-for": "203.0.113.77" };
+
+group("routes: flights", () => {
+  const today = toISODate(new Date());
+  const day = addDays(today, 10);
+  const dayUrl = `/flights/day?from=JFK&to=LAX&date=${day}`;
+
+  test("GET /flights/day with the generator: the shared schedule, cacheable for ten minutes, cached on the second call, kept next to DATA_FILE", async () => {
+    routeDayCache.clear();
+    const res = await app.request(dayUrl, { headers: FLIGHTS_IP });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "public, max-age=600");
+    const body = await json(res);
+    assert.equal(body.ok, true);
+    assert.equal(body.cached, false);
+    assert.ok(Math.abs(Date.parse(body.schedule.fetchedAt) - Date.now()) < 60_000, "fetchedAt is the server clock");
+    assert.deepEqual(body.schedule, generatedSchedule({ origin: "JFK", destination: "LAX", date: day }, body.schedule.fetchedAt));
+    const again = await json(await app.request(dayUrl, { headers: FLIGHTS_IP }));
+    assert.equal(again.cached, true);
+    assert.deepEqual(again.schedule, body.schedule);
+    const raw = JSON.parse(await readFile(join(tempDir, "routes", ROUTE_DAYS_FILE), "utf8"));
+    assert.deepEqual(Object.keys(raw), [`JFK-LAX|${day}|generator`]);
+    assert.deepEqual(raw[`JFK-LAX|${day}|generator`].payload, body.schedule);
+  });
+
+  test("a bad query → 400 with one code, never cacheable", async () => {
+    const expect = async (query: string, error: string) => {
+      const res = await app.request(`/flights/day${query}`, { headers: FLIGHTS_IP });
+      assert.equal(res.status, 400, query);
+      assert.deepEqual(await json(res), { ok: false, error });
+      assert.equal(res.headers.get("cache-control"), "no-store");
+    };
+    await expect("", "invalid_from");
+    await expect(`?from=jfk&to=LAX&date=${day}`, "invalid_from");
+    await expect(`?from=JFK&to=ZZZ&date=${day}`, "unknown_to");
+    await expect(`?from=JFK&to=JFK&date=${day}`, "same_airport");
+    await expect("?from=JFK&to=LAX&date=2026-11", "invalid_date");
+    await expect(`?from=JFK&to=LAX&date=${addDays(today, -2)}`, "date_out_of_range");
+    await expect(`?from=JFK&to=LAX&date=${addDays(today, 332)}`, "date_out_of_range");
+    const edge = await app.request(`/flights/day?from=JFK&to=LAX&date=${addDays(today, -1)}`, { headers: FLIGHTS_IP });
+    assert.equal(edge.status, 200, "yesterday is still a day");
+  });
+
+  test("a provider that cannot answer → 502 provider_error, never cacheable", async () => {
+    try {
+      process.env.FLIGHT_PROVIDER = "fixture";
+      const noFixture = [1, 2].map((n) => addDays(today, n)).find((d) => d !== FIXTURE_DAY) ?? "";
+      let res = await app.request(`/flights/day?from=JFK&to=LAX&date=${noFixture}`, { headers: FLIGHTS_IP });
+      assert.equal(res.status, 502);
+      assert.deepEqual(await json(res), { ok: false, error: "provider_error" });
+      assert.equal(res.headers.get("cache-control"), "no-store");
+      process.env.FLIGHT_PROVIDER = "aerodatabox"; // and no AERODATABOX_API_KEY
+      res = await app.request(dayUrl, { headers: FLIGHTS_IP });
+      assert.equal(res.status, 502);
+      assert.deepEqual(await json(res), { ok: false, error: "provider_error" });
+    } finally {
+      delete process.env.FLIGHT_PROVIDER;
+    }
+  });
+
+  test("shares the per-IP rate limit → 429 with Retry-After", async () => {
+    const headers = { "x-forwarded-for": "203.0.113.78" };
+    for (let i = 0; i < RATE_LIMIT; i += 1) {
+      const allowed = await app.request(dayUrl, { headers });
+      assert.equal(allowed.status, 200, `request ${i + 1} is still allowed`);
+    }
+    const limited = await app.request(dayUrl, { headers });
+    assert.equal(limited.status, 429);
+    assert.equal(limited.headers.get("retry-after"), "60");
+    assert.equal((await json(limited)).error, "rate_limited");
+  });
+});
+
 // ── Routes: no storage ──────────────────────────────────────────────────────
 
 group("routes: no storage", () => {
@@ -1618,6 +2347,17 @@ group("routes: no storage", () => {
     const signups = await app.request("/signups", { headers: { "x-admin-key": ADMIN_KEY } });
     assert.equal(signups.status, 503);
     assert.deepEqual(await json(signups), { ok: false, storage: "none", signups: [], error: "not_configured" });
+  });
+
+  test("without storage GET /flights/day still answers, from memory alone", async () => {
+    routeDayCache.clear();
+    const url = `/flights/day?from=JFK&to=LAX&date=${addDays(toISODate(new Date()), 12)}`;
+    const first = await json(await app.request(url, { headers: FLIGHTS_IP }));
+    assert.equal(first.ok, true);
+    assert.equal(first.cached, false);
+    const second = await json(await app.request(url, { headers: FLIGHTS_IP }));
+    assert.equal(second.cached, true);
+    assert.deepEqual(second.schedule, first.schedule);
   });
 });
 

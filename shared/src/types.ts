@@ -154,6 +154,11 @@ export interface Aircraft {
   model: string;
   /** "Airbus A321neo" */
   fullName: string;
+  /**
+   * The type as a published schedule lists it when the catalogue has no entry for it (version D's
+   * schedules only): the facts here are then a similar type's, `fullName`. Absent for every catalogue type.
+   */
+  listedAs?: string;
   bodyType: BodyType;
   /** Economy seat layout, e.g. "3-3", "3-3-3", "2-4-2", "3-4-3". */
   seatLayout: string;

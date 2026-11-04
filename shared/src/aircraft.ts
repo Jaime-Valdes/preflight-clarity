@@ -1,7 +1,10 @@
 /*
  * Aircraft catalog: mainstream Airbus and Boeing models with calm, factual
  * facts. The 737 MAX family and small regional jets are deliberately absent
- * (anxious flyers avoid them, and they would confound the test).
+ * from every airline's fleet list (anxious flyers avoid them, and they would
+ * confound the test), so the study's generator never draws them; they are in
+ * the catalogue (scheduleOnly) because real schedules name them (version D,
+ * docs/REAL_DATA.md) and a published flight should show its own type's facts.
  *
  * Model facts are public (manufacturers, fleet databases) and phrased as
  * verifiable comparisons, never superlatives or crash statistics. Cabin noise
@@ -19,7 +22,9 @@ import { createRng, round1 } from "./random";
 export interface AircraftModel {
   /** Key used in airline fleets, e.g. "A321neo". */
   key: string;
-  manufacturer: "Airbus" | "Boeing";
+  /** ICAO type designator, the code published schedules name the type by, e.g. "A21N" (schedule.ts maps it back). */
+  icao: string;
+  manufacturer: "Airbus" | "Boeing" | "Embraer" | "Bombardier";
   model: string;
   fullName: string;
   bodyType: BodyType;
@@ -38,6 +43,8 @@ export interface AircraftModel {
   /** Typical economy cabin noise at cruise, dB(A), approximate (see the note above). */
   cabinNoiseDb: number;
   safetyRecord: string[];
+  /** Only reached through a published schedule (version D): in no airline's fleet list, never drawn by the study's generator. */
+  scheduleOnly?: boolean;
 }
 
 const COMMON_FACTS = [
@@ -51,6 +58,7 @@ const FLY_BY_WIRE = "Fly-by-wire flight controls help keep the aircraft steady";
 export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   {
     key: "A220-300",
+    icao: "BCS3",
     manufacturer: "Airbus",
     model: "A220-300",
     fullName: "Airbus A220-300",
@@ -73,6 +81,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "A320neo",
+    icao: "A20N",
     manufacturer: "Airbus",
     model: "A320neo",
     fullName: "Airbus A320neo",
@@ -95,6 +104,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "A321neo",
+    icao: "A21N",
     manufacturer: "Airbus",
     model: "A321neo",
     fullName: "Airbus A321neo",
@@ -117,6 +127,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "737-800",
+    icao: "B738",
     manufacturer: "Boeing",
     model: "737-800",
     fullName: "Boeing 737-800",
@@ -140,6 +151,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "737-900ER",
+    icao: "B739",
     manufacturer: "Boeing",
     model: "737-900ER",
     fullName: "Boeing 737-900ER",
@@ -163,6 +175,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "757-200",
+    icao: "B752",
     manufacturer: "Boeing",
     model: "757-200",
     fullName: "Boeing 757-200",
@@ -186,6 +199,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "A330-900neo",
+    icao: "A339",
     manufacturer: "Airbus",
     model: "A330-900neo",
     fullName: "Airbus A330-900neo",
@@ -208,6 +222,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "A350-900",
+    icao: "A359",
     manufacturer: "Airbus",
     model: "A350-900",
     fullName: "Airbus A350-900",
@@ -230,6 +245,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "A350-1000",
+    icao: "A35K",
     manufacturer: "Airbus",
     model: "A350-1000",
     fullName: "Airbus A350-1000",
@@ -252,6 +268,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "767-300ER",
+    icao: "B763",
     manufacturer: "Boeing",
     model: "767-300ER",
     fullName: "Boeing 767-300ER",
@@ -275,6 +292,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "777-300ER",
+    icao: "B77W",
     manufacturer: "Boeing",
     model: "777-300ER",
     fullName: "Boeing 777-300ER",
@@ -299,6 +317,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "787-9",
+    icao: "B789",
     manufacturer: "Boeing",
     model: "787-9",
     fullName: "Boeing 787-9 Dreamliner",
@@ -321,6 +340,7 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
   },
   {
     key: "787-10",
+    icao: "B78X",
     manufacturer: "Boeing",
     model: "787-10",
     fullName: "Boeing 787-10 Dreamliner",
@@ -341,9 +361,393 @@ export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
       ...COMMON_FACTS,
     ],
   },
+  // ── Types reached only through a published schedule (version D) ──
+  // None is in an airline's fleet list, so the study's generator (and version C's timetables) never
+  // draw them; a real schedule that names one shows that type's own facts instead of a stand-in.
+  {
+    key: "737-700",
+    icao: "B737",
+    manufacturer: "Boeing",
+    model: "737-700",
+    fullName: "Boeing 737-700",
+    bodyType: "narrow",
+    seatLayout: "3-3",
+    typicalSeats: 143,
+    modelInServiceSince: 1998,
+    modelFleetSize: 1000,
+    cabinNoiseDb: 84,
+    cruiseAltitudeFt: 37000,
+    cruiseSpeedMph: 525,
+    rangeMi: 3400,
+    // The last passenger -700s were delivered in the late 2010s; the line went on with the -800 and the MAX.
+    productionEnded: 2017,
+    seatWidthIn: 17,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The shorter member of the 737 Next Generation family, in service since 1998",
+      "Shares its wing, engines and systems with the 737-800",
+      "A mature, well-understood design with decades of refinement",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "737 MAX 8",
+    icao: "B38M",
+    manufacturer: "Boeing",
+    model: "737 MAX 8",
+    fullName: "Boeing 737 MAX 8",
+    bodyType: "narrow",
+    seatLayout: "3-3",
+    typicalSeats: 175,
+    modelInServiceSince: 2017,
+    modelFleetSize: 1700,
+    cabinNoiseDb: 82,
+    cruiseAltitudeFt: 37000,
+    cruiseSpeedMph: 525,
+    rangeMi: 4000,
+    seatWidthIn: 17,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The newest version of the 737 family, in service since 2017",
+      "Quieter, more fuel-efficient engines than the 737-800 it follows",
+      "Flown by dozens of airlines on short and medium routes",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "737 MAX 9",
+    icao: "B39M",
+    manufacturer: "Boeing",
+    model: "737 MAX 9",
+    fullName: "Boeing 737 MAX 9",
+    bodyType: "narrow",
+    seatLayout: "3-3",
+    typicalSeats: 180,
+    modelInServiceSince: 2018,
+    modelFleetSize: 300,
+    cabinNoiseDb: 82,
+    cruiseAltitudeFt: 37000,
+    cruiseSpeedMph: 525,
+    rangeMi: 4000,
+    seatWidthIn: 17,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The longer version of the 737 MAX, in service since 2018",
+      "Shares its wing, engines and systems with the 737 MAX 8",
+      "In service with airlines in the Americas, Europe and the Middle East",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "A319",
+    icao: "A319",
+    manufacturer: "Airbus",
+    model: "A319",
+    fullName: "Airbus A319",
+    bodyType: "narrow",
+    seatLayout: "3-3",
+    typicalSeats: 134,
+    modelInServiceSince: 1996,
+    modelFleetSize: 1100,
+    cabinNoiseDb: 83,
+    cruiseAltitudeFt: 37000,
+    cruiseSpeedMph: 520,
+    rangeMi: 4200,
+    productionEnded: 2019,
+    seatWidthIn: 18,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The shortest member of the A320 family, in service since 1996",
+      "Shares its wing, engines and cockpit with the A320",
+      FLY_BY_WIRE,
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "A320-200",
+    icao: "A320",
+    manufacturer: "Airbus",
+    model: "A320-200",
+    fullName: "Airbus A320-200",
+    bodyType: "narrow",
+    seatLayout: "3-3",
+    typicalSeats: 162,
+    modelInServiceSince: 1988,
+    modelFleetSize: 4000,
+    cabinNoiseDb: 83,
+    cruiseAltitudeFt: 37000,
+    cruiseSpeedMph: 520,
+    rangeMi: 3500,
+    productionEnded: 2021,
+    seatWidthIn: 18,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The original A320, in service since 1988 and one of the most widely flown airliners ever built",
+      "Thousands in daily service with airlines on six continents",
+      FLY_BY_WIRE,
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "A321-200",
+    icao: "A321",
+    manufacturer: "Airbus",
+    model: "A321-200",
+    fullName: "Airbus A321-200",
+    bodyType: "narrow",
+    seatLayout: "3-3",
+    typicalSeats: 190,
+    modelInServiceSince: 1997,
+    modelFleetSize: 1500,
+    cabinNoiseDb: 83,
+    cruiseAltitudeFt: 36000,
+    cruiseSpeedMph: 520,
+    rangeMi: 3400,
+    productionEnded: 2021,
+    seatWidthIn: 18,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The longest member of the original A320 family, in service since 1997",
+      "Shares its wing, engines and cockpit with the A320",
+      FLY_BY_WIRE,
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "777-200ER",
+    icao: "B772",
+    manufacturer: "Boeing",
+    model: "777-200ER",
+    fullName: "Boeing 777-200ER",
+    bodyType: "wide",
+    seatLayout: "3-4-3",
+    typicalSeats: 290,
+    modelInServiceSince: 1997,
+    modelFleetSize: 250,
+    cabinNoiseDb: 83,
+    cruiseAltitudeFt: 39000,
+    cruiseSpeedMph: 560,
+    rangeMi: 8000,
+    productionEnded: 2013,
+    seatWidthIn: 17,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The long-range version of the original 777, in service since 1997",
+      "Its size and weight mean it usually feels the same bumps a little less than smaller jets",
+      "Its cabins and flight-deck systems have been updated over the years",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "787-8",
+    icao: "B788",
+    manufacturer: "Boeing",
+    model: "787-8",
+    fullName: "Boeing 787-8 Dreamliner",
+    bodyType: "wide",
+    seatLayout: "3-3-3",
+    typicalSeats: 248,
+    modelInServiceSince: 2011,
+    modelFleetSize: 400,
+    cabinNoiseDb: 81,
+    cruiseAltitudeFt: 41000,
+    cruiseSpeedMph: 560,
+    rangeMi: 8400,
+    seatWidthIn: 17.2,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The first Dreamliner, in service since 2011",
+      "Its flight controls are designed to sense gusts and soften the motion",
+      "Larger windows than older jets, and a lower cabin altitude for easier breathing",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "A330-300",
+    icao: "A333",
+    manufacturer: "Airbus",
+    model: "A330-300",
+    fullName: "Airbus A330-300",
+    bodyType: "wide",
+    seatLayout: "2-4-2",
+    typicalSeats: 277,
+    modelInServiceSince: 1994,
+    modelFleetSize: 650,
+    cabinNoiseDb: 82,
+    cruiseAltitudeFt: 39000,
+    cruiseSpeedMph: 550,
+    rangeMi: 7200,
+    productionEnded: 2021,
+    seatWidthIn: 18,
+    scheduleOnly: true,
+    safetyRecord: [
+      "A long-serving wide-body, in service since 1994 with airlines worldwide",
+      "A 2-4-2 economy cabin — three of every four seats are a window or an aisle",
+      FLY_BY_WIRE,
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "A330-200",
+    icao: "A332",
+    manufacturer: "Airbus",
+    model: "A330-200",
+    fullName: "Airbus A330-200",
+    bodyType: "wide",
+    seatLayout: "2-4-2",
+    typicalSeats: 247,
+    modelInServiceSince: 1998,
+    modelFleetSize: 500,
+    cabinNoiseDb: 82,
+    cruiseAltitudeFt: 39000,
+    cruiseSpeedMph: 550,
+    rangeMi: 8100,
+    productionEnded: 2020,
+    seatWidthIn: 18,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The longer-range version of the A330, in service since 1998",
+      "A 2-4-2 economy cabin — three of every four seats are a window or an aisle",
+      FLY_BY_WIRE,
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "E175",
+    icao: "E75L",
+    manufacturer: "Embraer",
+    model: "E175",
+    fullName: "Embraer E175",
+    bodyType: "narrow",
+    seatLayout: "2-2",
+    typicalSeats: 76,
+    modelInServiceSince: 2005,
+    modelFleetSize: 850,
+    cabinNoiseDb: 82,
+    cruiseAltitudeFt: 37000,
+    cruiseSpeedMph: 500,
+    rangeMi: 2300,
+    seatWidthIn: 18.3,
+    scheduleOnly: true,
+    safetyRecord: [
+      "A regional jet with a 2-2 cabin: every seat is a window or an aisle",
+      "In service since 2005, flown mostly by the regional partners of the big airlines",
+      "A mature design, refined over hundreds of deliveries",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "CRJ-900",
+    icao: "CRJ9",
+    manufacturer: "Bombardier",
+    model: "CRJ-900",
+    fullName: "Bombardier CRJ-900",
+    bodyType: "narrow",
+    seatLayout: "2-2",
+    typicalSeats: 76,
+    modelInServiceSince: 2003,
+    modelFleetSize: 450,
+    cabinNoiseDb: 83,
+    cruiseAltitudeFt: 37000,
+    cruiseSpeedMph: 500,
+    rangeMi: 1900,
+    // The CRJ line closed in 2020 (the programme passed to MHI RJ, which supports the fleet).
+    productionEnded: 2020,
+    seatWidthIn: 17.3,
+    scheduleOnly: true,
+    safetyRecord: [
+      "A regional jet with a 2-2 cabin: every seat is a window or an aisle",
+      "In service since 2003, flown mostly by the regional partners of the big airlines",
+      "Engines mounted at the back of the fuselage, so the front of the cabin is the quieter end",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "CRJ-700",
+    icao: "CRJ7",
+    manufacturer: "Bombardier",
+    model: "CRJ-700",
+    fullName: "Bombardier CRJ-700",
+    bodyType: "narrow",
+    seatLayout: "2-2",
+    typicalSeats: 70,
+    modelInServiceSince: 2001,
+    modelFleetSize: 300,
+    cabinNoiseDb: 83,
+    cruiseAltitudeFt: 37000,
+    cruiseSpeedMph: 500,
+    rangeMi: 1800,
+    // Orders moved to the longer CRJ-900 in the mid-2010s; the CRJ line closed in 2020.
+    productionEnded: 2016,
+    seatWidthIn: 17.3,
+    scheduleOnly: true,
+    safetyRecord: [
+      "A regional jet with a 2-2 cabin: every seat is a window or an aisle",
+      "In service since 2001, flown mostly by the regional partners of the big airlines",
+      "Engines mounted at the back of the fuselage, so the front of the cabin is the quieter end",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "747-8",
+    icao: "B748",
+    manufacturer: "Boeing",
+    model: "747-8",
+    fullName: "Boeing 747-8",
+    bodyType: "wide",
+    seatLayout: "3-4-3",
+    typicalSeats: 410,
+    modelInServiceSince: 2012,
+    modelFleetSize: 45,
+    cabinNoiseDb: 82,
+    cruiseAltitudeFt: 40000,
+    cruiseSpeedMph: 570,
+    rangeMi: 8900,
+    // The last passenger 747-8 was delivered in 2017 (the line went on with freighters until 2023).
+    productionEnded: 2017,
+    seatWidthIn: 17.5,
+    scheduleOnly: true,
+    safetyRecord: [
+      "The newest version of the 747, in service since 2012",
+      "Its size and weight mean it usually feels the same bumps a little less than smaller jets",
+      "Quieter engines than earlier 747s, shared with the 787 family",
+      ...COMMON_FACTS,
+    ],
+  },
+  {
+    key: "A380-800",
+    icao: "A388",
+    manufacturer: "Airbus",
+    model: "A380-800",
+    fullName: "Airbus A380-800",
+    bodyType: "wide",
+    seatLayout: "3-4-3",
+    typicalSeats: 525,
+    modelInServiceSince: 2007,
+    modelFleetSize: 200,
+    cabinNoiseDb: 80,
+    cruiseAltitudeFt: 39000,
+    cruiseSpeedMph: 560,
+    rangeMi: 9200,
+    productionEnded: 2021,
+    seatWidthIn: 18,
+    scheduleOnly: true,
+    safetyRecord: [
+      "A double-deck airliner in service since 2007 on long-haul routes",
+      "Its size and weight mean it usually feels the same bumps a little less than smaller jets",
+      "A notably quiet cabin for its size",
+      FLY_BY_WIRE,
+      ...COMMON_FACTS,
+    ],
+  },
 ];
 
 const BY_KEY = new Map(AIRCRAFT_MODELS.map((m) => [m.key, m]));
+
+/** The name to show for an aircraft: the type as the schedule listed it when the catalogue stood in for it, else the catalogue's. */
+export function displayAircraftName(aircraft: Pick<Aircraft, "fullName" | "listedAs">): string {
+  return aircraft.listedAs ?? aircraft.fullName;
+}
 
 export function getAircraftModel(key: string): AircraftModel | undefined {
   return BY_KEY.get(key);
@@ -361,7 +765,8 @@ export function chooseAircraftModel(
   oceanic: boolean,
 ): AircraftModel {
   const fleet = fleetKeys.map((k) => BY_KEY.get(k)).filter((m): m is AircraftModel => Boolean(m));
-  const pool = fleet.length > 0 ? fleet : AIRCRAFT_MODELS;
+  // Without a fleet, the study's catalogue only: the schedule-only types are never drawn.
+  const pool = fleet.length > 0 ? fleet : AIRCRAFT_MODELS.filter((m) => !m.scheduleOnly);
   const inRange = pool.filter((m) => m.rangeMi >= distanceMi);
   // Beyond every model's range, only the fleet's longest-legged jets are believable.
   const longest = pool.reduce((max, m) => Math.max(max, m.rangeMi), 0);
@@ -475,8 +880,10 @@ export function cabinConfigFor(airlineCode: string, model: AircraftModel): Cabin
   const typicalSeats = Math.round(model.typicalSeats * abreast * rng.float(0.93, 1.07));
 
   const narrow = model.bodyType === "narrow";
-  const rowCount = narrow ? rng.int(18, 26) : rng.int(20, 28);
-  const firstRow = narrow ? rng.int(7, 12) : rng.int(24, 32);
+  // A regional jet (2-2) seats about 70–80 in all: a shorter map, numbered from just behind the front cabin.
+  const regional = seatsAbreast(model.seatLayout) <= 4;
+  const rowCount = regional ? rng.int(16, 20) : narrow ? rng.int(18, 26) : rng.int(20, 28);
+  const firstRow = regional ? rng.int(4, 10) : narrow ? rng.int(7, 12) : rng.int(24, 32);
   // Row numbering is an airline-wide habit.
   const skip13 = createRng(`rows|${airlineCode}`).chance(0.5);
   const rowNumbers: number[] = [];
@@ -541,6 +948,7 @@ export function columnGroupsFor(seatLayout: string): string[][] {
   const LAYOUTS: Record<string, string[][]> = {
     "3-3": [["A", "B", "C"], ["D", "E", "F"]],
     "2-3": [["A", "C"], ["D", "E", "F"]],
+    "2-2": [["A", "B"], ["C", "D"]],
     "3-3-3": [["A", "B", "C"], ["D", "E", "F"], ["H", "J", "K"]],
     "2-4-2": [["A", "C"], ["D", "E", "F", "G"], ["H", "K"]],
     "3-4-3": [["A", "B", "C"], ["D", "E", "F", "G"], ["H", "J", "K"]],

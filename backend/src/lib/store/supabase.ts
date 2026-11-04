@@ -1,5 +1,5 @@
 /*
- * Supabase store — the real thing. Two tables (see backend/supabase/schema.sql),
+ * Supabase store — the real thing. Three tables (see backend/supabase/schema.sql),
  * each with flat columns for quick queries and the whole object as jsonb:
  *
  *   responses — one SessionRecord per session, upserted on session_id. A BEFORE
@@ -8,16 +8,22 @@
  *   signups   — one product-interest Signup per email per source
  *               (docs/INTEREST.md), upserted on (email_key, source); its trigger
  *               keeps the original created_at.
+ *   route_days — version D's cached schedules (lib/flights/cache.ts), one
+ *               RouteDaySchedule per route, local date and provider, upserted
+ *               on the three; a trigger drops rows fetched over 7 days ago.
  *
  * Uses the service-role / secret key, which bypasses row level security, so
  * it must only ever run on the server.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { RouteDaySchedule } from "@preflight/shared/schedule";
 import type { SessionRecord, Signup } from "@preflight/shared/types";
+import { ROUTE_DAY_MAX_AGE_MS, routeDayAgeMs, type ProviderName, type RouteDayRecord } from "../flights/types";
 import type { ResponseStore } from "./types";
 
 export const TABLE = "responses";
 export const SIGNUPS_TABLE = "signups";
+export const ROUTE_DAYS_TABLE = "route_days";
 
 /** Rows per request. PostgREST caps a response at 1,000 rows by default, so listing pages through. */
 export const PAGE_SIZE = 1000;
@@ -191,6 +197,58 @@ export function rowToSignup(row: unknown): Signup {
   return recordColumn(row) as Signup;
 }
 
+// ── route days ──────────────────────────────────────────────────────────────
+
+/** The columns of `route_days`, all written by the API. `date` is the origin's local day, "YYYY-MM-DD". */
+export interface RouteDayRow {
+  route: string;
+  date: string;
+  provider: string;
+  fetched_at: string;
+  expires_at: string;
+  payload: RouteDaySchedule;
+}
+
+export function routeDayToRow(record: RouteDayRecord): RouteDayRow {
+  return {
+    route: record.route,
+    date: record.date,
+    provider: record.provider,
+    fetched_at: record.fetchedAt,
+    expires_at: record.expiresAt,
+    payload: record.payload,
+  };
+}
+
+/** A row back to a record. Postgres timestamps ("…+00:00") come back as ISO instants. */
+export function rowToRouteDay(row: unknown): RouteDayRecord {
+  if (typeof row !== "object" || row === null) throw new Error("Unexpected row from Supabase: not an object");
+  const columns = row as Record<string, unknown>;
+  const text = (name: string): string => {
+    const value = columns[name];
+    if (typeof value !== "string" || !value) throw new Error(`Unexpected row from Supabase: ${name} is not a string`);
+    return value;
+  };
+  let payload: unknown = columns.payload;
+  if (typeof payload === "string") payload = JSON.parse(payload);
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new Error("Unexpected row from Supabase: payload is not an object");
+  }
+  return {
+    route: text("route"),
+    date: text("date").slice(0, 10),
+    provider: text("provider") as ProviderName,
+    fetchedAt: isoInstant(text("fetched_at")),
+    expiresAt: isoInstant(text("expires_at")),
+    payload: payload as RouteDaySchedule,
+  };
+}
+
+function isoInstant(value: string): string {
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : value;
+}
+
 // ── shared ──────────────────────────────────────────────────────────────────
 
 /** The `record` jsonb column of a row (an object, or a JSON string from some clients). */
@@ -279,6 +337,32 @@ export function createSupabaseStore(config: SupabaseConfig): ResponseStore {
 
     listSignups() {
       return listAll(client, SIGNUPS_TABLE, "id", rowToSignup);
+    },
+
+    async getRouteDay(route, date, provider) {
+      const { data, error } = await client
+        .from(ROUTE_DAYS_TABLE)
+        .select("route,date,provider,fetched_at,expires_at,payload")
+        .eq("route", route)
+        .eq("date", date)
+        .eq("provider", provider)
+        .maybeSingle();
+      if (error) throw new Error(`Supabase read (${ROUTE_DAYS_TABLE}) failed: ${describe(error)}`);
+      if (!data) return null;
+      const record = rowToRouteDay(data);
+      // Past AeroDataBox's 7-day cache rule: dropped on sight (the trigger only runs on writes), never served.
+      if (routeDayAgeMs(record, Date.now()) > ROUTE_DAY_MAX_AGE_MS) {
+        const gone = await client.from(ROUTE_DAYS_TABLE).delete().match({ route, date, provider });
+        if (gone.error) console.warn(`Supabase delete (${ROUTE_DAYS_TABLE}) failed: ${describe(gone.error)}`);
+        return null;
+      }
+      return record;
+    },
+
+    async putRouteDay(record) {
+      // One row per route-day per provider; the trigger in schema.sql drops rows fetched over 7 days ago.
+      const { error } = await client.from(ROUTE_DAYS_TABLE).upsert(routeDayToRow(record), { onConflict: "route,date,provider" });
+      if (error) throw new Error(`Supabase upsert (${ROUTE_DAYS_TABLE}) failed: ${describe(error)}`);
     },
   };
 }

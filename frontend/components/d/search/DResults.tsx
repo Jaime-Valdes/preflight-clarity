@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { CATEGORY_LABELS, orderByPriorities, type Rating, type RatingCategory } from "@preflight/shared/ratings";
-import { searchFlights, type FlightOption, type SearchResults as DayResults } from "@preflight/shared/search";
+import type { FlightOption, SearchResults as DayResults } from "@preflight/shared/search";
 import { availabilityAt, daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { Sheet } from "@/components/c/common/Sheet";
 import { InterestCard } from "@/components/c/interest/InterestCard";
@@ -19,7 +19,8 @@ import { SearchSummary } from "@/components/c/search/SearchSummary";
 import { SortTabs } from "@/components/c/search/SortTabs";
 import { airlineName, buildFacets, campaignParams, type Facets, type ResultsView } from "@/components/c/search/view";
 import { keepClearOfTray } from "@/components/c/shell/CompareTray";
-import { useHrefs } from "@/components/c/shell/ToolContext";
+import { useFlightSource, useHrefs } from "@/components/c/shell/ToolContext";
+import { scheduleAttribution } from "@/components/d/brand/attribution";
 import { D_PILL_PRIMARY } from "@/components/d/brand/buttons";
 import { CloudMascot } from "@/components/d/brand/CloudMascot";
 import { DLoading } from "@/components/d/brand/Loading";
@@ -28,6 +29,8 @@ import { useCompareList } from "@/lib/c/compare-store";
 import { formatFare, formatMinutes12 } from "@/lib/c/format";
 import { itemId, type CompareItem, type RouteDay } from "@/lib/c/model";
 import { usePriorities, type Priorities } from "@/lib/d/priorities";
+import type { FlightSource } from "@/lib/flights/source";
+import { useRouteDay } from "@/lib/flights/store";
 import {
   applyDView,
   cheapestFare,
@@ -77,13 +80,15 @@ function parseDayKey(key: string): RouteDay | null {
   return origin && destination && date ? { origin, destination, date } : null;
 }
 
-type Search = { ok: true; results: DayResults } | { ok: false; error: unknown };
+type Search = { status: "loading" } | { status: "ready"; results: DayResults } | { status: "error"; error: unknown };
 
-function runSearch(origin: string, destination: string, date: string): Search {
+/** The day's flights through the tool's source: loading until the store has the day (the generator never waits). */
+function runSearch(day: RouteDay, source: FlightSource): Search {
   try {
-    return { ok: true, results: searchFlights({ origin, destination, date }) };
+    const results = source.searchFlights(day);
+    return results ? { status: "ready", results } : { status: "loading" };
   } catch (error) {
-    return { ok: false, error };
+    return { status: "error", error };
   }
 }
 
@@ -126,11 +131,19 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   // Campaign tags in the link stay on this page's own links (filters, nearby dates).
   const campaign = useMemo(() => campaignParams(params), [params]);
 
-  const search = useMemo(() => runSearch(origin, destination, date), [origin, destination, date]);
+  // The day through the store (docs/REAL_DATA.md): loaded once per session, the same snapshot every D page reads.
+  const source = useFlightSource();
+  const { provider, served } = useRouteDay({ origin, destination, date });
+  const search = useMemo(() => runSearch({ origin, destination, date }, source), [origin, destination, date, source]);
+  useEffect(() => {
+    source.ensure({ origin, destination, date });
+  }, [origin, destination, date, source]);
+  const loading = search.status === "loading";
+  const ready = search.status === "ready";
   // The date strip is computed after the day's own results (first paint first).
   const stripDay = parseDayKey(useDeferredValue(dayKey(day), ""));
 
-  const dayOptions = search.ok ? search.results.options : NO_OPTIONS;
+  const dayOptions = ready ? search.results.options : NO_OPTIONS;
   // Flights that have already left (today, in their origin's time) aren't offered: no fare, no
   // Compare. Sorting, filters, the ratings and the counts only see the flights still to leave.
   const mayHaveLeft = daysUntil <= 1;
@@ -143,7 +156,9 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   // Fares are today's (fareAt: the booking lead time moves them), so the facets, the sort and the
   // price cap all take the days until departure.
   const facets = useMemo(() => buildFacets(options, daysUntil), [options, daysUntil]);
-  const urlView = useMemo(() => parseDView(params, scores, facets.bounds), [params, scores, facets.bounds]);
+  // While the day loads there are no bounds to trim a link's limits against: the view keeps them as written.
+  const bounds = loading ? undefined : facets.bounds;
+  const urlView = useMemo(() => parseDView(params, scores, bounds), [params, scores, bounds]);
   // Sort and filters live in the URL; the optimistic copy shows a change on this frame while the URL catches up.
   const [view, setOptimisticView] = useOptimistic(urlView);
   // Every flight's four ratings, once per day (deterministic: the same flight and date always rate the same).
@@ -156,17 +171,19 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   const smoothest = useMemo(() => smoothestForYou(shown, ratings, order), [shown, ratings, order]);
   const filterCount = dActiveFilterCount(view);
   const total = options.length;
-  // No flights this day: is it the day, or does nobody fly this route nonstop at all?
+  // No flights this day: is it the day, or does nobody fly this route nonstop at all? A provider that
+  // knows says so (served); the generator's day falls back to its own rule about the route.
   const routeEmpty = useMemo(
-    () => search.ok && dayOptions.length === 0 && routeHasNoNonstops({ origin, destination, date }),
-    [search.ok, dayOptions.length, origin, destination, date],
+    () => ready && dayOptions.length === 0 && (served === false || (provider === "generator" && routeHasNoNonstops({ origin, destination, date }))),
+    [ready, dayOptions.length, served, provider, origin, destination, date],
   );
   const swapNote = airportSwapNote(day, dayOptions);
   const carry = carryFor(view);
 
+  const searchError = search.status === "error" ? search.error : null;
   useEffect(() => {
-    if (!search.ok) console.error(search.error);
-  }, [search]);
+    if (searchError !== null) console.error(searchError);
+  }, [searchError]);
 
   useEffect(() => {
     const id = focusNext.current;
@@ -201,6 +218,18 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   const clearFilters = (focusId?: string) => changeView(dWithoutFilters(view), focusId);
   // D's sorts don't depend on the day's forecast, so the same view serves every nearby date.
   const hrefFor = (d: string) => dResultsHref({ ...day, date: d }, view, campaign);
+
+  if (loading) {
+    // The mascot in place of the list while the day loads; the strip's tiles load alongside and fill in.
+    return (
+      <div className="flex flex-col gap-4 sm:gap-5">
+        <SearchSummary day={day} today={today} carry={carry} />
+        <PrioritiesStrip priorities={priorities} />
+        <DateStrip day={day} stripDay={stripDay} today={today} nowMs={nowMs} hrefFor={hrefFor} showScores={false} />
+        <DLoading />
+      </div>
+    );
+  }
 
   if (routeEmpty) {
     return (
@@ -264,6 +293,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
               <p id={COUNT_ID} role="status" tabIndex={-1} className="rounded-md text-sm leading-snug text-ink-500">
                 {countText}
               </p>
+              {ready ? <p className="mt-0.5 text-xs leading-snug text-ink-500">{scheduleAttribution(provider)}</p> : null}
               {leftCount > 0 && total > 0 ? (
                 <p className="mt-0.5 text-xs leading-snug text-ink-500">
                   <span className="tabular-nums">{leftCount}</span> earlier {leftCount === 1 ? "flight has" : "flights have"}{" "}
@@ -313,7 +343,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
           ) : null}
 
           <div className="mt-3">
-            {!search.ok ? (
+            {search.status === "error" ? (
               <Notice
                 title="These flights couldn’t be put together"
                 text="Something went wrong building this day’s illustrative flights. Try a nearby date or another route."

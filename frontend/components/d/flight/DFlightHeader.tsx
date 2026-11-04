@@ -1,6 +1,7 @@
 import { CalendarDays, Clock3 } from "lucide-react";
 import type { ReactNode } from "react";
 import { countdownLabel, formatDuration, formatLongDate, formatTime12 } from "@preflight/shared/dates";
+import { displayAircraftName } from "@preflight/shared/aircraft";
 import { availabilityFor } from "@preflight/shared/forecast";
 import type { Flight } from "@preflight/shared/types";
 import { dayOffsetWords } from "@/components/c/flight/copy";
@@ -145,7 +146,7 @@ export function DFlightHeader({ flight, daysUntil, className }: DFlightHeaderPro
         <div className="min-w-0">
           <Eyebrow>{known.airframe ? "Aircraft" : "Scheduled aircraft"}</Eyebrow>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="text-[15px] font-bold leading-snug text-ink">{aircraft.fullName}</p>
+            <p className="text-[15px] font-bold leading-snug text-ink">{displayAircraftName(aircraft)}</p>
             <Chip>{aircraft.bodyType === "wide" ? "Wide-body" : "Narrow-body"}</Chip>
           </div>
         </div>

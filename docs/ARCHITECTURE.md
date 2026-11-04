@@ -83,7 +83,7 @@ Web app (`frontend/`):
 | `/api/*` | Proxy to the backend (see above). The frontend has **no** route handlers of its own. |
 | `/opengraph-image`, `/icon.svg` | Link-sharing image and favicon. |
 
-API (`backend/`, JSON everywhere, `Cache-Control: no-store`):
+API (`backend/`, JSON everywhere, `Cache-Control: no-store` except `GET /flights/day`):
 
 | Endpoint | What |
 | --- | --- |
@@ -92,6 +92,7 @@ API (`backend/`, JSON everywhere, `Cache-Control: no-store`):
 | `GET /responses` | All records newest first. Needs `x-admin-key: <ADMIN_KEY>` or `?key=`; `401` otherwise. `503` when storage is `"none"`. |
 | `POST /signups` | Upsert one `Signup` (docs/INTEREST.md) on email + source, merging a repeat (≤ 10 KB; JSON as `application/json` or `text/plain`). Same answers as `POST /responses`; one shared per-IP rate budget (`backend/src/lib/rateLimit.ts`). |
 | `GET /signups` | All sign-ups newest first. Same admin key, `401` / `503` as `GET /responses`. |
+| `GET /flights/day?from=JFK&to=LAX&date=YYYY-MM-DD` | Version D's published schedule for a route-day (docs/REAL_DATA.md): `{ ok, schedule: RouteDaySchedule, cached }` with `Cache-Control: public, max-age=600` (the one route that is not `no-store`); `400` with a short code for a bad query; `502 provider_error` when the provider cannot answer; `503 provider_budget` with `Retry-After` when the process has spent its hourly allowance of provider calls. Provider from `FLIGHT_PROVIDER` (`generator` default, `aerodatabox`, `fixture`); results cached 24 h in Supabase `route_days` (never served past 7 days). |
 
 Storage adapter is chosen from the environment: Supabase when `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`) are set; otherwise a local JSON file when `DATA_FILE` is set (dev only — the API logs a warning); otherwise `"none"`.
 `CORS_ORIGIN` sets the allowed origin for direct browser calls (default `*`; unneeded behind the `/api/*` rewrite).

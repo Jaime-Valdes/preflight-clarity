@@ -1,0 +1,233 @@
+{
+  "departures": [
+    {
+      "departure": {
+        "scheduledTime": { "utc": "2026-11-26 07:30Z", "local": "2026-11-26 02:30-05:00" },
+        "quality": ["Basic"]
+      },
+      "arrival": {
+        "airport": {
+          "icao": "KLAX",
+          "iata": "LAX",
+          "name": "Los Angeles",
+          "shortName": "Los Angeles",
+          "municipalityName": "Los Angeles",
+          "location": { "lat": 33.9425, "lon": -118.408 },
+          "countryCode": "US",
+          "timeZone": "America/Los_Angeles"
+        },
+        "scheduledTime": { "utc": "2026-11-26 13:40Z", "local": "2026-11-26 05:40-08:00" },
+        "quality": ["Basic"]
+      },
+      "number": "5Y 741",
+      "callSign": "GTI741",
+      "status": "Expected",
+      "codeshareStatus": "Unknown",
+      "isCargo": true,
+      "aircraft": { "reg": "N859GT", "modeS": "ABD1F2", "model": "Boeing 747-8F" },
+      "airline": { "name": "Atlas Air", "iata": "5Y", "icao": "GTI" }
+    },
+    {
+      "departure": {
+        "scheduledTime": { "utc": "2026-11-26 11:00Z", "local": "2026-11-26 06:00-05:00" },
+        "terminal": "4",
+        "quality": ["Basic"]
+      },
+      "arrival": {
+        "airport": {
+          "icao": "KLAX",
+          "iata": "LAX",
+          "name": "Los Angeles",
+          "shortName": "Los Angeles",
+          "municipalityName": "Los Angeles",
+          "location": { "lat": 33.9425, "lon": -118.408 },
+          "countryCode": "US",
+          "timeZone": "America/Los_Angeles"
+        },
+        "scheduledTime": { "utc": "2026-11-26 17:25Z", "local": "2026-11-26 09:25-08:00" },
+        "terminal": "3",
+        "quality": ["Basic"]
+      },
+      "number": "DL 423",
+      "callSign": "DAL423",
+      "status": "Expected",
+      "codeshareStatus": "IsOperator",
+      "isCargo": false,
+      "aircraft": { "reg": "N1611B", "modeS": "A0F5C3", "model": "Boeing 767-300(ER)" },
+      "airline": { "name": "Delta Air Lines", "iata": "DL", "icao": "DAL" }
+    },
+    {
+      "departure": {
+        "scheduledTime": { "utc": "2026-11-26 11:00Z", "local": "2026-11-26 06:00-05:00" },
+        "terminal": "4",
+        "quality": ["Basic"]
+      },
+      "arrival": {
+        "airport": {
+          "icao": "KLAX",
+          "iata": "LAX",
+          "name": "Los Angeles",
+          "shortName": "Los Angeles",
+          "municipalityName": "Los Angeles",
+          "location": { "lat": 33.9425, "lon": -118.408 },
+          "countryCode": "US",
+          "timeZone": "America/Los_Angeles"
+        },
+        "scheduledTime": { "utc": "2026-11-26 17:25Z", "local": "2026-11-26 09:25-08:00" },
+        "terminal": "3",
+        "quality": ["Basic"]
+      },
+      "number": "VS 4423",
+      "callSign": "DAL423",
+      "status": "Expected",
+      "codeshareStatus": "IsCodeshared",
+      "isCargo": false,
+      "aircraft": { "reg": "N1611B", "modeS": "A0F5C3", "model": "Boeing 767-300(ER)" },
+      "airline": { "name": "Virgin Atlantic", "iata": "VS", "icao": "VIR" }
+    },
+    {
+      "departure": {
+        "scheduledTime": { "utc": "2026-11-26 12:00Z", "local": "2026-11-26 07:00-05:00" },
+        "terminal": "5",
+        "quality": ["Basic"]
+      },
+      "arrival": {
+        "airport": {
+          "icao": "KLAX",
+          "iata": "LAX",
+          "name": "Los Angeles",
+          "shortName": "Los Angeles",
+          "municipalityName": "Los Angeles",
+          "location": { "lat": 33.9425, "lon": -118.408 },
+          "countryCode": "US",
+          "timeZone": "America/Los_Angeles"
+        },
+        "scheduledTime": { "utc": "2026-11-26 18:28Z", "local": "2026-11-26 10:28-08:00" },
+        "terminal": "5",
+        "quality": ["Basic"]
+      },
+      "number": "B6 23",
+      "callSign": "JBU23",
+      "status": "Expected",
+      "codeshareStatus": "IsOperator",
+      "isCargo": false,
+      "aircraft": { "reg": "N981JT", "modeS": "AD9A4E", "model": "Airbus A321-231" },
+      "airline": { "name": "JetBlue Airways", "iata": "B6", "icao": "JBU" }
+    },
+    {
+      "departure": {
+        "scheduledTime": { "utc": "2026-11-26 13:00Z", "local": "2026-11-26 08:00-05:00" },
+        "terminal": "8",
+        "quality": ["Basic"]
+      },
+      "arrival": {
+        "airport": {
+          "icao": "KLAX",
+          "iata": "LAX",
+          "name": "Los Angeles",
+          "shortName": "Los Angeles",
+          "municipalityName": "Los Angeles",
+          "location": { "lat": 33.9425, "lon": -118.408 },
+          "countryCode": "US",
+          "timeZone": "America/Los_Angeles"
+        },
+        "scheduledTime": { "utc": "2026-11-26 19:30Z", "local": "2026-11-26 11:30-08:00" },
+        "terminal": "4",
+        "quality": ["Basic"]
+      },
+      "number": "AA 1",
+      "callSign": "AAL1",
+      "status": "Expected",
+      "codeshareStatus": "IsOperator",
+      "isCargo": false,
+      "aircraft": { "reg": "N101NN", "modeS": "A003D7", "model": "Airbus A321" },
+      "airline": { "name": "American Airlines", "iata": "AA", "icao": "AAL" }
+    },
+    {
+      "departure": {
+        "scheduledTime": { "utc": "2026-11-26 13:40Z", "local": "2026-11-26 08:40-05:00" },
+        "terminal": "5",
+        "quality": ["Basic"]
+      },
+      "arrival": {
+        "airport": {
+          "icao": "KSFO",
+          "iata": "SFO",
+          "name": "San Francisco",
+          "shortName": "San Francisco",
+          "municipalityName": "San Francisco",
+          "location": { "lat": 37.6188, "lon": -122.375 },
+          "countryCode": "US",
+          "timeZone": "America/Los_Angeles"
+        },
+        "scheduledTime": { "utc": "2026-11-26 20:17Z", "local": "2026-11-26 12:17-08:00" },
+        "terminal": "I",
+        "quality": ["Basic"]
+      },
+      "number": "B6 615",
+      "callSign": "JBU615",
+      "status": "Expected",
+      "codeshareStatus": "IsOperator",
+      "isCargo": false,
+      "aircraft": { "reg": "N965JT", "modeS": "AD5B91", "model": "Airbus A321-231" },
+      "airline": { "name": "JetBlue Airways", "iata": "B6", "icao": "JBU" }
+    },
+    {
+      "departure": {
+        "scheduledTime": { "utc": "2026-11-26 15:15Z", "local": "2026-11-26 10:15-05:00" },
+        "quality": ["Basic"]
+      },
+      "arrival": {
+        "airport": {
+          "icao": "KLAX",
+          "iata": "LAX",
+          "name": "Los Angeles",
+          "shortName": "Los Angeles",
+          "municipalityName": "Los Angeles",
+          "location": { "lat": 33.9425, "lon": -118.408 },
+          "countryCode": "US",
+          "timeZone": "America/Los_Angeles"
+        },
+        "scheduledTime": { "utc": "2026-11-26 21:52Z", "local": "2026-11-26 13:52-08:00" },
+        "terminal": "2",
+        "quality": ["Basic"]
+      },
+      "number": "YX 4512",
+      "callSign": "RPA4512",
+      "status": "Expected",
+      "codeshareStatus": "IsOperator",
+      "isCargo": false,
+      "aircraft": { "reg": "N234JQ", "modeS": "A24C8E", "model": "Embraer 175" },
+      "airline": { "name": "Republic Airways", "iata": "YX", "icao": "RPA" }
+    },
+    {
+      "departure": {
+        "scheduledTime": { "utc": "2026-11-27 02:10Z", "local": "2026-11-26 21:10-05:00" },
+        "terminal": "7",
+        "quality": ["Basic"]
+      },
+      "arrival": {
+        "airport": {
+          "icao": "KLAX",
+          "iata": "LAX",
+          "name": "Los Angeles",
+          "shortName": "Los Angeles",
+          "municipalityName": "Los Angeles",
+          "location": { "lat": 33.9425, "lon": -118.408 },
+          "countryCode": "US",
+          "timeZone": "America/Los_Angeles"
+        },
+        "scheduledTime": { "utc": "2026-11-27 08:35Z", "local": "2026-11-27 00:35-08:00" },
+        "terminal": "7",
+        "quality": ["Basic"]
+      },
+      "number": "UA 1455",
+      "callSign": "UAL1455",
+      "status": "Expected",
+      "codeshareStatus": "IsOperator",
+      "isCargo": false,
+      "aircraft": { "reg": "N17105", "modeS": "A10E7B", "model": "Boeing 757-200" },
+      "airline": { "name": "United Airlines", "iata": "UA", "icao": "UAL" }
+    }
+  ]
+}

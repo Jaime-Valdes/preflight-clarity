@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { addDays, formatTime12 } from "@preflight/shared/dates";
-import { findOption, searchFlights, type FlightOption } from "@preflight/shared/search";
+import type { FlightOption } from "@preflight/shared/search";
 import { availabilityAt, daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
@@ -20,7 +20,8 @@ import {
   type CompareItem,
   type RouteDay,
 } from "@/lib/c/model";
-import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
+import type { FlightSource } from "@/lib/flights/source";
+import { useFlightSource, useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { LINK_BUTTON, flightContext, monthDay, routeText, shortDate } from "./copy";
 import { FlightDetail } from "./FlightDetail";
 import { FlightSkeleton } from "./FlightSkeleton";
@@ -43,7 +44,8 @@ interface FlightPageProps {
 }
 
 type View =
-  | { kind: "loading" }
+  /** `pending`: the route-day the page is waiting for (version D's store); the component starts its load. */
+  | { kind: "loading"; pending?: RouteDay }
   | { kind: "invalid" }
   | { kind: "date"; day: RouteDay; status: "past" | "too-far"; nearest: string }
   /** No flight in the link, or one that doesn't fly that day (`noFlights`: no nonstops on the route at all), or the day failed to build. */
@@ -61,10 +63,11 @@ type View =
     };
 
 /**
- * What the query string leads to. Pure; generates the day's results
- * (deterministic and cached by the generator) only for a date the tool shows.
+ * What the query string leads to. Pure; reads the day's results through the tool's source — the
+ * generator (deterministic and cached) or version D's store, which answers null until the day has
+ * loaded — only for a date the tool shows.
  */
-function resolve(params: { get(name: string): string | null }, today: string | null, nowMs: number | null): View {
+function resolve(params: { get(name: string): string | null }, today: string | null, nowMs: number | null, source: FlightSource): View {
   if (!today || nowMs === null) return { kind: "loading" };
   const day = parseRouteDay(params);
   if (!day) return { kind: "invalid" };
@@ -77,24 +80,40 @@ function resolve(params: { get(name: string): string | null }, today: string | n
   if (!key) return { kind: "missing", day, flightText, reason: "no-key", noFlights: false };
   const query = { origin: day.origin, destination: day.destination, date: day.date };
   try {
-    const option = findOption(query, key);
-    const options = searchFlights(query).options;
+    const results = source.searchFlights(query);
+    if (results === null) return { kind: "loading", pending: query };
+    const option = source.findOption(query, key) ?? null;
+    const options = results.options;
     if (!option) return { kind: "missing", day, flightText, reason: "not-that-day", noFlights: options.length === 0 };
     const id = itemId({ ...day, key: option.key });
-    if (hasLeft(option.flight, nowMs)) return { kind: "departed", id, day, option, options, today, next: nextDay(option, today) };
+    if (hasLeft(option.flight, nowMs)) {
+      const next = nextDay(option, today, source);
+      if (next === undefined) return { kind: "loading", pending: dayAfter(option) };
+      return { kind: "departed", id, day, option, options, today, next };
+    }
     return { kind: "found", id, day, option, options, today };
   } catch {
     return { kind: "missing", day, flightText, reason: "failed", noFlights: false };
   }
 }
 
-/** The same flight number the day after, when it flies then and that date can be shown. */
-function nextDay(option: FlightOption, today: string): CompareItem | null {
+/** The flight's route on the day after it. */
+function dayAfter(option: FlightOption): RouteDay {
   const { flight } = option;
-  const item = { origin: flight.origin.code, destination: flight.destination.code, date: addDays(flight.input.date, 1), key: option.key };
-  if (dateStatus(item.date, today) !== "ok") return null;
+  return { origin: flight.origin.code, destination: flight.destination.code, date: addDays(flight.input.date, 1) };
+}
+
+/**
+ * The same flight number the day after, when it flies then and that date can be shown; undefined
+ * while that day is still loading (version D).
+ */
+function nextDay(option: FlightOption, today: string, source: FlightSource): CompareItem | null | undefined {
+  const day = dayAfter(option);
+  if (dateStatus(day.date, today) !== "ok") return null;
   try {
-    return findOption({ origin: item.origin, destination: item.destination, date: item.date }, item.key) ? item : null;
+    const found = source.findOption(day, option.key);
+    if (found === undefined) return undefined;
+    return found ? { ...day, key: option.key } : null;
   } catch {
     return null;
   }
@@ -140,8 +159,16 @@ export function FlightPage({ Detail = FlightDetail, showScores = true, loading }
   const today = useTodayISO();
   // A flight that left earlier today is shown as such (checked again every minute).
   const nowMs = useNowMs();
-  const view = useMemo(() => resolve(params, today, nowMs), [params, today, nowMs]);
+  const source = useFlightSource();
+  const view = useMemo(() => resolve(params, today, nowMs, source), [params, today, nowMs, source]);
   const shownId = view.kind === "found" || view.kind === "departed" ? view.id : null;
+
+  // Version D: the day the view waits for (the day after, for a flight that has left) loads once it is known; the
+  // store's source then changes and the view resolves again. The generator is always ready, so nothing is pending.
+  const pending = view.kind === "loading" ? view.pending : undefined;
+  useEffect(() => {
+    if (pending) source.ensure(pending);
+  }, [pending, source]);
 
   // Opening another flight from this page (Details) replaces everything under the pointer:
   // keyboard and screen-reader focus moves to the top of the new flight. Not on the first one.

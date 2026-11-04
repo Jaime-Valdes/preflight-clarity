@@ -7,7 +7,9 @@
  * Session records live in DATA_FILE keyed by sessionId; product-interest
  * sign-ups (docs/INTEREST.md) in a sibling signups.json keyed by
  * "email_key|source" (signupKey in shared/src/signup.ts) — one entry per email
- * per source, like the Supabase table. Every write goes through one in-process
+ * per source, like the Supabase table; version D's cached route-days (lib/flights)
+ * in a sibling route_days.json keyed "route|date|provider", nothing over 7 days
+ * old among them. Every write goes through one in-process
  * queue (so concurrent saves never interleave) and lands atomically (temp file
  * + rename), so a crash mid-write can't leave a torn file behind.
  */
@@ -15,16 +17,21 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { signupKey, sortSignupsNewestFirst } from "@preflight/shared/signup";
 import type { SessionRecord, Signup } from "@preflight/shared/types";
+import { ROUTE_DAY_MAX_AGE_MS, routeDayAgeMs, routeDayKey, type RouteDayRecord } from "../flights/types";
 import { sortNewestFirst, type ResponseStore } from "./types";
 
 /** Name of the sign-up file, created next to DATA_FILE. */
 export const SIGNUPS_FILE = "signups.json";
+/** Name of the route-day cache file, also next to DATA_FILE. */
+export const ROUTE_DAYS_FILE = "route_days.json";
 
 export interface FileStore extends ResponseStore {
   /** Absolute path of the session-record JSON file. */
   readonly path: string;
   /** Absolute path of the sign-up JSON file (next to `path`). */
   readonly signupsPath: string;
+  /** Absolute path of the route-day cache file (next to `path`). */
+  readonly routeDaysPath: string;
 }
 
 type Keyed<T> = Record<string, T>;
@@ -41,6 +48,7 @@ function isMissingFile(err: unknown): boolean {
 export function createFileStore(file: string): FileStore {
   const path = resolve(process.cwd(), file);
   const signupsPath = join(dirname(path), SIGNUPS_FILE);
+  const routeDaysPath = join(dirname(path), ROUTE_DAYS_FILE);
 
   // Serializes all reads and writes, both files: each task starts once the previous one settles.
   let queue: Promise<unknown> = Promise.resolve();
@@ -87,10 +95,12 @@ export function createFileStore(file: string): FileStore {
 
   const readRecords = () => readAll<SessionRecord>(path, "sessionId");
   const readSignups = () => readAll<Signup>(signupsPath, "email_key|source");
+  const readRouteDays = () => readAll<RouteDayRecord>(routeDaysPath, "route|date|provider");
 
   return {
     path,
     signupsPath,
+    routeDaysPath,
 
     upsert(record) {
       return serialize(async () => {
@@ -130,6 +140,34 @@ export function createFileStore(file: string): FileStore {
 
     listSignups() {
       return serialize(async () => sortSignupsNewestFirst(Object.values(await readSignups())));
+    },
+
+    getRouteDay(route, date, provider) {
+      return serialize(async () => {
+        const days = await readRouteDays();
+        const key = routeDayKey(route, date, provider);
+        if (!Object.hasOwn(days, key)) return null;
+        // Past AeroDataBox's 7-day cache rule: dropped on sight, not only on the next write.
+        if (routeDayAgeMs(days[key], Date.now()) > ROUTE_DAY_MAX_AGE_MS) {
+          delete days[key];
+          await writeAll(routeDaysPath, days);
+          return null;
+        }
+        return days[key];
+      });
+    },
+
+    putRouteDay(record) {
+      return serialize(async () => {
+        const days = await readRouteDays();
+        // AeroDataBox's cache rule, as the Supabase trigger keeps it (schema.sql): nothing fetched over 7 days ago stays on disk.
+        const now = Date.now();
+        for (const [key, stored] of Object.entries(days)) {
+          if (routeDayAgeMs(stored, now) > ROUTE_DAY_MAX_AGE_MS) delete days[key];
+        }
+        days[routeDayKey(record.route, record.date, record.provider)] = record;
+        await writeAll(routeDaysPath, days);
+      });
     },
   };
 }

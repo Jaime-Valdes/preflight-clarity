@@ -1533,7 +1533,8 @@ function buildSeatMap(rng: Rng, cabin: CabinConfig): SeatMap {
  */
 function buildSounds(rng: Rng, model: AircraftModel, bounds: PhaseForecast[], airborneMin: number): SoundCue[] {
   const wide = model.bodyType === "wide";
-  const a320Family = model.key === "A320neo" || model.key === "A321neo";
+  // Every A319 / A320 / A321, ceo or neo: the catalogue's keys all start with the type.
+  const a320Family = /^A3(19|20|21)/.test(model.key);
   const a220 = model.key === "A220-300";
   // Typical moments on the 5-minute grid: the cruise chime a couple of minutes after the climb, the descent start.
   const cruiseAt = Math.max(5, round5(bounds[1].endMin + 2));
@@ -2233,6 +2234,9 @@ export function generateFlight(input: FlightInput, prefs?: FlightPrefs): Flight 
 // for the day, the route history by route and month, the weather by airport,
 // date and hour, and one bump draw per air block, which a wide-body feels a
 // little less (never more). Nothing here changes what generateFlight returns.
+// Version D's published schedules (schedule.ts) come through the same
+// buildScheduledFlight, with a carrier outside the catalogue carried in the
+// spec (airlineProfile) and the published terminal.
 
 /** A carrier that would plausibly fly the route nonstop (nonstopCarriers), with what it can fly there. */
 export interface RouteCarrier {
@@ -2369,11 +2373,16 @@ export interface ScheduledFlightSpec {
   seed: string;
   /** IATA code of one of the day's carriers. */
   airline: string;
+  /**
+   * The carrier's profile when it is not in the catalogue (fallbackAirlineProfile): a published
+   * schedule (version D, schedule.ts) can name one AIRLINES doesn't list. Absent: the catalogue's.
+   */
+  airlineProfile?: AirlineProfile;
   /** "DL 1423" */
   flightNumber: string;
-  /** Local "HH:MM" on the 5-minute grid. */
+  /** Local "HH:MM" on the 5-minute grid (any minute for a published schedule). */
   departTime: string;
-  /** Model key from the carrier's fleet (RouteCarrier.fleet). */
+  /** Model key from the carrier's fleet (RouteCarrier.fleet), or any catalogue key for a published schedule. */
   aircraft: string;
   /** Gate to gate as published (arrival, crew): at least the day's airborne time plus 15 min of taxi. */
   blockMin: number;
@@ -2384,7 +2393,20 @@ export interface ScheduledFlightSpec {
    */
   airKey: string;
   airTime: string;
+  /** The origin terminal as a published schedule gives it; absent: drawn as for A/B. */
+  terminal?: string;
+  /**
+   * The published arrival (version D's schedules): the flight shows it as published, and its air time
+   * fits inside the published block. Absent: the arrival follows from the block time, as for A/B.
+   */
+  arrival?: { arriveTime: string; arriveDayOffset: number };
+  /** The type as the schedule lists it, when the catalogue has no entry for it and `aircraft` is a similar type standing in. */
+  aircraftListedAs?: string;
 }
+
+/** A published block leaves at least this much taxi around the air time, and the air time is never shorter than this. */
+const PUBLISHED_TAXI_MIN = 15;
+const MIN_AIRBORNE_MIN = 30;
 
 /** Taxi minutes of an air block's reference departure (it only sets the hour of its arrival weather). */
 const AIR_TAXI_MIN = 25;
@@ -2397,15 +2419,33 @@ const AIR_TAXI_MIN = 25;
 export function buildScheduledFlight(day: RouteDay, spec: ScheduledFlightSpec): Flight {
   const norm = day.input;
   const ctx = ROUTE_DAY_CONTEXT.get(day) ?? buildRoute(norm);
-  const airline = getAirline(spec.airline);
+  const airline = spec.airlineProfile ?? getAirline(spec.airline);
   const model = getAircraftModel(spec.aircraft);
   if (!airline || !model) throw new Error(`Unknown airline or aircraft: ${spec.airline} / ${spec.aircraft}`);
   const routeMonth = routeMonthFor(norm, ctx);
   const root = createRng(spec.seed);
 
-  const timing = timingAt(ctx, norm.date, spec.departTime, day.airborneMin, spec.blockMin);
-  const aircraft = buildAircraft(root.fork("aircraft"), model, airline.code, airline.tailPatterns, ctx.year);
-  const gate = buildGate(root.fork("gate"), ctx.origin, airline);
+  // A published block can be shorter than the day's modelled air time: the air time then fits inside
+  // it, and the arrival is the published one (the weather at the destination follows it).
+  const published = spec.arrival;
+  const airborneMin = published ? Math.max(MIN_AIRBORNE_MIN, Math.min(day.airborneMin, spec.blockMin - PUBLISHED_TAXI_MIN)) : day.airborneMin;
+  const modelled = timingAt(ctx, norm.date, spec.departTime, airborneMin, spec.blockMin);
+  const [arriveH, arriveM] = (published?.arriveTime ?? "0:0").split(":").map(Number);
+  const timing: Timing = published
+    ? {
+        ...modelled,
+        arriveTime: published.arriveTime,
+        arriveDayOffset: published.arriveDayOffset,
+        arriveDate: addDays(norm.date, published.arriveDayOffset),
+        arriveHour: arriveH + arriveM / 60,
+      }
+    : modelled;
+  const built = buildAircraft(root.fork("aircraft"), model, airline.code, airline.tailPatterns, ctx.year);
+  const aircraft: Aircraft = spec.aircraftListedAs ? { ...built, listedAs: spec.aircraftListedAs } : built;
+  // A published terminal replaces the drawn one; the gate is drawn either way (it only shows on the day).
+  const drawnGate = buildGate(root.fork("gate"), ctx.origin, airline);
+  const terminal = spec.terminal?.trim();
+  const gate = terminal ? { terminal, gate: drawnGate.gate } : drawnGate;
   const crew = crewFor(airline, timing.blockMin);
   const weather = weatherFor(ctx, timing, norm.date);
 

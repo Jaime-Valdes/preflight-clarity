@@ -163,6 +163,24 @@ whenever you add or change an environment variable, trigger a redeploy (**Deploy
 saving the variable alone changes nothing. The link-preview image resolves its absolute URL from Vercel's
 own environment, so `NEXT_PUBLIC_SITE_URL` is only needed if you host the frontend somewhere else.
 
+### 4. Real schedules for version D (optional)
+
+Version D's pages ask the API for a route-day's nonstops (`GET /flights/day?from=JFK&to=LAX&date=YYYY-MM-DD`,
+see [`docs/REAL_DATA.md`](docs/REAL_DATA.md)). With nothing set, the API answers from the illustrative
+timetable the other versions use, so the study needs none of this.
+
+- `FLIGHT_PROVIDER`: `generator` (default) or `aerodatabox`. (`fixture` answers from the saved listings in
+  `backend/fixtures/aerodatabox/`; the tests use it.)
+- `AERODATABOX_API_KEY` and `AERODATABOX_HOST`: the key from [aerodatabox.com](https://aerodatabox.com) and
+  where it was issued — `rapidapi` (the marketplace plans, the free one included; the default) or `direct`
+  (`api.aerodatabox.com`). The key stays on the server and is never logged.
+- Re-run `schema.sql`: it adds the `route_days` table. A route-day costs two FIDS calls, is kept for 24 hours
+  (in memory and in that table) and refreshed after that; a trigger drops rows older than 7 days, AeroDataBox's
+  cache rule. Without Supabase the memory cache works alone (plus `backend/data/route_days.json` in
+  development).
+- The free plan is for non-commercial use and requires the "Schedules: AeroDataBox" line version D shows
+  under its results; move to a paid plan before the public sees it.
+
 ## How data is stored
 
 - **One record per session** — a `SessionRecord` (see [`shared/src/types.ts`](shared/src/types.ts)):

@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef } from "react";
 import { addDays, formatLongDate } from "@preflight/shared/dates";
 import { TURBULENCE_FORECAST_DAYS } from "@preflight/shared/forecast";
-import { fareAt, searchFlights, type DayOverview } from "@preflight/shared/search";
+import { fareAt, type DayOverview } from "@preflight/shared/search";
 import { availabilityAt, daysToDeparture, hasLeft } from "@/components/c/common/availability";
+import { useFlightSource } from "@/components/c/shell/ToolContext";
 import { formatFare } from "@/lib/c/format";
 import { clampDate, MAX_DAYS_AHEAD, type RouteDay } from "@/lib/c/model";
+import type { FlightSource } from "@/lib/flights/source";
 import { cn } from "@/lib/cn";
 import { monthDay, weekday } from "./describe";
 
@@ -54,6 +56,8 @@ interface DateStripProps {
  */
 export function DateStrip({ day, stripDay, today, nowMs, hrefFor, showScores = true }: DateStripProps) {
   const scrollerRef = useRef<HTMLUListElement>(null);
+  // Each tile reads its day through the tool's source: the generator at once, version D's store once it has loaded.
+  const source = useFlightSource();
   const sameRoute = stripDay !== null && stripDay.origin === day.origin && stripDay.destination === day.destination;
   const dates = sameRoute ? stripDates(stripDay.date, today) : null;
   const stale = !sameRoute || stripDay.date !== day.date;
@@ -90,6 +94,7 @@ export function DateStrip({ day, stripDay, today, nowMs, hrefFor, showScores = t
                 daysUntil={daysToDeparture(today, date)}
                 nowMs={daysToDeparture(today, date) <= 1 ? nowMs : null}
                 href={hrefFor(date)}
+                source={source}
               />
             ))
           : Array.from({ length: DAYS }, (_, i) => (
@@ -109,7 +114,8 @@ export function DateStrip({ day, stripDay, today, nowMs, hrefFor, showScores = t
 
 /**
  * The day's count, lowest fare today (`daysUntil` sets the booking lead time) and best score;
- * with `nowMs`, only over the flights that haven't left yet (`left`: how many have).
+ * with `nowMs`, only over the flights that haven't left yet (`left`: how many have). Undefined
+ * while the day is still loading (version D's store), null when it couldn't be built.
  */
 function safeOverview(
   origin: string,
@@ -117,9 +123,12 @@ function safeOverview(
   date: string,
   daysUntil: number,
   nowMs: number | null,
-): (DayOverview & { left: number }) | null {
+  source: FlightSource,
+): (DayOverview & { left: number }) | null | undefined {
   try {
-    const all = searchFlights({ origin, destination, date }).options;
+    const results = source.searchFlights({ origin, destination, date });
+    if (results === null) return undefined;
+    const all = results.options;
     const options = nowMs === null ? all : all.filter((o) => !hasLeft(o.flight, nowMs));
     return {
       date,
@@ -145,14 +154,21 @@ interface DayTileProps {
   /** Set for today (and tomorrow, for far-off time zones): flights that have left don't count. */
   nowMs: number | null;
   href: string;
+  /** Where the day's flights come from (the tool's source). */
+  source: FlightSource;
 }
 
-function DayTile({ origin, destination, date, current, scores, daysUntil, nowMs, href }: DayTileProps) {
+function DayTile({ origin, destination, date, current, scores, daysUntil, nowMs, href, source }: DayTileProps) {
   const overview = useMemo(
-    () => safeOverview(origin, destination, date, daysUntil, nowMs),
-    [origin, destination, date, daysUntil, nowMs],
+    () => safeOverview(origin, destination, date, daysUntil, nowMs, source),
+    [origin, destination, date, daysUntil, nowMs, source],
   );
-  const has = overview !== null && overview.count > 0;
+  // A source that prefetches (the generator) is asked for the tile's day; the store is not: a day
+  // there is a provider call against a monthly plan, so the tile loads once the day is opened.
+  useEffect(() => {
+    if (source.prefetches) source.ensure({ origin, destination, date });
+  }, [origin, destination, date, source]);
+  const has = overview !== undefined && overview !== null && overview.count > 0;
   return (
     <li className="min-w-[5.5rem] flex-1 snap-start lg:min-w-0">
       <Link
@@ -173,7 +189,19 @@ function DayTile({ origin, destination, date, current, scores, daysUntil, nowMs,
         <span aria-hidden className="text-sm font-bold leading-tight">
           {monthDay(date)}
         </span>
-        {has ? (
+        {overview === undefined && !source.prefetches ? (
+          // Version D, a day nobody has opened yet: the tile is the way to it.
+          <span className={cn("mt-1.5 text-[11px] leading-tight", current ? "text-white/70" : "text-ink-500")}>
+            <span className="sr-only">: </span>Tap to see
+          </span>
+        ) : overview === undefined ? (
+          // Still loading: the tile keeps its size; the fare and count lines come when the day has.
+          <>
+            <span aria-hidden className="mt-1.5 h-[13px] w-9 rounded-full bg-current opacity-20" />
+            <span aria-hidden className="mt-1.5 h-[11px] w-12 rounded-full bg-current opacity-20" />
+            <span className="sr-only">: loading</span>
+          </>
+        ) : has ? (
           <>
             <span className="mt-1.5 text-[13px] font-semibold leading-none tabular-nums">
               <span className="sr-only">: from </span>

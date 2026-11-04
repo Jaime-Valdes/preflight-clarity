@@ -1,10 +1,11 @@
 import { formatOffset, formatTime12 } from "@preflight/shared/dates";
 import { availabilityFor, getForecastStatus, type Availability } from "@preflight/shared/forecast";
-import { findOption, type FlightOption } from "@preflight/shared/search";
+import type { FlightOption } from "@preflight/shared/search";
 import type { CrewInfo, Flight, ForecastMode, ForecastStatus, Intensity } from "@preflight/shared/types";
 import { KIND_LABEL, describeSeat } from "@/components/dashboard/control/seatMap";
 import { windowMoment } from "@/components/dashboard/turbulence/format";
 import { MAX_DAYS_AHEAD, dateStatus, itemId, type CompareItem } from "@/lib/c/model";
+import { generatorSource, type FlightSource } from "@/lib/flights/source";
 import { COLORS, INTENSITY } from "@/lib/theme";
 import { daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { monthDay, routeText } from "../flight/copy";
@@ -50,20 +51,28 @@ export function isFlightColumn(column: Column): column is FlightColumn {
 }
 
 /**
- * Regenerates each picked flight (deterministic, cached by the generator). `nowMs` (useNowMs) marks the
- * flights that have already left.
+ * Each picked flight through the tool's source — the generator (deterministic, cached; the default)
+ * or version D's store — or null while any flight's day is still loading there. `nowMs` (useNowMs)
+ * marks the flights that have already left.
  */
-export function resolveColumns(items: readonly CompareItem[], today: string, nowMs: number | null): Column[] {
-  return items.map((item): Column => {
+export function resolveColumns(
+  items: readonly CompareItem[],
+  today: string,
+  nowMs: number | null,
+  source: FlightSource = generatorSource,
+): Column[] | null {
+  const columns = items.map((item): Column | undefined => {
     const id = itemId(item);
     const status = dateStatus(item.date, today);
     if (status !== "ok") return { kind: "unavailable", id, item, reason: status };
-    let option: FlightOption | null = null;
+    let option: FlightOption | null | undefined = null;
     try {
-      option = findOption({ origin: item.origin, destination: item.destination, date: item.date }, item.key);
+      option = source.findOption({ origin: item.origin, destination: item.destination, date: item.date }, item.key);
     } catch {
       option = null;
     }
+    // Still loading (version D): the page waits for every day.
+    if (option === undefined) return undefined;
     if (!option) return { kind: "unavailable", id, item, reason: "missing" };
     if (hasLeft(option.flight, nowMs)) {
       const left = { from: option.flight.origin.code, time: option.flight.departTime };
@@ -81,6 +90,7 @@ export function resolveColumns(items: readonly CompareItem[], today: string, now
       avail: availabilityFor(daysUntil),
     };
   });
+  return columns.every((column): column is Column => column !== undefined) ? columns : null;
 }
 
 const UNAVAILABLE_NOTE: Record<Exclude<UnavailableColumn["reason"], "departed">, string> = {

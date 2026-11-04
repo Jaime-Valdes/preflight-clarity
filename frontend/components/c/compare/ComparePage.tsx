@@ -7,18 +7,19 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps, type Compone
 import { TURBULENCE_FORECAST_DAYS, WEATHER_FORECAST_DAYS } from "@preflight/shared/forecast";
 import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useCompareList } from "@/lib/c/compare-store";
-import { MAX_COMPARE, clampDate, itemId, parseCompareParam, type CompareItem, type Hrefs } from "@/lib/c/model";
-import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
+import { MAX_COMPARE, clampDate, dateStatus, itemId, parseCompareParam, type CompareItem, type Hrefs } from "@/lib/c/model";
+import { useFlightSource, useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { LINK_BUTTON } from "../flight/copy";
 import { CompareEmpty } from "./CompareEmpty";
 import { CompareSkeleton } from "./CompareSkeleton";
 import { CompareTable } from "./CompareTable";
-import { assignSlots, flightNames, isFlightColumn, resolveColumns, spoken } from "./facts";
+import { assignSlots, flightNames, isFlightColumn, resolveColumns, spoken, type Column } from "./facts";
 import { track } from "@/lib/analytics";
 
 const NO_IDS: ReadonlySet<string> = new Set();
+const NO_COLUMNS: readonly Column[] = [];
 
 /** What the table and the empty state receive (version C's components, or version D's stand-ins). */
 export type CompareTableProps = ComponentProps<typeof CompareTable>;
@@ -87,11 +88,20 @@ export function ComparePage({ Table = CompareTable, Empty = CompareEmpty, note =
 
   const items = url.fromUrl ? url.items : list.items;
   const visible = useMemo(() => items.filter((i) => !hiddenIds.has(itemId(i))), [items, hiddenIds]);
-  const columns = useMemo(() => (today ? resolveColumns(visible, today, nowMs) : []), [visible, today, nowMs]);
+  // Version D: every picked flight's day loads from the store (only dates the tool shows); the generator is always ready.
+  const source = useFlightSource();
+  useEffect(() => {
+    if (!today) return;
+    for (const item of visible) if (dateStatus(item.date, today) === "ok") source.ensure(item);
+  }, [visible, today, source]);
+  // Null until every flight's day is there (version D); the generator's columns come at once.
+  const resolved = useMemo(() => (today ? resolveColumns(visible, today, nowMs, source) : null), [visible, today, nowMs, source]);
+  const ready = resolved !== null;
+  const columns = resolved ?? NO_COLUMNS;
   const shownCount = columns.filter(isFlightColumn).length;
   useEffect(() => {
-    if (today) track(`${tool.events}_compare_view`, { flights: shownCount, from_link: url.fromUrl });
-  }, [today, shownCount, url.fromUrl, tool.events]);
+    if (today && ready) track(`${tool.events}_compare_view`, { flights: shownCount, from_link: url.fromUrl });
+  }, [today, ready, shownCount, url.fromUrl, tool.events]);
   const flights = useMemo(() => columns.filter(isFlightColumn), [columns]);
   const names = useMemo(() => flightNames(flights), [flights]);
 
@@ -154,7 +164,7 @@ export function ComparePage({ Table = CompareTable, Empty = CompareEmpty, note =
     setFocusRequest({ id: null });
   };
 
-  if (!today || nowMs === null) return loading ?? <CompareSkeleton showScore={showScores} />;
+  if (!today || nowMs === null || !ready) return loading ?? <CompareSkeleton showScore={showScores} />;
 
   const comparing = flights.length >= 2;
   const addHref = addHrefFor(visible, today, hrefs);

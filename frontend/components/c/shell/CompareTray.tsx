@@ -5,11 +5,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { formatShortDate, formatTime12 } from "@preflight/shared/dates";
-import { findOption, type FlightOption } from "@preflight/shared/search";
+import type { FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { useCompareList } from "@/lib/c/compare-store";
-import { useHrefs, useTool } from "./ToolContext";
-import { MAX_COMPARE, itemId, type CompareItem } from "@/lib/c/model";
+import { useFlightSource, useHrefs, useTool } from "./ToolContext";
+import { MAX_COMPARE, dateStatus, itemId, type CompareItem } from "@/lib/c/model";
+import type { FlightSource } from "@/lib/flights/source";
 import { cn } from "@/lib/cn";
 import { useTodayISO } from "@/lib/hooks";
 
@@ -18,9 +19,10 @@ const TRAY_ID = "c-compare-tray";
 /** While the tray is on screen, scrolling a focused element into view keeps it clear of the tray (WCAG 2.4.11). */
 const TRAY_SCROLL_PADDING = `html:has(#${TRAY_ID}){scroll-padding-bottom:8.5rem}@media (min-width:1024px){html:has(#${TRAY_ID}){scroll-padding-bottom:6rem}}`;
 
-function lookUp(item: CompareItem): FlightOption | null {
+/** The picked flight through the tool's source; null when it isn't found — or, in version D, while its day loads (the chip shows the key). */
+function lookUp(item: CompareItem, source: FlightSource): FlightOption | null {
   try {
-    return findOption({ origin: item.origin, destination: item.destination, date: item.date }, item.key);
+    return source.findOption({ origin: item.origin, destination: item.destination, date: item.date }, item.key) ?? null;
   } catch {
     return null;
   }
@@ -71,6 +73,7 @@ export function CompareTray() {
   const tool = useTool();
   const hrefs = useHrefs();
   const today = useTodayISO();
+  const source = useFlightSource();
   const { prune } = compare;
   // Flights whose date has passed leave the list (they can't be shown or compared, and mustn't fill it).
   useEffect(() => {
@@ -78,7 +81,12 @@ export function CompareTray() {
   }, [today, prune]);
   // Until the effect has run, they are neither shown nor counted.
   const items = useMemo(() => (today ? compare.items.filter((i) => i.date >= today) : compare.items), [compare.items, today]);
-  const entries = useMemo(() => items.map((item) => ({ item, id: itemId(item), option: lookUp(item) })), [items]);
+  const entries = useMemo(() => items.map((item) => ({ item, id: itemId(item), option: lookUp(item, source) })), [items, source]);
+  // Version D: each picked flight's day loads from the store and its chip fills in (same shape, the time added). The generator is always ready.
+  useEffect(() => {
+    if (!today) return;
+    for (const item of items) if (dateStatus(item.date, today) === "ok") source.ensure(item);
+  }, [items, today, source]);
 
   if (pathname === `${tool.base}/compare` || items.length === 0) return null;
 
