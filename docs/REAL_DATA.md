@@ -87,6 +87,35 @@ Fares and seat availability wait for a business decision (booking partner) and s
 - Fares (if ever shown as real): full price at the moment shown, code-share operator named on the first
   screen, quoted-at time visible.
 
+## Status (2026-11-04): step 1 is built
+
+Branch `data/real-schedules` (on top of the version D look). What is live when `FLIGHT_PROVIDER=aerodatabox`
+and `AERODATABOX_API_KEY` are set in the backend's environment:
+
+- `/d` results, flight and compare pages show the published nonstops for the route and day (AeroDataBox
+  FIDS: operating carrier, flight number, local times, arrival and day offset, block time, aircraft
+  type, terminal), hydrated with the generator's weather, turbulence, seats and sounds until the later
+  steps make those real. A first check of JFK→LAX on 12 Nov 2026 returned 30 real flights (JetBlue,
+  American and Delta, A320/A321/767/777/A330, terminals 4, 5 and 8).
+- Every page says where the schedule came from ("Schedules: AeroDataBox · fares are illustrative", or
+  "Illustrative schedule" when the generator stands in). A type the catalogue has no entry for keeps the
+  schedule's own name and says the facts shown are a similar type's.
+- Cost control: a route-day costs 4 AeroDataBox units (two 12-hour FIDS windows); the server caches a
+  day for 24 hours (file store in development, Supabase `route_days` in production; nothing older than
+  7 days is ever served or kept) and refuses more than `FLIGHT_PROVIDER_ROUTE_DAYS_PER_HOUR` (default
+  60) provider calls an hour. The date strip no longer loads the six other days; a tile says "Tap to see"
+  until that day is opened. On the free Basic plan (400 units a month) that is about 100 fresh
+  route-days a month.
+- Without a key, or when the API cannot answer, the pages fall back to the generator and say so.
+  Versions A, B and C are untouched (frozen pixel captures of 14 pages identical to main; the study's
+  generator hash guard passes).
+
+To run it: `FLIGHT_PROVIDER=aerodatabox`, `AERODATABOX_API_KEY=…`, `AERODATABOX_HOST=rapidapi` in
+`backend/.env`, then `npm run dev` and open `/d?test=1`. Production needs the same three variables on
+the backend's Vercel project and `backend/supabase/schema.sql` re-run for the `route_days` table.
+
+Next: step 2 (real airport weather, free) and step 3 (route history from the public archives).
+
 ## Step 1 build specification (the contract between the three parts)
 
 ### Shared: `shared/src/schedule.ts` (new, pure; no fetch, no Node APIs)
