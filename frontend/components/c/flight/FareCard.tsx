@@ -15,7 +15,7 @@ import { MAX_COMPARE, itemId, type CompareItem } from "@/lib/c/model";
 import { useHrefs, useTool } from "@/components/c/shell/ToolContext";
 import { cn } from "@/lib/cn";
 import { BenchmarkLine } from "./BenchmarkLine";
-import { LINK_BUTTON, dayOffsetMark, fareFor } from "./copy";
+import { LINK_BASE, LINK_BUTTON, dayOffsetMark, fareFor } from "./copy";
 import { track } from "@/lib/analytics";
 
 interface FareCardProps {
@@ -30,8 +30,16 @@ interface FareCardProps {
    * Version D, whose reassurance cards already state them, passes false. Default true.
    */
   showFacts?: boolean;
+  /**
+   * The look of the compare controls: C's black primary (default), or an outline pill for a page whose
+   * primary action is something else (version D's "I'd pick this flight"). The copy and behaviour are the same.
+   */
+  compareTone?: "primary" | "outline";
   className?: string;
 }
+
+/** The outline look of "Compare N flights" (the primary look is LINK_BUTTON.primary). */
+const OUTLINE_LINK = `${LINK_BASE} h-11 px-5 text-ink-900 ring-2 ring-inset ring-ink-900 hover:bg-ink-900/5 active:bg-ink-900/10`;
 
 type FocusTarget = { target: "add" | "remove" };
 
@@ -42,7 +50,7 @@ type FocusTarget = { target: "add" | "remove" };
  * record, fleet age) so they mean something at a glance. Nothing can be
  * booked; the copy says so quietly.
  */
-export function FareCard({ option, item, daysUntil, othersHref, showFacts = true, className }: FareCardProps) {
+export function FareCard({ option, item, daysUntil, othersHref, showFacts = true, compareTone = "primary", className }: FareCardProps) {
   const list = useCompareList();
   const tool = useTool();
   const hrefs = useHrefs();
@@ -173,7 +181,9 @@ export function FareCard({ option, item, daysUntil, othersHref, showFacts = true
               "inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition-colors duration-200",
               full
                 ? "cursor-not-allowed bg-canvas text-ink-500 ring-1 ring-inset ring-line"
-                : "bg-night-900 text-white shadow-lift hover:bg-night-800 active:bg-night-950",
+                : compareTone === "outline"
+                  ? "text-ink-900 ring-2 ring-inset ring-ink-900 hover:bg-ink-900/5 active:bg-ink-900/10"
+                  : "bg-night-900 text-white shadow-lift hover:bg-night-800 active:bg-night-950",
             )}
           >
             <Plus aria-hidden className="size-4" strokeWidth={2.5} />
@@ -192,7 +202,7 @@ export function FareCard({ option, item, daysUntil, othersHref, showFacts = true
           </Link>
         </div>
       ) : inList && count >= 2 ? (
-        <Link href={hrefs.compare(list.items)} className={cn(LINK_BUTTON.primary, "mt-3 w-full")}>
+        <Link href={hrefs.compare(list.items)} className={cn(compareTone === "outline" ? OUTLINE_LINK : LINK_BUTTON.primary, "mt-3 w-full")}>
           Compare {count} flights
           <ArrowRight aria-hidden className="size-4" />
         </Link>

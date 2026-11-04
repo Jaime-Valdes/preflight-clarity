@@ -373,13 +373,15 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{PICK_QUESTION}</p>
                 {chooseButton("mt-4")}
               </div>
-              {/* The on-time and fleet-age facts are left out: the reassurance cards above already state them. */}
+              {/* The on-time and fleet-age facts are left out: the reassurance cards above already state them. The compare
+                  controls take the outline look, so the pick stays the column's one black pill. */}
               <FareCard
                 option={option}
                 item={item}
                 daysUntil={daysUntil}
                 othersHref={`#${OTHERS_ID}`}
                 showFacts={false}
+                compareTone="outline"
                 className="animate-d-rise [animation-delay:120ms]"
               />
             </div>

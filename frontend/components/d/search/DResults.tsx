@@ -20,6 +20,7 @@ import { SortTabs } from "@/components/c/search/SortTabs";
 import { airlineName, buildFacets, campaignParams, type Facets, type ResultsView } from "@/components/c/search/view";
 import { keepClearOfTray } from "@/components/c/shell/CompareTray";
 import { useHrefs } from "@/components/c/shell/ToolContext";
+import { D_PILL_PRIMARY } from "@/components/d/brand/buttons";
 import { CloudMascot } from "@/components/d/brand/CloudMascot";
 import { DLoading } from "@/components/d/brand/Loading";
 import { track } from "@/lib/analytics";
@@ -335,7 +336,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                   <button
                     type="button"
                     onClick={() => clearFilters(COUNT_ID)}
-                    className="mt-5 inline-flex h-12 items-center rounded-full bg-ink px-6 text-[15px] font-bold text-white transition-transform duration-[120ms] active:scale-[0.98]"
+                    className={cn(D_PILL_PRIMARY, "mt-5 h-14 w-full px-6 text-[17px] sm:w-auto sm:min-w-[14rem]")}
                   >
                     Clear filters
                   </button>

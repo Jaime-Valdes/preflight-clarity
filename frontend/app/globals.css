@@ -264,7 +264,7 @@
   --color-ink-900: var(--color-ink);
   --color-ink-700: var(--color-ink-soft);
   --color-ink-500: var(--color-ink-mute);
-  --color-ink-400: #5b7385;
+  --color-ink-400: var(--color-ink-mute);
   --color-ink-300: var(--color-slate);
 
   --color-night-950: #141414;
@@ -315,17 +315,20 @@
   color: var(--color-ink);
 }
 
-[data-theme="d"] :focus-visible {
-  outline: 2px solid var(--color-ink);
-  outline-offset: 3px;
-}
-/* Text fields and selects draw the shared form ring on focus; one ring, not two. Checkboxes and sliders keep the ink outline. */
-[data-theme="d"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus-visible {
-  outline: none;
-}
-
-[data-theme="d"] ::selection {
-  background: var(--color-sun);
+/* In the base layer like the shared rules they replace, so a component's own outline-none utility still wins (fields,
+   the containers that take focus programmatically). */
+@layer base {
+  [data-theme="d"] :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 3px;
+  }
+  /* Text fields and selects draw the shared form ring on focus; one ring, not two. Checkboxes and sliders keep the ink outline. */
+  [data-theme="d"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus-visible {
+    outline: none;
+  }
+  [data-theme="d"] ::selection {
+    background: var(--color-sun);
+  }
 }
 
 /* Every page heading inside D is set in the headline weight; the shared pages keep their own sizes. */

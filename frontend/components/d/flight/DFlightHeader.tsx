@@ -65,7 +65,7 @@ export function DFlightHeader({ flight, daysUntil, className }: DFlightHeaderPro
         <h1 className="min-w-0">
           <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-mute">Flight details</span>
           <span className="block text-[17px] font-extrabold leading-snug tracking-tight text-ink [overflow-wrap:anywhere]">{flight.airline.name}</span>
-          <span className="mt-0.5 block text-[13px] font-medium text-ink-mute tabular-nums">Flight {flight.flightNumber}</span>
+          <span className="mt-0.5 block text-[13px] font-normal text-ink-mute tabular-nums">Flight {flight.flightNumber}</span>
           <span className="sr-only">
             , {origin.code} to {destination.code}
           </span>
@@ -121,7 +121,7 @@ export function DFlightHeader({ flight, daysUntil, className }: DFlightHeaderPro
         </div>
         <div className="min-w-0 text-center">
           <Eyebrow>Duration</Eyebrow>
-          <p className="mt-1 whitespace-nowrap text-[20px] font-bold leading-none text-ink tabular-nums">{formatDuration(flight.blockMin)}</p>
+          <p className="mt-1 whitespace-nowrap text-[15px] font-bold leading-[20px] text-ink tabular-nums">{formatDuration(flight.blockMin)}</p>
           <p className="mt-1 whitespace-nowrap text-[12px] text-ink-mute tabular-nums">{flight.distanceMi.toLocaleString("en-US")} mi</p>
         </div>
         <div className="text-right">
