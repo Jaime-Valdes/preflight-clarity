@@ -31,7 +31,7 @@ booked), logged with the flight's tiers, its price rank that day and the dollars
 | `/d/flight?from=…&to=…&date=…&f=DL1423[&pos=2]` | One flight: reassurance first, then the four ratings in your order, "I'd pick this flight", the fare and "Add to compare", the sign-up ask, "More detail" (the dashboard sections, collapsed) and the other flights that day. |
 | `/d/compare?f=JFK.LAX.2026-12-12.DL1423,…` | 2–3 flights side by side: the four ratings in your order, price and difference, schedule, aircraft, airline, who flies it, best seat, and "I'd pick this flight" per column. |
 
-`?test=1` on any /d page marks that tab's events and sign-ups as team tests; `utm_*` tags on a link travel
+`?test=1` on any /d page marks this browser's events and sign-ups as team tests until 30 idle minutes pass, and switches session recording off; `utm_*` tags on a link travel
 through the search, results and details links (PostHog records them on the first pageview as well).
 
 ## Data model

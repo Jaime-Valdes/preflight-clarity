@@ -9,6 +9,12 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 
 - Sent: pageviews (every URL change), clicks (autocapture), the events below, and session recordings
   (replays). Visitors are anonymous: one random id per browser, no person profiles.
+- Team tests are flagged, never recorded: a study session opened with `?test=1`, and any browser in
+  the tools' test mode (`frontend/lib/testMode.ts`: `?test=1` on a /c or /d page, kept while the
+  tester keeps going and ended after 30 idle minutes, PostHog's own session timeout), sends its
+  events with `is_test = true` and no replay (`disable_session_recording`, or the recording is
+  stopped the moment the flag is seen). Until 2026-11-07 the tools' flag was per tab, so a link
+  opened in a new tab lost it, and test runs were recorded like anyone else's.
 - **Never sent**: names, emails (the sign-up form included), survey answers (the rating sliders are masked in replays, and every
   input is masked), or anything from the session record. The research data stays in Supabase.
 - The team results page (`/results`) prints names, emails and answers as plain text, and PostHog starts
@@ -46,8 +52,8 @@ debrief screen; a participant who already signed up on the briefing sees "You're
 Context on every study event once a session exists: `variant` (A/B), `is_test` (`?test=1`),
 `participant` (`?p=` label or null). Filter `is_test = false` for real participants.
 Every event sent from a /c page (custom events, pageviews, autocapture) carries `variant` "C" and
-`is_test` (the tab was opened with `?test=1`); every event from a /d page carries `variant` "D" the
-same way (`frontend/lib/tool.ts`). These are stamped by URL in `before_send`, not registered as super
+`is_test` (the browser is in test mode, or the URL carries `?test=1`); every event from a /d page
+carries `variant` "D" the same way (`frontend/lib/tool.ts`). These are stamped by URL in `before_send`, not registered as super
 properties, so the study's and the tools' context never bleed into each other when one browser visits
 them all.
 

@@ -50,9 +50,10 @@ sign-up on the briefing card marks the session (`emailSent`) and the debrief sho
   blank, and keeps the interview opt-in once given), `GET /signups` (admin key). Storage follows the responses adapter: Supabase table `signups`
   (`backend/supabase/schema.sql`, re-runnable), a sibling `signups.json` next to `DATA_FILE`, or none
   (503). `email_key` = lower-cased, trimmed email.
-- Team tests: the study marks its sign-ups with the session's `isTest`; on version C, open any `/c`
-  page with `?test=1` and that tab's sign-ups are marked as tests (`pfc.c.test.v1`). The results page
-  excludes test sign-ups unless "Include test sessions" is on.
+- Team tests: the study marks its sign-ups with the session's `isTest`; on versions C and D, open any
+  `/c` or `/d` page with `?test=1` and this browser's sign-ups are marked as tests until 30 minutes pass
+  without activity (`pfc.test.v2`, `frontend/lib/testMode.ts`; per tab until 2026-11-07). The results
+  page excludes test sign-ups unless "Include test sessions" is on.
 - Frontend: `saveSignup(signup)` in `frontend/lib/storage.ts` mirrors to `localStorage`
   (`pfc.signups.v1`) then POSTs to `/api/signups` (proxied like responses); `loadLocalSignups()` is
   the no-backend fallback for the results page.

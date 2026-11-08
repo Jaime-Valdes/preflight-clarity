@@ -56,32 +56,12 @@ export function markSignedUp(at: string, source: SignupSource = "c"): void {
 
 // ── team test flag ──────────────────────────────────────────────────────────
 
-/** sessionStorage key: opening any /c page with ?test=1 marks that tab's sign-ups as team tests. */
-export const C_TEST_KEY = "pfc.c.test.v1";
-
 /**
- * Called from the C layout (in an effect, never during render): remembers ?test=1 for this tab,
- * mirroring the study's test flag, so sign-ups the team makes on the live site stay out of the
- * business numbers (docs/INTEREST.md).
+ * The tools' test mode lives in lib/testMode.ts (a browser-wide mark that ends after 30 idle
+ * minutes, docs/INTEREST.md); these names stay for the call sites that grew up with the per-tab one.
  */
-export function noteTestFlag(): void {
-  try {
-    if (new URLSearchParams(window.location.search).get("test") === "1") {
-      window.sessionStorage.setItem(C_TEST_KEY, "1");
-    }
-  } catch {
-    // Storage blocked: the sign-up is simply not marked as a test.
-  }
-}
-
-/** Whether this tab was opened with ?test=1 (read in a handler, not during render). */
-export function isCTest(): boolean {
-  try {
-    return window.sessionStorage.getItem(C_TEST_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+export { noteTestFlag } from "@/lib/testMode";
+export { isTestMode as isCTest } from "@/lib/testMode";
 
 // ── placement and context ───────────────────────────────────────────────────
 

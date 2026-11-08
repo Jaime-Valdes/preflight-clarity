@@ -2,7 +2,7 @@
 
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { setContext, track } from "@/lib/analytics";
+import { disableRecordingForTests, setContext, track } from "@/lib/analytics";
 import { daysBetween, formatShortDate, isISODate, toISODate } from "@preflight/shared/dates";
 import { generateFlight, normalizeInput } from "@preflight/shared/fakeFlight";
 import { previewDaysUntil, summarizeFlight } from "@preflight/shared/forecast";
@@ -258,6 +258,8 @@ function StudyFlowClient() {
   const sessionParticipant = state.session?.participant ?? "";
   useEffect(() => {
     if (sessionId) setContext({ variant: sessionVariant, is_test: sessionIsTest, participant: sessionParticipant || null });
+    // A team test (?test=1, or a saved test session resumed without it) is never recorded.
+    if (sessionIsTest) disableRecordingForTests();
   }, [sessionId, sessionVariant, sessionIsTest, sessionParticipant]);
   useEffect(() => {
     track("study_step", { step: state.screen, step_index: screenIndex(state.screen) });

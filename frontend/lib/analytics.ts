@@ -1,7 +1,7 @@
 "use client";
 
 import posthog from "posthog-js";
-import { isCTest } from "@/components/c/interest/signupState";
+import { isTestMode, touchTestMode } from "@/lib/testMode";
 import { toolForPath } from "@/lib/tool";
 
 /*
@@ -20,6 +20,12 @@ const UI_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.posthog.com"
 const DEBUG = process.env.NEXT_PUBLIC_POSTHOG_DEBUG === "1";
 
 let started = false;
+/**
+ * Set when this is a team test (?test=1 now, or the browser's test mode): the session is not
+ * recorded. Events still go out, flagged is_test, so a test run can be checked in PostHog; a
+ * replay of a team member clicking around would only be noise among the recordings the team watches.
+ */
+let recordingOff = false;
 
 /**
  * Clicks since the last page view. Every $pageview carries the count made on the page just
@@ -31,7 +37,7 @@ let clicksOnPage = 0;
 
 /**
  * The tools' context for an event sent from a /c or /d page: `variant` ("C" or "D") and `is_test`
- * (the tab was opened with ?test=1, or carries it now). The study registers its context once a
+ * (the browser is in team test mode, lib/testMode.ts, or the URL carries ?test=1 now). The study registers its context once a
  * session exists (setContext), but super properties persist per browser, so registering the tools'
  * the same way would leak A/B into their events and theirs into the study's welcome pageview.
  * Stamping by URL instead means every tool event carries them, including the first pageview, and
@@ -46,13 +52,14 @@ function toolContext(currentUrl: unknown): { variant: "C" | "D"; is_test: boolea
   }
   const tool = toolForPath(url.pathname);
   if (!tool) return null;
-  return { variant: tool.variant, is_test: isCTest() || url.searchParams.get("test") === "1" };
+  return { variant: tool.variant, is_test: url.searchParams.get("test") === "1" || isTestMode() };
 }
 
 /** Call once on the client. Safe to call again (no-op). */
 export function startAnalytics(): void {
   if (started || !KEY || typeof window === "undefined") return;
   started = true;
+  if (isTestTab()) recordingOff = true;
   document.addEventListener("click", () => { clicksOnPage += 1; }, true);
   posthog.init(KEY, {
     api_host: PROXY_PATH,
@@ -63,6 +70,11 @@ export function startAnalytics(): void {
       if (!event) return event;
       const tool = toolContext(event.properties?.$current_url);
       if (tool) event.properties = { ...event.properties, ...tool };
+      if (tool?.is_test) {
+        // A test run in progress: keep its mark alive, and make sure none of it is recorded.
+        touchTestMode();
+        if (!recordingOff) disableRecordingForTests();
+      }
       if (event.event === "$pageview") {
         event.properties = { ...event.properties, clicks_on_previous_page: clicksOnPage };
         clicksOnPage = 0;
@@ -79,6 +91,8 @@ export function startAnalytics(): void {
     capture_pageview: "history_change",
     capture_pageleave: true,
     autocapture: true,
+    // Team tests are never recorded (see recordingOff); everyone else is, within the masking below.
+    disable_session_recording: recordingOff,
     session_recording: {
       // Typed text (airports, survey free text, name, email) never reaches the recording.
       maskAllInputs: true,
@@ -89,6 +103,25 @@ export function startAnalytics(): void {
 
 export function analyticsOn(): boolean {
   return started;
+}
+
+/** Whether this is a team test: asked for already, the browser's test mode (the tools), or ?test=1 in the URL now. */
+function isTestTab(): boolean {
+  if (recordingOff || isTestMode()) return true;
+  try {
+    return new URLSearchParams(window.location.search).get("test") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Keep this browser's replay out of PostHog (team tests). Called before analytics start, it shapes the
+ * config; after, it stops the recording that has begun. Events keep flowing, flagged is_test.
+ */
+export function disableRecordingForTests(): void {
+  recordingOff = true;
+  if (started) posthog.stopSessionRecording();
 }
 
 export type EventProps = Record<string, string | number | boolean | null | undefined>;
