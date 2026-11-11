@@ -248,6 +248,9 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
           onFocus={revealFocused}
           onScroll={(event) => setEdge(edgeUpdate(event.currentTarget))}
           data-under={edge.under ? "" : undefined}
+          // How many columns (never which flights): with fewer than three the heading row holds "Add a flight", and
+          // on a phone the sky's far cloud rests beside it (d-sky.css reads this from the D root with :has()).
+          data-flights={n}
           className="d-compare-card relative overflow-x-auto overscroll-x-contain rounded-[24px] bg-surface shadow-soft [scrollbar-width:thin]"
         >
           <table

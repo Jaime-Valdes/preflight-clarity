@@ -13,7 +13,7 @@
  */
 
 import { watchAttention } from "./attention";
-import { CLOUD, behindSheet, inViewport, isSeen } from "./dom";
+import { CLOUD, behindSheet, inViewport, isSeen, lookOf, writeLook } from "./dom";
 
 /** How long nothing has to happen. Longer than the gaze takes to let go of a resting mouse (6 s) or a lifted finger (600 ms). */
 const IDLE_MS = 6600;
@@ -34,9 +34,9 @@ export function startIdle(root: HTMLElement): () => void {
     if (backTimer !== null) window.clearTimeout(backTimer);
     backTimer = null;
     for (const cloud of glancing) {
-      if (cloud.style.getPropertyValue("--gx") !== UP["--gx"] || cloud.style.getPropertyValue("--gy") !== UP["--gy"]) continue;
-      cloud.style.removeProperty("--gx");
-      cloud.style.removeProperty("--gy");
+      const look = lookOf(cloud);
+      if (look.gx !== UP["--gx"] || look.gy !== UP["--gy"]) continue;
+      writeLook(cloud, "", "");
     }
     glancing = [];
   }
@@ -57,10 +57,7 @@ export function startIdle(root: HTMLElement): () => void {
       clouds.push(cloud);
     }
     if (clouds.length === 0) return;
-    for (const cloud of clouds) {
-      cloud.style.setProperty("--gx", UP["--gx"]);
-      cloud.style.setProperty("--gy", UP["--gy"]);
-    }
+    for (const cloud of clouds) writeLook(cloud, UP["--gx"], UP["--gy"]);
     glancing = clouds;
     backTimer = window.setTimeout(back, GLANCE_MS);
   }

@@ -131,6 +131,15 @@
   }
 }
 
+/* Under 360 px two least columns may not fit beside the labels (a 320 px phone leaves 98 px each),
+   and max() would keep the least column and cut one. Here the share wins outright: two flights
+   fit with no scroll, and three swipe exactly one column and end flush. */
+@media (max-width: 359.98px) {
+  [data-theme="d"] .d-compare-card > table {
+    --d-compare-col: var(--d-compare-fill);
+  }
+}
+
 @media (min-width: 400px) and (max-width: 639.98px) {
   @container d-compare-card (width < 476px) {
     [data-theme="d"] .d-compare-card > table {

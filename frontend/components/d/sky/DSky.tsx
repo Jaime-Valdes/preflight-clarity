@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, type RefObject } from "react";
 import { DSkyCloud, DSkyDeck } from "./DSkyCloud";
-import { skySceneFor } from "./scene";
+import { skyFramesPage, skySceneFor } from "./scene";
 
 /**
  * The fixed sky behind every /d page (docs/ui-d-cinematic.md, "The sky"), mounted once in
@@ -25,12 +25,15 @@ import { skySceneFor } from "./scene";
 export function DSky() {
   // The layout stays mounted across /d, so the pathname is the only thing that changes here:
   // links, router pushes, Back and Forward all arrive as a new pathname.
-  const scene = skySceneFor(usePathname());
+  const pathname = usePathname();
+  const scene = skySceneFor(pathname);
+  // A /d route that is none of the four pages (not-found): its scene has no card for the low clouds to wait behind.
+  const elsewhere = !skyFramesPage(pathname);
   const skyRef = useRef<HTMLDivElement>(null);
   usePointerPlace(skyRef);
 
   return (
-    <div ref={skyRef} className="d-sky" data-scene={scene} aria-hidden="true">
+    <div ref={skyRef} className="d-sky" data-scene={scene} data-elsewhere={elsewhere ? "" : undefined} aria-hidden="true">
       {/* Air: one gradient per scene, in page order. */}
       <div className="d-sky-air d-sky-air-home" />
       <div className="d-sky-air d-sky-air-results" />

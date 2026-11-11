@@ -3,12 +3,13 @@
  * the mouse, or to the thumb while a finger is down, and back to the visitor when that stops.
  * A look is two numbers on the cloud, --gx and --gy (-1 to 1); the drawing's CSS turns them into
  * a face that slides and eyes that lead (app/d/d-cloud.css). They are written at most once every
- * MOVE_MS per cloud and only when they change, because session replay records every write.
+ * MOVE_MS per cloud, both in one write, only when they change and only on a cloud that can be
+ * seen, because session replay records every write.
  * The only inputs are a point on the screen and each cloud's own box.
  */
 
 import { MOVE_MS, watchAttention, type Pointer } from "./attention";
-import { CLOUD, behindSheet, isSeen } from "./dom";
+import { AWAY, CLOUD, behindSheet, isSeen, writeLook } from "./dom";
 
 /** The face's place in the cloud's box: the eyes sit a little left of centre, below the middle. */
 const FACE_X = 58 / 120;
@@ -34,13 +35,6 @@ export interface Gaze {
 /** A look in hundredths: steps too small to see are not worth a write. */
 function quantum(value: number): string {
   return String(Math.round(value * 100) / 100 || 0);
-}
-
-/** Writes one of the two look properties, or with "" takes it off: the cloud then looks ahead (or wherever an ancestor's --gx / --gy rests it). */
-function setLook(cloud: HTMLElement, name: "--gx" | "--gy", value: string) {
-  if (cloud.style.getPropertyValue(name) === value) return;
-  if (value) cloud.style.setProperty(name, value);
-  else cloud.style.removeProperty(name);
 }
 
 /** A CSS time ("760ms", "0.76s") in milliseconds. */
@@ -73,6 +67,9 @@ export function startGaze(root: HTMLElement): Gaze {
     // Every read before any write, so the browser lays the page out once at most.
     const looks: Array<[cloud: HTMLElement, gx: string, gy: string]> = [];
     for (const cloud of root.querySelectorAll<HTMLElement>(CLOUD)) {
+      // A home cloud whose companion is out is empty, or fading: nobody sees where it looks, and it
+      // is not written. It takes the companion's look in the frame it shows again (companion.ts, land).
+      if (cloud.closest(`[${AWAY}]`)) continue;
       // Nothing to look at, or a cloud that is hidden or far off screen: no look of its own.
       let gx = "";
       let gy = "";
@@ -88,10 +85,7 @@ export function startGaze(root: HTMLElement): Gaze {
       }
       looks.push([cloud, gx, gy]);
     }
-    for (const [cloud, gx, gy] of looks) {
-      setLook(cloud, "--gx", gx);
-      setLook(cloud, "--gy", gy);
-    }
+    for (const [cloud, gx, gy] of looks) writeLook(cloud, gx, gy);
   }
 
   function cancelRest() {
@@ -130,6 +124,18 @@ export function startGaze(root: HTMLElement): Gaze {
   }
 
   /**
+   * Whether the page transition is still running: true or false where the browser can tell, null
+   * where it cannot (no view transitions, or no :active-view-transition), which leaves the clock.
+   */
+  function transitionRunning(): boolean | null {
+    try {
+      return document.documentElement.matches(":active-view-transition");
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * The plane of the page transition crosses left to right on one linear clock, ahead of its
    * ribbon and climbing slightly. Its stylesheet (app/d/d-transition.css) publishes the path for
    * this screen width on <html>: the seam under the ribbon travels from --d-vt-from to --d-vt-to
@@ -151,7 +157,9 @@ export function startGaze(root: HTMLElement): Gaze {
     cancelRest();
     const step = () => {
       const done = (performance.now() - began) / total;
-      if (done >= 1 || behindSheet(root)) {
+      // A click that ends the wipe early (one that opens a new tab, the skip link, the same page)
+      // takes the plane away with it: the eyes leave it at once rather than follow it to the end.
+      if (done >= 1 || behindSheet(root) || transitionRunning() === false) {
         endPlane();
         ahead();
         return;
@@ -192,13 +200,8 @@ export function startGaze(root: HTMLElement): Gaze {
   return {
     pageChanged() {
       endPlane();
-      let plane = false;
-      try {
-        plane = document.documentElement.matches(":active-view-transition");
-      } catch {
-        // A browser without view transitions does not know the selector, and has no plane.
-      }
-      if (plane && !behindSheet(root)) followPlane();
+      // A browser without view transitions does not know the selector, and has no plane.
+      if (transitionRunning() === true && !behindSheet(root)) followPlane();
       else ahead();
     },
     stop() {

@@ -7,7 +7,7 @@
  *   1. The boarding pass (components/d/flight/DFlightHeader.tsx): the route line, its plane, the home cloud.
  *   2. The page's own pieces (DFlightDetail.tsx): reassurance cards, rating rows, "More detail".
  *   3. The rating sheet (components/d/ratings/RatingSheet.tsx), which portals to <body>.
- *   4. Shared pieces the flight page shows (fare card, other flights): a scroll reveal, by CSS only.
+ *   4. Shared pieces the flight page shows (fare card, other flights): a note; their reveal is the kit's.
  *
  * Whatever moves here is scenery or a settle of a few pixels, sits inside
  * (prefers-reduced-motion: no-preference), fills backwards and leaves nothing behind: at rest every
@@ -175,42 +175,17 @@ html[data-d-on]:active-view-transition .d-pass-plane {
   }
 }
 
-/* ── 4. Shared pieces on the flight page, by CSS only ────────────────────────────────────── */
+/* ── 4. Shared pieces on the flight page ─────────────────────────────────────────────────── */
 
 /* (Their colours are the theme's business: app/globals.css, "Shared pieces that asked for a rating colour",
    puts the fare card's "In compare" row, the "Compare" toggles and the small leaf marks on royal and ink.) */
 
 /*
- * Scroll reveals for the shared cards, the same 16 px rise the kit's .d-reveal gives D's own: each of the day's
- * other flights, and on phones the fare card (on laptops it stands in the sticky column, in view from the start,
- * and keeps its entrance). Position only, driven by the scroll itself; nothing where scroll timelines are missing.
+ * (No scroll reveal here: the shared cards rise like D's own, through the kit's watcher in DMotionLayer.tsx,
+ * which takes each of the day's other flights by its place, #other-flights > ul > li > div (checked by
+ * scripts/d-hooks.mjs); the fare card wears .d-reveal. A view() timeline here replayed on every scroll, back up
+ * as well, and kept each card a compositor layer; the kit's rise plays once, as the page scrolls a card in.)
  */
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    [data-theme="d"] #other-flights > ul > li > div {
-      animation: d-flight-reveal 1ms linear backwards;
-      animation-timeline: view();
-      animation-range: entry 0% entry 40%;
-    }
-  }
-
-  @media (prefers-reduced-motion: no-preference) and (max-width: 1023.98px) {
-    [data-theme="d"] .d-flight-fare {
-      animation: d-flight-reveal 1ms linear backwards;
-      animation-timeline: view();
-      animation-range: entry 0% entry 40%;
-    }
-  }
-}
-
-@keyframes d-flight-reveal {
-  from {
-    transform: translateY(16px);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
 
 /* ── 5. The flight page's notices ────────────────────────────────────────────────────────── */
 

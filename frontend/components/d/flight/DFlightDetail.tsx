@@ -414,7 +414,8 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
               </div>
               {/* The on-time and fleet-age facts are left out: the reassurance cards above already state them. The compare
                   controls take the outline look, so the pick stays the column's one royal pill. d-flight-fare is the
-                  hook app/d/d-flight.css restyles this shared card by. */}
+                  hook acknowledgeCompare finds this card's controls by; d-reveal gives it the kit's scroll reveal (on
+                  laptops it is on screen in the sticky column when first seen, so it never moves there). */}
               <FareCard
                 option={option}
                 item={item}
@@ -422,7 +423,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 othersHref={`#${OTHERS_ID}`}
                 showFacts={false}
                 compareTone="outline"
-                className="d-flight-fare animate-d-rise [animation-delay:120ms]"
+                className="d-flight-fare d-reveal animate-d-rise [animation-delay:120ms]"
               />
             </div>
           </div>

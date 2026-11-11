@@ -7,8 +7,12 @@
  * what a card shows.
  */
 
-/** The longest stretch between two `move` calls while the point is moving: a cloud's eyes are written at most this often. */
-export const MOVE_MS = 80;
+/**
+ * The shortest stretch between two `move` calls while the point is moving, and so between two
+ * writes of a cloud's look (or of the companion's place under a sliding mouse): about 11 a second,
+ * inside the contract's 12 for one small node, with the timers' few milliseconds of jitter.
+ */
+export const MOVE_MS = 90;
 
 export interface Pointer {
   /** Viewport coordinates of the mouse, or of the thumb while it is down. */

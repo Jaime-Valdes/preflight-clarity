@@ -26,7 +26,7 @@
  */
 
 import { MOVE_MS, nudgeAttention, watchAttention, type Pointer } from "./attention";
-import { AWAY, HOME, SEAT, STAGE, behindSheet, cloudOf, isRendered } from "./dom";
+import { AWAY, HOME, SEAT, STAGE, behindSheet, cloudOf, isRendered, lookOf, writeLook } from "./dom";
 
 /** A seat has to hold the visitor's attention this long before the cloud moves to it. */
 const DWELL_MS = 140;
@@ -55,6 +55,13 @@ const READING_LINE = 40;
 const TRIM = 2;
 /** A top edge that went off the top of the screen has to come this far (px) back down before the cloud returns to it. */
 const SLACK = 40;
+/**
+ * The observers on those two lines are set this far (px) past them, so that when one calls, the
+ * edge measures past its line too. An observer rounds its band to whole pixels, and an edge it
+ * reports at the line can measure half a pixel short of it: the cloud would stay, and with no
+ * other card left to pass a line (the end of a list), nothing would call again.
+ */
+const PAST = 2;
 /** How tall (percent of the viewport) the bands are that stand in for lines: an observer needs an area. */
 const BAND = 0.1;
 /** A seat drawn further than this (px) from where layout puts it is not just settling: it is taken where it is drawn. */
@@ -70,6 +77,11 @@ const BLINK_MS = 240;
 
 /** A place the cloud can be: on a seat, or in its home (hidden, on a page without one). */
 type Spot = Element | "home";
+/**
+ * What the visitor's attention asks for: a place; null, to stay put (nothing is attended to); or
+ * "nowhere": a seat is attended to but neither its top edge nor one further down is on screen.
+ */
+type Want = Spot | null | "nowhere";
 
 export interface Companion {
   /** The address changed: straight back home, and nothing more until the visitor acts on the new page. */
@@ -307,8 +319,8 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     edgesFor = { line, height };
     topWatch?.disconnect();
     nearWatch?.disconnect();
-    topWatch = watchLine(line);
-    nearWatch = watchLine(line + SLACK);
+    topWatch = watchLine(line - PAST);
+    nearWatch = watchLine(line + SLACK + PAST);
     for (const el of seats) {
       topWatch.observe(el);
       nearWatch.observe(el);
@@ -390,8 +402,8 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
 
   // ── Deciding where to be ───────────────────────────────────────────────────
 
-  /** The place the visitor's attention asks for, or null to stay put. */
-  function choose(): Spot | null {
+  /** The place the visitor's attention asks for, null to stay put, or "nowhere" when the attended seat has no top edge in view to sit on. */
+  function choose(): Want {
     if (!armed || stageOn()) return "home";
     const pressed = tapped && usable(tapped) ? tapped : null;
     if (!pressed && keys) return focused && usable(focused) ? focused : null;
@@ -400,16 +412,27 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       if (!hover || !usable(hover)) return null;
       const spot = stand(hover);
       hoverSpot = { hover, spot };
-      return spot ?? (homeOn() ? "home" : null);
+      return spot ?? (homeOn() ? "home" : "nowhere");
     }
     // By touch: the seat just tapped, else the one being read, as long as there is a top edge in view to sit on.
     const attended = pressed ?? lineSeat();
-    const spot = attended ? stand(attended) : null;
-    return spot ?? (homeOn() ? "home" : null);
+    if (!attended) return homeOn() ? "home" : null;
+    return stand(attended) ?? (homeOn() ? "home" : "nowhere");
   }
 
-  /** Staying put means staying on the seat, unless it is gone, or has left the screen while the home is coming back onto it. */
-  function settled(spot: Spot | null): Spot {
+  /**
+   * Staying put means staying on the seat, unless it is gone, or has left the screen while the home
+   * is coming back onto it. With nowhere to sit (the last card's top edge has gone, the home is far
+   * up the page) it stays only on a top edge that is on screen; otherwise it goes home, which here
+   * means it fades where it is and waits, hidden, to appear on the next top edge, or to be home, that
+   * comes back into view. It does not hang on an edge that has gone and scroll off with it.
+   */
+  function settled(spot: Want): Spot {
+    if (spot === "nowhere") {
+      if (!seat || !usable(seat)) return "home";
+      const top = seat.getBoundingClientRect().top;
+      return edgeShows(seat) && top < window.innerHeight ? seat : "home";
+    }
     if (spot !== null) return spot;
     if (!seat || !usable(seat)) return "home";
     // A seat not measured yet counts as on screen.
@@ -519,11 +542,8 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
 
   function copyLook(from: HTMLElement | null, to: HTMLElement | null) {
     if (!from || !to) return;
-    for (const name of ["--gx", "--gy"]) {
-      const value = from.style.getPropertyValue(name);
-      if (value) to.style.setProperty(name, value);
-      else to.style.removeProperty(name);
-    }
+    const { gx, gy } = lookOf(from);
+    writeLook(to, gx, gy);
   }
 
   /**

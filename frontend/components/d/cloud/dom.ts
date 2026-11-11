@@ -46,6 +46,34 @@ export function behindSheet(root: Element): boolean {
   return root.closest("[inert]") !== null;
 }
 
+/** The look a cloud wears now (the two properties the gaze writes), "" where it has none. */
+export function lookOf(cloud: HTMLElement): { gx: string; gy: string } {
+  return { gx: cloud.style.getPropertyValue("--gx").trim(), gy: cloud.style.getPropertyValue("--gy").trim() };
+}
+
+/**
+ * Gives a cloud a look, both properties in one write of its style attribute ("" takes one off:
+ * the cloud then looks ahead, or wherever an ancestor's --gx / --gy rests it). One write is one
+ * record for session replay, where two setProperty calls are two. Nothing is written when the look
+ * is already the one asked for. Any other inline declaration on the cloud is kept.
+ */
+export function writeLook(cloud: HTMLElement, gx: string, gy: string): void {
+  const now = lookOf(cloud);
+  if (now.gx === gx && now.gy === gy) return;
+  const style = cloud.style;
+  const kept: string[] = [];
+  for (let i = 0; i < style.length; i++) {
+    const name = style.item(i);
+    if (name === "--gx" || name === "--gy") continue;
+    const important = style.getPropertyPriority(name) ? " !important" : "";
+    kept.push(`${name}: ${style.getPropertyValue(name)}${important}`);
+  }
+  if (gx) kept.push(`--gx: ${gx}`);
+  if (gy) kept.push(`--gy: ${gy}`);
+  if (kept.length > 0) cloud.setAttribute("style", kept.join("; "));
+  else cloud.removeAttribute("style");
+}
+
 /** Whether any part of the box is in the viewport. */
 export function inViewport(rect: DOMRect): boolean {
   return rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;

@@ -179,7 +179,9 @@ The `d-*.css` partials are plain CSS imported by `frontend/app/d/layout.tsx` (no
 
 A client component, first child of the layout root: `position: fixed; top: 0; left: 0; width: 100%; height: 100lvh;
 z-index: -1; pointer-events: none; overflow: clip`. It reads the pathname and sets `data-scene="home | results |
-flight | compare"` (anything else under `/d` uses `results`). Only `opacity`, `translate` and `scale` animate.
+flight | compare"` (anything else under `/d` uses `results`, and is marked `data-elsewhere`: there the low clouds,
+and the mid cloud below 1024 px, wait just below the frame, since there is no card for them to wait behind; the
+error page renders on one of the four routes and is not marked). Only `opacity`, `translate` and `scale` animate.
 
 Layers, back to front: **air** (four stacked gradient divs, the current scene's opaque, cross-fading over 700 ms);
 **sun** (hidden on home, where the hero has its own in-flow sun; a warm corner on results and flight; half behind the
@@ -207,7 +209,10 @@ short of the window's edge); on compare from 1400 px, straight down the same gut
 Everywhere else, and on the home (the hero has its own, `.d-sun`), it waits just outside the top right corner, glow
 and all, and it never fades, so nothing crosses the frame between scenes. From 1024 px the far cloud keeps to the
 left gutter on every scene, its inner end at least 40 px short of the column; below 1024 px it rests at the top left
-on the home, over the boarding pass on phone flight and beside the "Add a flight" row on phone compare, and otherwise
+on the home, over the boarding pass on phone flight and beside the "Add a flight" row on phone compare when the
+table has two flights (read from the D root with `:has(.d-compare-card[data-flights="2"])`, drawn no bigger than a
+153 px box from 400 px, and only up to 551 px, where the row joins the heading's line; with three flights, on the
+empty state and while the page loads it waits just past the right edge), and otherwise
 waits just past the right edge, so no bright sprite sits under a caption or a control. Below 1024 px the low clouds
 on the home and the results wait behind the first card, inside its width, so no cloud top peeks over a card's edge;
 they come out as the page scrolls. The deck is never narrower than 820 px. These placements assume the content column
@@ -237,7 +242,9 @@ Same 120 x 96 viewBox and body path, regrouped so parts can move; same props, st
 
 ### Gaze
 
-One passive pointer / touch listener for the whole layout (throttled to one write per cloud every 50 to 80 ms)
+One passive pointer / touch listener for the whole layout (throttled to one write per cloud at most every 90 ms, both
+look properties in one write of the cloud's style attribute, and none on a home cloud while the companion is out: it
+takes the companion's look in the frame it shows again)
 aims every visible cloud at the pointer, or at the thumb while a finger is down; 600 ms after the finger lifts, or
 after 6 s without pointer movement, the eyes return to the visitor. Idle looks only go up or to the reader.
 
@@ -280,7 +287,11 @@ height changes.
   40 px back down before the cloud returns to it (a nudged page does not bounce it), whatever the cloud did meanwhile:
   sat on the next seat, went home, or stayed put. Where a top edge is, is measured when the cloud decides; the
   observers on the two lines only say when to look, because a seat that jumps across a line in one frame (a focus
-  move, `scrollIntoView`, find in page) tells them nothing. The cloud glides only between
+  move, `scrollIntoView`, find in page) tells them nothing; the two observers sit 2 px past their lines, so the edge
+  always measures past the line when they call. When the seat the visitor is on has lost its top edge, no seat below
+  has one on screen and the home is out of view (the end of a list), the cloud does not hang on the gone edge: it
+  fades where it is and appears in place on the next top edge, or is home, when one comes back into view. When the
+  visitor is on no seat at all, it stays put. The cloud glides only between
   two places that are both in view; otherwise it appears at the seat (a 10 px rise and a fade) and is simply home when
   an unseen home scrolls back. While hidden it is parked at the layout root's corner, so it never adds to the page's
   height. After about 6 s without input the stage and home clouds glance up once; the companion never does.
@@ -297,7 +308,7 @@ Called from D components as `cloudReact(kind)`; the call carries a kind and noth
 | A priority ranked or un-ranked; compare added or removed; "I'd pick this flight" picked or withdrawn | **nod**, identical in both directions and for every flight |
 | "Why?" opened | **curious** for 800 ms |
 | The setup answered | **glad** |
-| A page change | the eyes follow the plane, then return to the visitor |
+| A page change | the eyes follow the plane, then return to the visitor; if the transition ends early (a click that starts no page move), they return at once |
 
 The pick is acknowledged, not celebrated: a nod says "noted". The cloud is not tappable and nothing invites a tap on
 it (stray taps would inflate the study's click counts). The cloud code imports nothing from the ratings, fare or
@@ -334,8 +345,8 @@ speeds up nor slows down is the calmest plane there is):
 - The **plane**: the outlined paper plane (white fill, `ink` outline, a short `gold` contrail), 52 px on phones,
   72 px on laptops, nose up about 5°, flying ahead of the ribbon in clear air and climbing about 3vh over the
   crossing. It enters at the height of the tap that caused the move (`--d-tap-y` on `<html>`, written by the motion
-  layer on the click of a link or a form's submit button and never on a bare press, see section 3; clamped to 18vh
-  to 72vh; 42vh by default).
+  layer only on a click that will change page, see below, and never on a bare press, see section 3; clamped to
+  18vh to 72vh; 42vh by default).
 - Taps on the still-visible old page are swallowed (they would land on things not on screen); everything left of the
   ribbon is live at once.
 - If the wipe cannot be made solid in Chrome (seam visible, mistimed, wrong hit-testing), fall back to the proof's
@@ -343,9 +354,12 @@ speeds up nor slows down is the calmest plane there is):
 - Reduced motion: no plane, no ribbon; the old page fades into the new one in 150 ms. The hidden plane's group and
   image-pair also get `animation: none`: Safari counts their 760 ms animations while the group is `display: none`,
   and the transition (and the page React holds behind it) would last 760 ms instead of 150.
-- A tap on a link or a submit button while a wipe is still running ends that wipe at once
-  (`document.activeViewTransition.skipTransition()`, from the motion layer). React holds the next page until the
-  running transition has finished, so without this the new move would queue behind the old one (house rule 4).
+- A tap that will change page in this tab while a wipe is still running ends that wipe at once
+  (`document.activeViewTransition.skipTransition()`, from the motion layer): a form's submit button, or a plain
+  primary click on a same-origin link to another path or query. A Cmd, Ctrl, Shift, Alt or middle click, a link with
+  another target or a download, a hash link (the skip link) and a link to the page already showing leave it running.
+  React holds the next page until the running transition has finished, so without this the new move would queue
+  behind the old one (house rule 4). If a wipe ends early anyway, the cloud's eyes stop following the plane at once.
 - **No dead time at either end.** The travel is fitted to the artwork in six width bands (from 0, 400, 530, 750,
   1024 and 1640 px), so on every width the plane's nose is on screen within 45 ms of the first frame and the last
   puff leaves within 30 ms of the end (at 1440 px: 35 ms and 23 ms). The travel is published per band as plain custom
@@ -367,21 +381,26 @@ speeds up nor slows down is the calmest plane there is):
 
 | Piece | What it is |
 | --- | --- |
-| `DMotionLayer` | Client component mounted once in the layout: fixed, z 40, pointer-events none. Draws the **tap ring** (a 44 px ring, `gold` inside and white outside, growing from the tap point and fading over 420 ms; three pooled elements; on `click` with a pointer, never on scroll starts or keyboard). Sets `--d-tap-y` on the click of a link or a form's submit button (never on pointer-down), ends a running page transition on such a click, and plays the scroll reveal for every `.d-reveal` in the layout (one IntersectionObserver, a childList observer on the layout root, a re-scan on each route change). Exposes `flyTo(fromRect, toRect)`: a 14 px paper plane on a shallow arc, 520 ms. |
+| `DMotionLayer` | Client component mounted once in the layout: fixed, z 40, pointer-events none. Draws the **tap ring** (a 44 px ring, `gold` inside and white outside, growing from the tap point and fading over 420 ms; three pooled elements; on `click` with a pointer, never on scroll starts or keyboard). Sets `--d-tap-y` on a click that will change page in this tab (a form's submit button, or a plain primary click on a same-origin link to another path or query; never on pointer-down), ends a running page transition on such a click, and plays the scroll reveal for every `.d-reveal` in the layout and for the flight page's shared other-flight cards (`[data-theme="d"] #other-flights > ul > li > div`, a hook in `scripts/d-hooks.mjs`), with one IntersectionObserver, a childList observer on the layout root, a re-scan on each route change and a passive scroll listener that only notes when the page last scrolled down. Exposes `flyTo(fromRect, toRect)`: a 14 px paper plane on a shallow arc, 520 ms. |
 | `motion.ts` | `prefersReducedMotion()`, easing and duration constants, `animateOnce(el, preset)` for Web Animations API presets: `pop` (a glyph of 28 px or less arriving: scale .6 to 1, at most 8 % past), `stamp` (scale .8 to 1), `settle` (10 px rise, no fade), `reveal` (16 px rise, 360 ms, out easing; played by DMotionLayer for `.d-reveal`). |
 | `buttons.ts` | Class strings: `D_PILL_PRIMARY` (royal with the lip), `D_PILL_OUTLINE`, `D_PILL_SELECTED`, `D_LINK`. |
-| CSS classes | `.d-btn-primary`, `.d-btn-outline`, `.d-link` (a `butter` highlighter grows under the words on hover or press), `.d-lift` (card hover: 3 px up, lifted shadow, fine pointers only), `.d-reveal` (a marker class with no CSS: an element below the screen when first seen rises its last 16 px once as it comes in, 360 ms, through the Web Animations API, nothing left on it afterwards; an element on screen or above when first seen never moves; position only; nothing under reduced motion; never on an element holding a combobox or on the sign-up card. Not scroll-driven: a `view()` timeline keeps every card a compositor layer for the page's life, up to six times the phone memory), `.d-route-plane` (the small plane on a card's time line travels along it as the card crosses the screen; scroll-driven; the same for every card), `.d-pop`. |
+| CSS classes | `.d-btn-primary`, `.d-btn-outline`, `.d-link` (a `butter` highlighter grows under the words on hover or press), `.d-lift` (card hover: 3 px up, lifted shadow, fine pointers only), `.d-reveal` (a marker class with no CSS: an element below the screen when first seen rises its last 16 px once as the page's scrolling brings it in through the bottom edge (a downward scroll in the last 250 ms, its top within max(96 px, 25 % of the screen's height) of the bottom); one that comes into view any other way (a sort, a filter or a date change re-dealing the list, a layout shift) is only marked seen, so a re-dealt list settles as one piece, the same for every flight. 360 ms, through the Web Animations API, nothing left on it afterwards; an element on screen or above when first seen never moves; position only; nothing under reduced motion; never on an element holding a combobox or on the sign-up card. Not scroll-driven: a `view()` timeline keeps every card a compositor layer for the page's life, up to six times the phone memory), `.d-route-plane` (the small plane on a card's time line travels along it as the card crosses the screen; scroll-driven; the same for every card. Each plane holds a small compositor layer for the page's life, 14 on a results page: accepted for the effect), `.d-pop`. |
 | Shared controls | Scoped CSS gives shared primaries (`:is(button, a).bg-night-900`) the same lip, hover and press; fields the focus halo; date tiles, sort pills, chips and rating rows their hover and press. |
 
 Hover styles sit inside `@media (hover: hover) and (pointer: fine)`. Press feedback starts on pointer-down and the
 action is never deferred. Nothing overshoots in position, nothing loops beside text, nothing shakes.
 
+At rest, the sky's drift and the clouds' blink keep the compositor drawing 60 frames a second on every screen, with no
+main-thread work (no layout, no paint). That is accepted: the sky is meant to be alive. If phone battery ever matters,
+pause both after the 6 s without input that `idle.ts` already detects.
+
 Also in the kit: `ringFrom(el)` (the one soft royal ring that leaves a control, for pick and withdraw alike),
 `flyToTray(control)` / `flyFromTray(index, control)` in `motion/tray.ts`, the classes `.d-chip`, `.d-row` (the only
 hook for rating rows), `.d-settle`, and the custom properties `--d-ease-out`, `--d-ease-in-out`, `--d-press`,
 `--d-quick`, `--d-move` (`--d-press` and `--d-quick` are CSS only: `motion.ts` exports no matching constants; the
-stamp preset is script only, `animateOnce(el, "stamp")`, with no CSS class). The one scroll-driven reveal left is `d-flight.css`'s, on the shared cards of the flight page that
-cannot carry `.d-reveal` (Other flights, and the fare card on phones): a handful of layers on one page.
+stamp preset is script only, `animateOnce(el, "stamp")`, with no CSS class). No reveal is scroll-driven: the
+flight page's shared cards rise through the same watcher (each other flight by its hook selector; the fare card's
+wrapper wears `.d-reveal`, and on laptops it is on screen in the sticky column when first seen, so it never moves).
 The kit's rules are unlayered: on an element wearing a `.d-btn-*` class, `bg-*`, `ring-*`, `shadow-*`,
 `transition-*` and `active:scale-*` utilities lose, so never put two looks on one element.
 
@@ -434,7 +453,8 @@ What each screen must end up with:
   sheet's tier block settles and its reasons rise in turn. The page has a home cloud in the pass.
 - **Compare and the small states.** The table rises as one piece. The label column's top corner holds the home cloud;
   no flight column is ever a seat. With three flights on a narrow card, two flight columns share the width the
-  labels leave, so a full swipe moves exactly one column and stops with a column flush against the labels. In the
+  labels leave, so a full swipe moves exactly one column and stops with a column flush against the labels; below
+  360 px the even share wins over the least column outright, so two flights fit with no sideways scroll. In the
   pick row every tile is the same height and on one centre line, picked or not. Loading: the stage cloud looks up
   above "Checking the skies…". Not found, error and the flight page's notices (version C's shared `Notice`,
   restyled by `d-flight.css`): the same paper card with the cloud in place of the icon tile (a still drawing on the
@@ -473,7 +493,10 @@ Run from the repo root:
   `D_HOOKS_ROOT=<dir>` (or `--root <dir>`) reads a shared file from a copy under `<dir>` to try a change first;
   `--strict` also fails when a D selector named in the table has been renamed or removed.
 - After `next build`: `node frontend/scripts/d-css-check.mjs` (the local build), and before anyone sees a deployment,
-  `node frontend/scripts/d-css-check.mjs <deployment URL>`. Builds start cold (`turbopackFileSystemCacheForBuild:
+  `node frontend/scripts/d-css-check.mjs <deployment URL>`. It reads its expectations from the source files (D's colour
+  tokens with their values, its keyframes, and the selector of every rule in `globals.css` and the partials) and
+  fails when the built CSS lacks one, so a stale copy of any of those files fails even when its class names survive;
+  `D_CSS_SOURCES=<frontend dir>` reads the sources from another checkout. Builds start cold (`turbopackFileSystemCacheForBuild:
   false` in `frontend/next.config.ts`): Turbopack's build cache once kept serving an old `globals.css`, and only
   moving `.next/cache/turbopack` aside cleared it.
 - The A/B/C guard: screenshots of versions A, B and C against `main`, compared pixel for pixel, must be identical.

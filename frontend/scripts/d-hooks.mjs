@@ -26,6 +26,12 @@
  * Exits 0 when every hook holds, 1 when one is missing (each listed with the D rule it breaks). A D side that is no
  * longer found (the rule was renamed or removed) is printed as a note, and fails only with --strict: the row is then
  * stale and should be updated or deleted. Plain file reads, no browser, no dependencies.
+ *
+ * What it cannot see: the position part of a selector (:first-child, :last-child, + and ~). A row pins the text and
+ * its order, not that nothing new sits before or after it, so an element added beside a positional target (say a
+ * status line after the results summary's Swap / Change pair) passes here and quietly moves the D rule onto the
+ * wrong element. The rows that depend on position say so in their `why`: after changing shared markup near one of
+ * them, look at the page.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -437,21 +443,21 @@ const HOOKS = [
 
   // The flight page (app/d/d-flight.css). OtherFlights is shared; DFlightDetail passes it the id.
   {
-    d: ["app/d/d-flight.css", '[data-theme="d"] #other-flights > ul > li > div'],
+    d: ["components/d/motion/DMotionLayer.tsx", '[data-theme="d"] #other-flights > ul > li > div'],
     file: "components/c/flight/OtherFlights.tsx",
     text: ["<section id={id}", '<ul className="mt-3 flex flex-col gap-2.5">', "<li key={option.key}>", "<OtherFlightRow"],
     within: 30,
     why: "each other flight's card rises in on scroll; found as section > ul > li > the row's root",
   },
   {
-    d: ["app/d/d-flight.css", '[data-theme="d"] #other-flights > ul > li > div'],
+    d: ["components/d/motion/DMotionLayer.tsx", '[data-theme="d"] #other-flights > ul > li > div'],
     file: "components/c/flight/OtherFlights.tsx",
     text: ["  return (", '    <div className="rounded-3xl bg-surface p-4 shadow-soft'],
     within: 1,
     why: "the row's root is the <div> card the reveal moves",
   },
   {
-    d: ["app/d/d-flight.css", '[data-theme="d"] #other-flights > ul > li > div'],
+    d: ["components/d/motion/DMotionLayer.tsx", '[data-theme="d"] #other-flights > ul > li > div'],
     file: "components/c/flight/FlightPage.tsx",
     text: ["<OtherFlights", 'id="other-flights"'],
     within: 1,

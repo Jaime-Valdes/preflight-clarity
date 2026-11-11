@@ -372,6 +372,19 @@
   }
 }
 
+/* A /d route that is none of the four pages (not-found) borrows the climb, but has no card for the low
+   clouds to wait behind: they would sit under the footer's caption and its link. There they sink just
+   below the frame (the scroll parallax lifts them less than 16 px on so short a page). From a laptop up
+   the mid cloud keeps to the left gutter, clear of the footer, and stays. */
+.d-sky[data-scene][data-elsewhere] :is(.d-sky-c, .d-sky-d) {
+  --d-sky-ty: calc(100 * var(--d-sky-vh) + 16px);
+}
+@media (max-width: 1023.98px) {
+  .d-sky[data-scene][data-elsewhere] .d-sky-b {
+    --d-sky-ty: calc(100 * var(--d-sky-vh) + 16px);
+  }
+}
+
 /* Flight, above the clouds: the last low clouds have sunk into a deck that surfaced from below. */
 /* On a phone the far cloud looks over the top of the boarding pass, against the right edge (as far from
    the end of the back link as it can be) and never higher than the link: on a short phone a share of the
@@ -464,16 +477,38 @@
   }
 }
 /* On a phone the far cloud rests beside the "Add a flight" row, never higher: on a short phone a share of
-   the height would lift it behind the line under the heading. (On a tablet the row is the heading's and
-   the table comes up under it, so the cloud waits past the right edge: see the flight's rules.) */
+   the height would lift it behind the line under the heading. Only the table with fewer than three
+   flights has that row (the D root holds a .d-compare-card[data-flights="2"]): with three the row is a
+   short caption and the next card comes up under it, and the empty state's card starts right under the
+   heading, so in those, and while the page loads, the cloud waits just past the right edge at the same
+   height, as it does on the results. (On a tablet the row is the heading's and the table comes up under
+   it, so the cloud waits past the right edge there too: see the flight's rules.) */
 .d-sky[data-scene="compare"] .d-sky-a {
-  --d-sky-x: 66;
+  --d-sky-tx: calc(100vw + 8px);
   --d-sky-ty: max(16 * var(--d-sky-vh), 135px);
   --d-sky-o: 0.55;
 }
-/* From 414 px the line under the heading fits on one line and the row comes up with it: so does the cloud,
-   or its foot would rest on the card under the row. */
-@media (min-width: 414px) and (max-width: 639.98px) {
+@media (max-width: 449.98px) {
+  [data-theme="d"]:has(.d-compare-card[data-flights="2"]) > .d-sky[data-scene="compare"] .d-sky-a {
+    --d-sky-tx: 66vw;
+  }
+}
+/* From 400 px the row is 44 px tall with 12 px above it and 16 to 20 below: the cloud fits there whole up to
+   a 153 px box (its shape is 0.5 of the box from the box's top to its foot), so wider windows draw it no
+   bigger than that. From about 561 px "Add a flight" joins the heading's line and the next card comes up
+   under it, so the cloud waits past the edge again (from 552 px, for fonts a little narrower). Without the
+   maths it waits there from 450 px. */
+@supports (scale: tan(atan2(1px, 1px))) {
+  @media (min-width: 400px) and (max-width: 551.98px) {
+    [data-theme="d"]:has(.d-compare-card[data-flights="2"]) > .d-sky[data-scene="compare"] .d-sky-a {
+      --d-sky-tx: 66vw;
+      --d-sky-s: min(1, tan(atan2(153px, 34vw)));
+    }
+  }
+}
+/* From about 397 px (400 here) the line under the heading fits on one line and the row comes up with it:
+   so does the cloud, or its foot would rest on the card under the row. */
+@media (min-width: 400px) and (max-width: 639.98px) {
   .d-sky[data-scene="compare"] .d-sky-a {
     --d-sky-ty: 125px;
   }

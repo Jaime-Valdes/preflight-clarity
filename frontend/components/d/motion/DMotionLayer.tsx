@@ -42,15 +42,48 @@ function round(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/**
+ * Whether this click will move this tab to another page: a form's submit button, or a plain primary click on a
+ * same-origin link (no modifier key, no other target, no download) to a path or query other than the current
+ * one. A Cmd / Ctrl / Shift / Alt or middle click, a new-tab or download link, a hash link (the skip link) and a
+ * link to the page already showing start no page move here. (It runs before Next's Link handler, so it cannot ask
+ * whether that handler cancelled the default; it reads the same signs the handler does.)
+ */
+function changesPage(event: MouseEvent): boolean {
+  const el = event.target instanceof Element ? event.target.closest(NAVIGATES) : null;
+  if (!el) return false;
+  if (!el.matches("a[href]")) return true;
+  if (!(el instanceof HTMLAnchorElement)) return false;
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+  const target = el.getAttribute("target");
+  if (target && target.toLowerCase() !== "_self") return false;
+  if (el.hasAttribute("download")) return false;
+  let url: URL;
+  try {
+    url = new URL(el.href, window.location.href);
+  } catch {
+    return false;
+  }
+  if (url.origin !== window.location.origin) return false;
+  return url.pathname + url.search !== window.location.pathname + window.location.search;
+}
+
 function cancelAll(el: Element) {
   for (const animation of el.getAnimations()) animation.cancel();
 }
 
-/** The scroll reveal's class (docs/ui-d-cinematic.md, "Motion kit"), and what it never moves: a card holding a
-    combobox (its suggestion list would be trapped under the next card) and the sign-up card (its view event
-    watches its box). */
-const REVEAL = ".d-reveal";
+/** The scroll reveal's class (docs/ui-d-cinematic.md, "Motion kit"), the shared cards that cannot wear it (each
+    of the flight page's other flights: components/c/flight/OtherFlights.tsx, under the id DFlightDetail gives
+    it; checked by scripts/d-hooks.mjs), and what it never moves: a card holding a combobox (its suggestion list
+    would be trapped under the next card) and the sign-up card (its view event watches its box). */
+const REVEAL = '.d-reveal, [data-theme="d"] #other-flights > ul > li > div';
 const REVEAL_NEVER = ':has([role="combobox"]), [aria-labelledby^="c-interest-"]';
+/** A card rises only while the page is scrolling down: the last downward scroll is at most this old... */
+const REVEAL_SCROLL_MS = 250;
+/** ...and the card comes in through the bottom of the screen: its top within this band of the bottom edge. */
+function revealBand(height: number): number {
+  return Math.max(96, height * 0.25);
+}
 
 /** document.activeViewTransition (Chrome 142+, Safari 26.2+), not yet in TypeScript's DOM types. */
 type ActiveViewTransitionDocument = Document & { activeViewTransition?: { skipTransition(): void } | null };
@@ -62,12 +95,15 @@ interface Reveals {
 }
 
 /**
- * .d-reveal: an element that is below the screen when it is first seen rises its last 16 px, once, as it comes
- * in; one already on screen (or above it) when first seen never moves. One IntersectionObserver for the whole
- * layout and a childList observer to find new ones; the rise is a Web Animations API one-shot (animateOnce,
- * "reveal"), so nothing is written to the DOM and nothing stays on the element, not even a compositor layer,
- * once it has played. Position only; nothing at all under reduced motion. The input is the scroll position and
- * nothing else, so every card is treated the same.
+ * The scroll reveal: an element that is below the screen when it is first seen rises its last 16 px, once, as
+ * the page's scrolling brings it in through the bottom edge; one already on screen (or above it) when first seen
+ * never moves. A reveal is a scroll animation and nothing else: a card that comes into view any other way (a
+ * sort, a filter or a date change re-deals the list under a still page, or the layout shifts) is only marked
+ * seen, so a re-dealt list settles as one piece, the same for every flight. One IntersectionObserver for the
+ * whole layout, a childList observer to find new ones, and a passive scroll listener that only notes when the
+ * page last moved down; the rise is a Web Animations API one-shot (animateOnce, "reveal"), so nothing is written
+ * to the DOM and nothing stays on the element, not even a compositor layer, once it has played. Position only;
+ * nothing at all under reduced motion. The inputs are the scroll and the card's box, never what the card holds.
  *
  * An element is "seen" when the observer first reports it with a box: a kept-alive page is display: none, and
  * its elements wait (unseen) until it shows again and rescan() asks the observer for a fresh report.
@@ -76,7 +112,17 @@ function watchReveals(root: Element): Reveals | null {
   if (typeof IntersectionObserver !== "function" || typeof MutationObserver !== "function") return null;
   const done = new WeakSet<Element>();
   const below = new WeakSet<Element>();
+  let lastY = window.scrollY;
+  let scrolledDownAt = -Infinity;
+  // Writes nothing: a scroll up (or a page that got shorter and pulled the scroll back) is not a reveal's scroll.
+  const onScroll = () => {
+    const y = window.scrollY;
+    if (y > lastY) scrolledDownAt = performance.now();
+    lastY = y;
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
   const io = new IntersectionObserver((entries) => {
+    const scrolling = performance.now() - scrolledDownAt <= REVEAL_SCROLL_MS;
     for (const entry of entries) {
       const el = entry.target;
       const box = entry.boundingClientRect;
@@ -84,8 +130,9 @@ function watchReveals(root: Element): Reveals | null {
       if (entry.isIntersecting) {
         done.add(el);
         io.unobserve(el);
-        // It came in from below; anything else (on screen when first seen, or back in from above) stays put.
-        if (below.has(el) && box.top > 0 && !el.matches(REVEAL_NEVER)) animateOnce(el, "reveal");
+        // It came up through the bottom edge because the page scrolled; anything else stays put.
+        const entering = below.has(el) && box.top > 0 && box.top > bottom - revealBand(bottom);
+        if (scrolling && entering && !el.matches(REVEAL_NEVER)) animateOnce(el, "reveal");
       } else if (box.width === 0 && box.height === 0) {
         // Not laid out: a hidden page. Not seen yet.
       } else if (box.top >= bottom) {
@@ -119,6 +166,7 @@ function watchReveals(root: Element): Reveals | null {
       }
     },
     stop() {
+      window.removeEventListener("scroll", onScroll);
       mo.disconnect();
       io.disconnect();
     },
@@ -132,14 +180,16 @@ function watchReveals(root: Element): Reveals | null {
  *  - The tap ring: every click made with a pointer leaves one soft gold ring at the tap
  *    point. Three pooled elements restarted with the Web Animations API, so a tap adds no
  *    DOM node and writes no attribute (session replay records both).
- *  - `--d-tap-y` on <html>: the height of the press behind the last click on a link or a
- *    submit button, which the page transition's plane enters at. Written on that click and
+ *  - `--d-tap-y` on <html>: the height of the press behind the last click that changes page
+ *    (a plain click on a link to another page, or a submit button: changesPage), which the
+ *    page transition's plane enters at; the same click ends a wipe still running. Written on that click and
  *    only when it changed, never on a bare press: any custom property changed on <html>
  *    restyles the whole document (in Chrome, registered as not inherited or not), and every
  *    scroll on a phone starts with a press.
  *  - The fly-to plane and the soft ring around a control: flyTo() and ringFrom() in
  *    ./motion ask for them with a window event that carries geometry and nothing else.
- *  - The scroll reveal for every .d-reveal in the layout (watchReveals, above).
+ *  - The scroll reveal for every .d-reveal in the layout, and for the flight page's shared
+ *    other-flight cards (watchReveals, above).
  *
  * Decoration only: aria-hidden, no pointer events, nothing focusable, no analytics. Its
  * listeners are passive, sit on the window (the pointer and click ones in the capture
@@ -229,9 +279,10 @@ export function DMotionLayer() {
       // pointerType where click is a PointerEvent. It gets no ring; the transition's plane enters level
       // with the focused control instead.
       const pointerType = (event as PointerEvent).pointerType;
-      const navigates = event.target instanceof Element && event.target.closest(NAVIGATES) !== null;
+      const navigates = changesPage(event);
       // A second page move asked for while a wipe still runs: React holds the next page until the running
-      // transition has finished, so the new tap would wait out the old wipe. Finish that wipe now instead.
+      // transition has finished, so the new tap would wait out the old wipe. Finish that wipe now instead. A click
+      // that moves nowhere in this tab (changesPage) leaves the wipe, and --d-tap-y, alone.
       if (navigates) (document as ActiveViewTransitionDocument).activeViewTransition?.skipTransition();
       if (event.detail === 0 || pointerType === "") {
         const focused = document.activeElement;
