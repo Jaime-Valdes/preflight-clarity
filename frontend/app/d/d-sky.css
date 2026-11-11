@@ -1,0 +1,4 @@
+/*
+ * Version D — d-sky (docs/ui-d-cinematic.md). Plain CSS, loaded by app/d/layout.tsx.
+ * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders.
+ */

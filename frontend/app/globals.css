@@ -158,25 +158,37 @@
  * Motion: every animation here is short, slow or barely there, and the global
  * reduced-motion rule above ends all of them at their resting frame.
  */
-@theme {
-  --color-sky: #d7e9f3;
-  --color-sky-deep: #bbd9ea;
-  --color-sky-ink: #355a70;
-  --color-cream: #f3e9d6;
-  --color-cream-deep: #eadbbe;
-  --color-sun: #f2d8a2;
-  --color-sun-100: #f8e7be;
-  --color-sun-ink: #6b4e12;
-  --color-leaf: #b9e2ba;
-  --color-leaf-100: #ddf1dd;
-  --color-leaf-ink: #2f6b36;
-  --color-amber: #ebc98f;
-  --color-amber-100: #f5e3c3;
-  --color-amber-ink: #6a4a14;
-  --color-ink: #1f1f1f;
-  --color-ink-soft: #3b3d3f;
-  --color-ink-mute: #4f6373;
-  --color-slate: #9cb1be;
+/* `static`: every token below is always emitted as a CSS variable, so D's plain-CSS partials (app/d/d-*.css) and
+   inline SVG can read them with var() even when no utility class uses them. Palette: docs/ui-d-cinematic.md. */
+@theme static {
+  --color-sky: #d4ebfb;
+  --color-sky-deep: #a5d5f8;
+  --color-sky-ink: #1f5a85;
+  --color-cream: #fff4dc;
+  --color-cream-deep: #fce7b4;
+  /* Sunlight: the sun, swashes, cheeks, rank coins, the tap ring. Never a rating tier, never text. */
+  --color-gold: #ffc53d;
+  --color-gold-deep: #f4b428;
+  --color-butter: #ffe08a;
+  /* Doing: every primary and selected control. The one saturated hue no rating tier uses. */
+  --color-royal: #1d49bc;
+  --color-royal-hover: #2a59d4;
+  --color-royal-press: #163a9a;
+  --color-royal-100: #dfe9fe;
+  /* The three rating families share one lightness and one chroma per step (OKLCH), so no tier shouts. */
+  --color-sun: #e5d594;
+  --color-sun-100: #f4eac1;
+  --color-sun-ink: #604e06;
+  --color-leaf: #afe4b5;
+  --color-leaf-100: #d2f4d5;
+  --color-leaf-ink: #2b5c34;
+  --color-amber: #f0cf94;
+  --color-amber-100: #fce7c1;
+  --color-amber-ink: #694909;
+  --color-ink: #14213d;
+  --color-ink-soft: #27344f;
+  --color-ink-mute: #3a4a66;
+  --color-slate: #9bb8d3;
 
   --animate-d-rise: d-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   --animate-d-float: d-float 4.5s ease-in-out infinite;
