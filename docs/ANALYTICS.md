@@ -61,9 +61,10 @@ Version D (docs/ITERATION_2.md) funnel: `$pageview` /d → `d_setup` → `d_sear
 `d_flight_chosen`, broken down by `priorities`; `d_rating_open` by `category` shows which ratings
 people look into; `interest_signup` with placement `d_flight` is the concrete ask on the flight page.
 
-**Version D's "Window Seat" look** (branch `ui/d-cinematic`, `docs/ui-d-cinematic.md`) changes no
-event, property or route, but it shifts some measurements. Note the date it reaches production here
-(not yet shipped), and don't pool D's numbers from before and after that date:
+**Version D's "Window Seat" look** (built on the branch `ui/d-cinematic`, `docs/ui-d-cinematic.md`)
+changes no event, property or route, but it shifts some measurements. It reached production on the
+morning of 2026-11-11, New York time; the PostHog annotation "Version D: Window Seat look live" marks
+the minute. Don't pool D's numbers from before and after that point:
 
 - **View events fire a little later.** A page move is now a 760 ms plane wipe. The new page commits
   15–45 ms later than before (up to about 300 ms on a slow phone), so `d_flight_view`,
