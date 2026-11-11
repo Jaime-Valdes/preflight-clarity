@@ -15,12 +15,16 @@
  *     palette; static, so Tailwind always emits them), value included,
  *   - every `@keyframes d-…` defined in frontend/app/d/d-*.css,
  *   - every selector of every style rule in globals.css and frontend/app/d/d-*.css, at any depth
- *     of @media, @supports, @container and @layer. An old copy of a file almost always lacks at
- *     least one selector of the new one, so a stale or partial stylesheet fails even when its
- *     class names and tokens are all still there.
- * Selectors are compared after the same normalisation on both sides (no whitespace, no quotes,
- * lower case, `::` as `:`), because the minifier rewrites spacing and attribute quotes.
- * At-rule conditions and declarations are not compared: the minifier rewrites those too freely.
+ *     of @media, @supports, @container and @layer (empty rules aside: the minifier drops them),
+ *   - and the other way round: every `.d-…` class and `@keyframes d-…` in the built CSS must be
+ *     defined somewhere in those sources, so a rule the sources deleted that comes back fails.
+ * Selectors are compared after the same normalisation on both sides (no whitespace, no quotes, no
+ * escapes, lower case, `::` as `:`, the minifier's `odd` / `even` and unwrapped one-item `:is()`).
+ * What it cannot see: declarations and at-rule conditions are not compared (the minifier rewrites
+ * them too freely), and a selector is found wherever it appears, so a stale copy that differs
+ * only in values, or only in a rule whose selector also appears elsewhere, passes. It catches a
+ * stale file that lacks a selector or keyframes of the new one, or carries a `.d-` class or `d-`
+ * keyframes the new one dropped.
  *
  * A deployment behind Vercel's deployment protection needs its bypass secret in the environment
  * variable VERCEL_AUTOMATION_BYPASS_SECRET. Only the page HTML and its stylesheets are fetched
@@ -53,6 +57,9 @@ const norm = (s) =>
     .replace(/["']/g, "")
     .replace(/::/g, ":")
     .replace(/\*(?=[:.[#])/g, "")
+    .replace(/:nth-(child|last-child|of-type|last-of-type)\(2n\+1\)/gi, ":nth-$1(odd)")
+    .replace(/:nth-(child|last-child|of-type|last-of-type)\(2n(\+0)?\)/gi, ":nth-$1(even)")
+    .replace(/:is\(([.[#][^(),]*)\)/g, "$1")
     .toLowerCase();
 
 /** Splits on commas that are not inside (), [] or a string. */
@@ -112,7 +119,7 @@ function selectorsOf(css) {
     if (prelude.startsWith("@")) {
       const name = /^@([\w-]+)/.exec(prelude)?.[1] ?? "";
       if (NESTING.has(name)) out.push(...selectorsOf(css.slice(open + 1, close)));
-    } else if (prelude) {
+    } else if (prelude && css.slice(open + 1, close).trim()) {
       out.push(...splitTop(prelude));
     }
     i = close + 1;
@@ -135,13 +142,24 @@ function expectations() {
   for (const file of readdirSync(join(SOURCES, "app/d")).filter((f) => /^d-.*\.css$/.test(f)).sort()) {
     files.push([file, read(`app/d/${file}`)]);
   }
+  const known = new Set();
   for (const [file, css] of files) {
     const seen = new Set();
     for (const [, name] of css.matchAll(/@keyframes\s+(d-[\w-]+)/g)) seen.add(`@keyframes ${name}`);
     for (const sel of selectorsOf(css)) seen.add(sel);
     for (const text of seen) want.push({ from: file, text });
+    for (const piece of dPieces(css)) known.add(piece);
   }
-  return want;
+  return { want, known };
+}
+
+/** The `.d-…` classes and `@keyframes d-…` a stylesheet mentions (outside comments and url()s). */
+function dPieces(css) {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/url\((?:"[^"]*"|'[^']*'|[^)]*)\)/g, "url()");
+  const out = new Set();
+  for (const [, cls] of text.matchAll(/\.(d-[\w-]+)/g)) out.add(`.${cls}`);
+  for (const [, name] of text.matchAll(/@keyframes\s+(d-[\w-]+)/g)) out.add(`@keyframes ${name}`);
+  return out;
 }
 
 /** Minifiers may write #aabbcc as #abc. */
@@ -182,8 +200,9 @@ function builtCss() {
 
 let source;
 let want;
+let known;
 try {
-  want = expectations();
+  ({ want, known } = expectations());
   source = process.argv[2] ? await servedCss(process.argv[2]) : builtCss();
 } catch (err) {
   console.error(`d-css-check: ${err.message}`);
@@ -192,12 +211,19 @@ try {
 
 const css = norm(source.css.replace(/\/\*[\s\S]*?\*\//g, ""));
 const missing = want.filter((w) => !css.includes(norm(w.text)) && !(w.alt && css.includes(norm(w.alt))));
+const extra = [...dPieces(source.css)].filter((piece) => !known.has(piece)).sort();
 
-if (missing.length) {
-  console.error(`d-css-check: ${missing.length} of ${want.length} expected pieces are missing from ${source.label}:`);
-  for (const m of missing.slice(0, 40)) console.error(`  ${m.text}   (from ${m.from})`);
-  if (missing.length > 40) console.error(`  … and ${missing.length - 40} more`);
+if (missing.length || extra.length) {
+  if (missing.length) {
+    console.error(`d-css-check: ${missing.length} of ${want.length} expected pieces are missing from ${source.label}:`);
+    for (const m of missing.slice(0, 40)) console.error(`  ${m.text}   (from ${m.from})`);
+    if (missing.length > 40) console.error(`  … and ${missing.length - 40} more`);
+  }
+  if (extra.length) {
+    console.error(`d-css-check: ${source.label} carry ${extra.length} D piece(s) that no source defines any more:`);
+    for (const piece of extra.slice(0, 40)) console.error(`  ${piece}`);
+  }
   console.error("The build is stale or partial (or older than the files on disk). Rebuild from a clean .next and run this again.");
   process.exit(1);
 }
-console.log(`d-css-check: all ${want.length} expected pieces found in ${source.label}.`);
+console.log(`d-css-check: all ${want.length} expected pieces found in ${source.label}, and nothing the sources dropped.`);

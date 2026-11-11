@@ -80,9 +80,30 @@ const REVEAL = '.d-reveal, [data-theme="d"] #other-flights > ul > li > div';
 const REVEAL_NEVER = ':has([role="combobox"]), [aria-labelledby^="c-interest-"]';
 /** A card rises only while the page is scrolling down: the last downward scroll is at most this old... */
 const REVEAL_SCROLL_MS = 250;
-/** ...and the card comes in through the bottom of the screen: its top within this band of the bottom edge. */
-function revealBand(height: number): number {
-  return Math.max(96, height * 0.25);
+/**
+ * ...and the card comes in through the bottom of the screen: its top within this band of the bottom edge, or
+ * within the distance the page has scrolled down since the observer last reported (a focus move by Tab or a long
+ * fling brings a card in further up than the band, but never further than the page moved).
+ */
+function revealBand(height: number, moved: number): number {
+  return Math.max(96, height * 0.25, moved + 2);
+}
+
+/**
+ * True while the element or one of its ancestors is already moving under another animation (a card's own
+ * entrance, the list's staggered rise, a re-dealt list settling): a reveal on top of it would add up past the
+ * 18 px house rule, so the card is only marked seen.
+ */
+function moving(el: Element, root: Element): boolean {
+  if (typeof el.getAnimations !== "function") return false;
+  for (let node: Element | null = el; node && node !== root; node = node.parentElement) {
+    for (const animation of node.getAnimations()) {
+      if (animation.playState !== "running") continue;
+      const frames = animation.effect instanceof KeyframeEffect ? animation.effect.getKeyframes() : [];
+      if (frames.some((frame) => "transform" in frame || "translate" in frame)) return true;
+    }
+  }
+  return false;
 }
 
 /** document.activeViewTransition (Chrome 142+, Safari 26.2+), not yet in TypeScript's DOM types. */
@@ -99,7 +120,9 @@ interface Reveals {
  * the page's scrolling brings it in through the bottom edge; one already on screen (or above it) when first seen
  * never moves. A reveal is a scroll animation and nothing else: a card that comes into view any other way (a
  * sort, a filter or a date change re-deals the list under a still page, or the layout shifts) is only marked
- * seen, so a re-dealt list settles as one piece, the same for every flight. One IntersectionObserver for the
+ * seen, so a re-dealt list settles as one piece, the same for every flight. Nor does a card rise while it or its
+ * list item is still moving under another animation (its entrance, the list's stagger): it never moves more than
+ * one step at a time. One IntersectionObserver for the
  * whole layout, a childList observer to find new ones, and a passive scroll listener that only notes when the
  * page last moved down; the rise is a Web Animations API one-shot (animateOnce, "reveal"), so nothing is written
  * to the DOM and nothing stays on the element, not even a compositor layer, once it has played. Position only;
@@ -113,6 +136,7 @@ function watchReveals(root: Element): Reveals | null {
   const done = new WeakSet<Element>();
   const below = new WeakSet<Element>();
   let lastY = window.scrollY;
+  let reportedY = window.scrollY;
   let scrolledDownAt = -Infinity;
   // Writes nothing: a scroll up (or a page that got shorter and pulled the scroll back) is not a reveal's scroll.
   const onScroll = () => {
@@ -123,6 +147,8 @@ function watchReveals(root: Element): Reveals | null {
   window.addEventListener("scroll", onScroll, { passive: true });
   const io = new IntersectionObserver((entries) => {
     const scrolling = performance.now() - scrolledDownAt <= REVEAL_SCROLL_MS;
+    const moved = Math.max(0, window.scrollY - reportedY);
+    reportedY = window.scrollY;
     for (const entry of entries) {
       const el = entry.target;
       const box = entry.boundingClientRect;
@@ -131,8 +157,8 @@ function watchReveals(root: Element): Reveals | null {
         done.add(el);
         io.unobserve(el);
         // It came up through the bottom edge because the page scrolled; anything else stays put.
-        const entering = below.has(el) && box.top > 0 && box.top > bottom - revealBand(bottom);
-        if (scrolling && entering && !el.matches(REVEAL_NEVER)) animateOnce(el, "reveal");
+        const entering = below.has(el) && box.top > 0 && box.top > bottom - revealBand(bottom, moved);
+        if (scrolling && entering && !el.matches(REVEAL_NEVER) && !moving(el, root)) animateOnce(el, "reveal");
       } else if (box.width === 0 && box.height === 0) {
         // Not laid out: a hidden page. Not seen yet.
       } else if (box.top >= bottom) {
