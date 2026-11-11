@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Check, ChevronDown, Plane, Plus } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Plus } from "lucide-react";
 import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import { formatDuration, formatTime12 } from "@preflight/shared/dates";
@@ -10,6 +10,7 @@ import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { useHrefs } from "@/components/c/shell/ToolContext";
 import { D_LINK, D_PILL_OUTLINE, D_PILL_SELECTED } from "@/components/d/brand/buttons";
 import { CategoryIcon } from "@/components/d/brand/CategoryIcon";
+import { PaperPlane } from "@/components/d/brand/FlightPath";
 import { cloudReact } from "@/components/d/cloud/react";
 import { D_MOVE_MS, EASE_OUT, prefersReducedMotion } from "@/components/d/motion/motion";
 import { RatingPill } from "@/components/d/ratings/RatingPill";
@@ -253,7 +254,10 @@ export function DResultCard({
             <span className="d-results-plane absolute inset-x-[11px] inset-y-0">
               <span className="d-route-plane absolute inset-0">
                 <span className="bg-surface px-1.5">
-                  <Plane className="size-3.5 rotate-45" strokeWidth={2.25} />
+                  {/* D's one plane: the outlined paper plane of the hero, the wipe and the boarding pass, nose to the arrival. */}
+                  <svg aria-hidden viewBox="-10.6 -8.4 23.2 16.8" className="block h-[11px] w-[15px] overflow-visible">
+                    <PaperPlane />
+                  </svg>
                 </span>
               </span>
             </span>

@@ -8,7 +8,7 @@
  */
 
 import { MOVE_MS, watchAttention, type Pointer } from "./attention";
-import { CLOUD, isSeen } from "./dom";
+import { CLOUD, behindSheet, isSeen } from "./dom";
 
 /** The face's place in the cloud's box: the eyes sit a little left of centre, below the middle. */
 const FACE_X = 58 / 120;
@@ -116,8 +116,8 @@ export function startGaze(root: HTMLElement): Gaze {
   }
 
   /** True while a sheet covers the page: the first time, the eyes go ahead and stay there. */
-  function behindSheet(): boolean {
-    if (!root.inert) {
+  function heldBySheet(): boolean {
+    if (!behindSheet(root)) {
       frozen = false;
       return false;
     }
@@ -151,7 +151,7 @@ export function startGaze(root: HTMLElement): Gaze {
     cancelRest();
     const step = () => {
       const done = (performance.now() - began) / total;
-      if (done >= 1 || root.inert) {
+      if (done >= 1 || behindSheet(root)) {
         endPlane();
         ahead();
         return;
@@ -165,7 +165,7 @@ export function startGaze(root: HTMLElement): Gaze {
 
   const unwatch = watchAttention({
     move(pointer: Pointer, real: boolean) {
-      if (behindSheet() || planeTimer !== null) return;
+      if (heldBySheet() || planeTimer !== null) return;
       if (pointer.kind === "touch") {
         // A late report after the finger has lifted changes nothing: the look is already on its way back.
         if (!pointer.down) return;
@@ -180,11 +180,11 @@ export function startGaze(root: HTMLElement): Gaze {
       aim();
     },
     touch(down: boolean) {
-      if (behindSheet() || planeTimer !== null) return;
+      if (heldBySheet() || planeTimer !== null) return;
       if (!down) aheadIn(LIFT_MS);
     },
     leave() {
-      if (behindSheet() || planeTimer !== null) return;
+      if (heldBySheet() || planeTimer !== null) return;
       ahead();
     },
   });
@@ -198,7 +198,7 @@ export function startGaze(root: HTMLElement): Gaze {
       } catch {
         // A browser without view transitions does not know the selector, and has no plane.
       }
-      if (plane && !root.inert) followPlane();
+      if (plane && !behindSheet(root)) followPlane();
       else ahead();
     },
     stop() {

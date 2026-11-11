@@ -61,6 +61,24 @@ Version D (docs/ITERATION_2.md) funnel: `$pageview` /d → `d_setup` → `d_sear
 `d_flight_chosen`, broken down by `priorities`; `d_rating_open` by `category` shows which ratings
 people look into; `interest_signup` with placement `d_flight` is the concrete ask on the flight page.
 
+**Version D's "Window Seat" look** (branch `ui/d-cinematic`, `docs/ui-d-cinematic.md`) changes no
+event, property or route, but it shifts some measurements. Note the date it reaches production here
+(not yet shipped), and don't pool D's numbers from before and after that date:
+
+- **View events fire a little later.** A page move is now a 760 ms plane wipe. The new page commits
+  15–45 ms later than before (up to about 300 ms on a slow phone), so `d_flight_view`,
+  `d_compare_view` and the sign-up card's `interest_cta_view` observer run later too. On a route
+  that wasn't prefetched, they wait until the wipe ends (0.8–1.0 s). `$pageview` still comes first.
+- **Time on page includes the wipe**, about 0.8 s per page move that version C doesn't have. When
+  comparing C and D, measure from the end of the wipe or leave raw time-on-page out.
+- **The sign-up cards moved.** Their distance from the top of the page changed (phone: results
+  +98 px, flight +44, compare +202; laptop: home −261, results +155, flight −29, compare +94), so
+  `interest_cta_view` rates before and after the switch aren't comparable.
+- **Generated ids shifted.** React's `useId` values on the sort radios and the sign-up fields
+  changed (for example `_r_1_` to `_r_3_`), and they reach autocapture as `attr__id`, `attr__name`
+  and `attr__for`. Don't filter insights or actions on those generated ids. (There are no saved
+  actions in the project today.)
+
 ## Funnels to build in PostHog
 
 - **Study completion**: `study_step` step=pre → setup → dashboard → post → debrief, broken down by

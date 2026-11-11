@@ -4,16 +4,13 @@
  * the two calls that draw on the fixed motion layer (DMotionLayer): the small paper
  * plane and the soft ring around a control. Nothing here takes a flight, a rating, a
  * price or a position in a list, so no motion can treat one flight differently from
- * another. The CSS side of the kit (app/d/d-motion.css) carries the same values as
- * --d-ease-out, --d-ease-in-out, --d-press, --d-quick and --d-move.
+ * another. The CSS side of the kit (app/d/d-motion.css) carries the same easings and the
+ * move duration as --d-ease-out, --d-ease-in-out and --d-move, plus --d-press (100 ms) and
+ * --d-quick (160 ms), which only CSS uses.
  */
 
 export const EASE_OUT = "cubic-bezier(0.22, 1, 0.36, 1)";
 export const EASE_IN_OUT = "cubic-bezier(0.45, 0, 0.25, 1)";
-/** A control going down under a finger. */
-export const D_PRESS_MS = 100;
-/** Colour changes, hovers, a control coming back up. */
-export const D_QUICK_MS = 160;
 /** Things that travel or open. */
 export const D_MOVE_MS = 320;
 /** The tap ring's life (DMotionLayer). */
@@ -23,8 +20,8 @@ export const D_FLY_MS = 520;
 /** The soft ring that leaves a control (DMotionLayer). */
 export const D_RING_FROM_MS = 520;
 
-/** A glyph arriving, a badge stamping, content settling: one-shot Web Animations API presets. */
-export type MotionPreset = "pop" | "stamp" | "settle";
+/** A glyph arriving, a badge stamping, content settling, a card rising as it scrolls in: one-shot presets. */
+export type MotionPreset = "pop" | "stamp" | "settle" | "reveal";
 
 export interface AnimateOnceOptions {
   /** Milliseconds to wait first (a stagger). The element holds the preset's first frame meanwhile. */
@@ -66,6 +63,7 @@ interface Preset {
  *   pop     a glyph of 28 px or less arriving: from 60 % to full size, 8 % past on the way.
  *   stamp   a badge landing: from 80 % to full size, no overshoot.
  *   settle  content settling into place: a 10 px rise.
+ *   reveal  a .d-reveal element coming up from below the screen: its last 16 px (DMotionLayer plays it).
  */
 const PRESETS: Record<MotionPreset, Preset> = {
   pop: {
@@ -83,6 +81,10 @@ const PRESETS: Record<MotionPreset, Preset> = {
   settle: {
     keyframes: [{ transform: "translateY(10px)", easing: EASE_OUT }, { transform: "translateY(0)" }],
     duration: D_MOVE_MS,
+  },
+  reveal: {
+    keyframes: [{ transform: "translateY(16px)", easing: EASE_OUT }, { transform: "translateY(0)" }],
+    duration: 360,
   },
 };
 

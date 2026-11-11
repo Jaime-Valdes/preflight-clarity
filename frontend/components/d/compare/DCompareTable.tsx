@@ -252,7 +252,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
         >
           <table
             className="w-full table-fixed border-separate border-spacing-0 text-left"
-            style={{ minWidth: `calc(var(--d-compare-label) + ${n} * var(--d-compare-col))` }}
+            style={{ minWidth: `calc(var(--d-compare-label) + ${n} * max(var(--d-compare-col), var(--d-compare-fill, 0px)))` }}
           >
             <caption className="sr-only">
               {flights.length} flights compared side by side, rated in plain words{" "}

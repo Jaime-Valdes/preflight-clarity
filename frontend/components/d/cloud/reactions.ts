@@ -6,7 +6,7 @@
  * screen, and the acting is the same every time, so "noted" looks identical whatever it was for.
  */
 
-import { CLOUD, HOME, STAGE, inViewport, isSeen } from "./dom";
+import { CLOUD, HOME, STAGE, behindSheet, inViewport, isSeen } from "./dom";
 import { CLOUD_REACT_EVENT, type CloudReaction } from "./react";
 
 /** How long each mood is worn (ms). The nod is its 300 ms of keyframes and a little to spare. */
@@ -64,7 +64,7 @@ export function startReactions(root: HTMLElement): () => void {
     const kind: unknown = (event as CustomEvent<unknown>).detail;
     if (!isReaction(kind)) return;
     // Behind an open sheet the page is inert, and so is the cloud.
-    if (root.inert) return;
+    if (behindSheet(root)) return;
     if (again !== null) window.clearTimeout(again);
     again = null;
     const cloud = actor();
@@ -75,7 +75,7 @@ export function startReactions(root: HTMLElement): () => void {
     // A first tap on a page can come a moment before the companion has reached its seat.
     again = window.setTimeout(() => {
       again = null;
-      const late = root.inert ? null : actor();
+      const late = behindSheet(root) ? null : actor();
       if (late) act(late, kind);
     }, AGAIN_MS);
   }

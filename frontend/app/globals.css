@@ -352,6 +352,15 @@ html[data-d-on]
   accent-color: var(--color-royal);
 }
 
+/* Safari on iPhone zooms the whole page into a field whose text is under 16 px as soon as it takes focus. The shared
+   fields ask for 14 or 15 px; under the theme every field and select is 16 px, so focusing one never moves the page. */
+[data-theme="d"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea),
+html[data-d-on]
+  :where(body > div:has(> [role="dialog"][aria-modal="true"]))
+  :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+  font-size: 16px;
+}
+
 /* No backdrop-filter anywhere in D: with a sky moving behind it, a blur is redone every frame. The shared top bar,
    compare tray, sheet backdrop and the seat map's row of letters each ask for one. */
 [data-theme="d"] [class*="backdrop-blur"],

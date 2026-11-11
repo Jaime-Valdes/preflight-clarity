@@ -61,3 +61,18 @@
   background-color: #c4d3f5;
   background-color: color-mix(in srgb, var(--color-royal) 14%, var(--color-royal-100));
 }
+
+/* ── The summary's Swap / Change pair ────────────────────────────────────────────────────── */
+
+/*
+ * The pair sits beside the route, or under it when there is no room. With larger text a phone can be
+ * narrower than the two pills side by side: then they wrap, Change under Swap, instead of running past
+ * the card (where the page would cut Change in half). At ordinary text sizes the pair fits and
+ * nothing here changes it. The pair is the shared summary's (components/c/search/SearchSummary.tsx):
+ * found by the section's label and its place, the second child of the summary's first row.
+ */
+[data-theme="d"] section[aria-labelledby="c-results-title"] > div:first-child > div:last-child {
+  max-width: 100%;
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}

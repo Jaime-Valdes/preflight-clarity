@@ -13,7 +13,7 @@
  */
 
 import { watchAttention } from "./attention";
-import { CLOUD, inViewport, isSeen } from "./dom";
+import { CLOUD, behindSheet, inViewport, isSeen } from "./dom";
 
 /** How long nothing has to happen. Longer than the gaze takes to let go of a resting mouse (6 s) or a lifted finger (600 ms). */
 const IDLE_MS = 6600;
@@ -44,7 +44,7 @@ export function startIdle(root: HTMLElement): () => void {
   function glance() {
     idleTimer = null;
     // Behind an open sheet the page is inert, and so are its clouds.
-    if (root.inert) return;
+    if (behindSheet(root)) return;
     // Every read before any write.
     const clouds: HTMLElement[] = [];
     for (const cloud of root.querySelectorAll<HTMLElement>(CLOUD)) {

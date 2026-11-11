@@ -16,9 +16,11 @@ import { skySceneFor } from "./scene";
  * movement is CSS (transitions, keyframes, a scroll timeline). The one thing this file
  * writes is the pointer's place, for the mouse parallax.
  *
- * The wrappers around each drawing have one job each (see the stylesheet): d-sky-at is the
- * scene position, d-sky-par the scroll parallax, d-sky-ptr the pointer parallax and
- * d-sky-drift the slow drift.
+ * The wrappers around each drawing have one job each (see the stylesheet): d-sky-ptr, outermost
+ * and a child of the root, the pointer parallax (it also carries the sprite's name, which the
+ * scenes place); d-sky-at (d-sky-deck for the deck) the scene position; d-sky-par the scroll
+ * parallax; d-sky-drift the slow drift. The pointer wrapper is outermost so that the pointer's
+ * place, written on the root, reaches the boxes that read it and nothing under them.
  */
 export function DSky() {
   // The layout stays mounted across /d, so the pathname is the only thing that changes here:
@@ -35,8 +37,8 @@ export function DSky() {
       <div className="d-sky-air d-sky-air-flight" />
       <div className="d-sky-air d-sky-air-compare" />
 
-      <div className="d-sky-at d-sky-sun">
-        <div className="d-sky-ptr">
+      <div className="d-sky-ptr d-sky-sun">
+        <div className="d-sky-at">
           <div className="d-sun" />
         </div>
       </div>
@@ -55,9 +57,9 @@ export function DSky() {
 
 function Cloud({ className, shape }: { className: string; shape?: "wide" | "round" }) {
   return (
-    <div className={`d-sky-at d-sky-cloud ${className}`}>
-      <div className="d-sky-par">
-        <div className="d-sky-ptr">
+    <div className={`d-sky-ptr ${className}`}>
+      <div className="d-sky-at d-sky-cloud">
+        <div className="d-sky-par">
           {/* The drift is on a box around the drawing: animated on the <svg> itself it would run on the main thread. */}
           <div className="d-sky-drift">
             <DSkyCloud shape={shape} />
@@ -71,8 +73,8 @@ function Cloud({ className, shape }: { className: string; shape?: "wide" | "roun
 /** One band of the deck: the same shape twice, in daylight white and in butter, so the afternoon can fade one over the other. */
 function DeckBand({ className, mirrored }: { className: string; mirrored?: boolean }) {
   return (
-    <div className={`d-sky-deck ${className}`}>
-      <div className="d-sky-ptr">
+    <div className={`d-sky-ptr ${className}`}>
+      <div className="d-sky-deck">
         <div className="d-sky-drift d-sky-band">
           <div className="d-sky-band-day">
             <DSkyDeck mirrored={mirrored} />
@@ -88,7 +90,10 @@ function DeckBand({ className, mirrored }: { className: string; mirrored?: boole
 
 /** Mouse parallax runs only where there is a hovering, precise pointer and no request for less motion. */
 const WANTS_PARALLAX = "(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
-/** At most one write every 100 ms: session replay records each one, and keeps at most ten a second per element. */
+/**
+ * At most one write every 100 ms, a whole interval after the last: session replay records each one, and
+ * keeps at most ten a second per element. Both values go in one write, so a write is one recorded mutation.
+ */
 const WRITE_EVERY_MS = 100;
 /** The place is rounded to fiftieths, so a resting or barely moving pointer writes nothing. */
 const STEPS = 50;
@@ -120,8 +125,8 @@ function usePointerPlace(skyRef: RefObject<HTMLDivElement | null>) {
       if (x === writtenX && y === writtenY) return;
       writtenX = x;
       writtenY = y;
-      sky.style.setProperty("--d-sky-px", String(x));
-      sky.style.setProperty("--d-sky-py", String(y));
+      // React never sets a style on this node, so the attribute is ours to replace whole.
+      sky.setAttribute("style", `--d-sky-px:${x};--d-sky-py:${y}`);
     };
 
     const onMove = (event: PointerEvent) => {
@@ -137,8 +142,7 @@ function usePointerPlace(skyRef: RefObject<HTMLDivElement | null>) {
       timer = undefined;
       writtenX = 0;
       writtenY = 0;
-      sky.style.removeProperty("--d-sky-px");
-      sky.style.removeProperty("--d-sky-py");
+      sky.removeAttribute("style");
     };
 
     const sync = () => {

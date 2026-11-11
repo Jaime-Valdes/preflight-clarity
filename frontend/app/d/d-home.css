@@ -208,16 +208,18 @@
     animation: d-home-drift-in 900ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 150ms backwards;
   }
   /* The line and the plane share one glide: a soft start, then a long ease into the end of the line. The line's
-     drawing takes the curve as its timing function; the plane's keyframes below have it baked in. */
+     drawing takes the curve as its timing function; the plane's keyframes below have it baked in. Same length,
+     same start, from the first frame: the plane is always at the line's tip (the line is its contrail) and
+     never waits in the air before it sets off. */
   .d-home-route,
   .d-home-trail {
-    animation: d-home-draw 1200ms cubic-bezier(0.3, 0.1, 0.25, 1) 250ms backwards;
+    animation: d-home-draw 1600ms cubic-bezier(0.3, 0.1, 0.25, 1) backwards;
   }
   .d-home-plane-band {
-    animation: d-home-fly-band 1300ms linear 450ms backwards;
+    animation: d-home-fly-band 1600ms linear backwards;
   }
   .d-home-plane-tall {
-    animation: d-home-fly-tall 1300ms linear 450ms backwards;
+    animation: d-home-fly-tall 1600ms linear backwards;
   }
   .d-home-swash {
     animation: d-home-draw 400ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 200ms backwards;
@@ -434,13 +436,14 @@
 [data-theme="d"] .d-home-badge {
   transition: translate var(--d-quick, 160ms) var(--d-ease-out, ease-out);
 }
-/* The second line of a tile: quiet ink at rest, white at 80 % on royal (5.5 : 1). */
+/* The second line of a tile: quiet ink at rest, white at 85 % on royal; still 4.8 : 1 on the hover fill, which
+   is where a tile just ranked with a mouse sits, the pointer still on it. */
 [data-theme="d"] .d-home-tile-note {
   color: var(--color-ink-mute);
   transition: color var(--d-quick, 160ms) var(--d-ease-out, ease-out);
 }
 [data-theme="d"] .d-home-tile[aria-pressed="true"] .d-home-tile-note {
-  color: rgb(255 255 255 / 0.8);
+  color: rgb(255 255 255 / 0.85);
 }
 
 /* Under a mouse the tint deepens and the badge lifts a pixel; the same for all four, picked or not. */

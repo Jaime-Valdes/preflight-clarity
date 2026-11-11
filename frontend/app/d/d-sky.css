@@ -7,9 +7,13 @@
  * scene from custom properties, so a page change is a glide, never a swap.
  *
  * Each sprite is nested wrappers, one job each, so no two effects fight over one property:
- *   .d-sky-at     where the scene puts it (translate, scale, opacity; a transition)
+ *   .d-sky-ptr    pointer parallax (translate from --d-sky-px / --d-sky-py; a transition). The
+ *                 outermost, a child of the root and as big as it, and it carries the sprite's
+ *                 name (.d-sky-sun, .d-sky-a … .d-sky-d, .d-sky-deck-back / -front), so the
+ *                 scenes set their places on it and the boxes inside inherit them
+ *   .d-sky-at     where the scene puts it (translate, scale, opacity; a transition); .d-sky-deck
+ *                 for the deck
  *   .d-sky-par    scroll parallax (a scroll-driven animation of translate)
- *   .d-sky-ptr    pointer parallax (translate from --d-sky-px / --d-sky-py; a transition)
  *   .d-sky-drift  the slow drift (a keyframe loop of translate), on a box around the drawing:
  *                 Chrome animates an <svg> element itself on the main thread, every frame
  * Only opacity, translate and scale ever animate. No filters, no blur, no shadows.
@@ -97,6 +101,12 @@
 
 /* ── Sprites ─────────────────────────────────────────────────────────────────── */
 
+/* The pointer wrapper fills the frame, so every place inside it is measured from the frame as before. */
+.d-sky > .d-sky-ptr {
+  position: absolute;
+  inset: 0;
+}
+
 /* A scene places a sprite with --d-sky-x / --d-sky-y: its left and top edge in hundredths of the
    sky's width and height (for the sun: its centre). Where a place has to follow the layout instead
    (a gutter, a fixed distance from an edge), --d-sky-tx / --d-sky-ty take a whole length.
@@ -129,7 +139,7 @@
   );
 }
 /* In the sky the sun is placed by its centre and drawn at its largest (compare); other scenes scale it down. */
-.d-sky-sun {
+.d-sky-sun > .d-sky-at {
   width: 0;
   height: 0;
 }
@@ -187,13 +197,12 @@
   scale: 1 var(--d-sky-s, 1);
   opacity: var(--d-sky-o, 0);
 }
-.d-sky-deck-back {
+.d-sky-deck-back > .d-sky-deck {
   height: calc(22 * var(--d-sky-vh));
 }
-.d-sky-deck-front {
+.d-sky-deck-front > .d-sky-deck {
   height: calc(17 * var(--d-sky-vh));
 }
-.d-sky-deck .d-sky-ptr,
 .d-sky-band,
 .d-sky-band > div,
 .d-sky-band svg {
@@ -222,77 +231,92 @@
 
 /* Read down a sprite's rules to follow the camera. As it climbs, clouds sink and leave by an edge,
    the far cloud moving least and the near ones most; the sun keeps to the right-hand side all day,
-   sliding into its corner, coming down beside the boarding pass and setting toward the horizon.
-   Two things cross the frame, each once and behind the cards, between the home and the results: on
-   a laptop the mid cloud, from the foot of the hero's sun to the left gutter; on a phone the small
-   far cloud, from the top left to its place beside the caption.
+   sliding into its corner, coming down beside the boarding pass and setting toward the horizon where
+   the window is wide enough, and otherwise waiting out of the frame. One thing crosses the frame
+   behind the cards, between the home and the results on a laptop: the mid cloud, from the foot of the
+   hero's sun to the left gutter; and below a laptop the far cloud, from the top left of the home to
+   just past the right edge, from where it looks back in over the boarding pass and the compare row.
    Phones and tablets first; the laptop rules after each scene move things into the gutters. */
 
-/* Home, first light: the richest frame. The sun here is the hero's own (in the page, so it scrolls
-   away with it); the sky's waits just outside the corner it slides into, at the size it has there.
-   It is never faded: half-transparent gold over blue is olive. The deck is below the frame. */
-.d-sky[data-scene="home"] .d-sky-sun {
+/* The sky's sun waits just outside the top right corner, glow and all, on the home (the hero has its
+   own, in the page, so it scrolls away with it) and in every scene whose frame has no room for it: it
+   comes in only where it can show as a sun, clear of the header's links and the cards, never as a
+   sliver behind a card or a wedge beside a link. It is never faded either: half-transparent gold over
+   blue is olive. From one waiting scene to another it does not move. */
+.d-sky[data-scene] .d-sky-sun {
   --d-sky-x: 116;
   --d-sky-y: -20;
   --d-sky-s: 0.756;
 }
+
+/* Home, first light: the richest frame. The deck is below the frame. */
 .d-sky[data-scene="home"] .d-sky-a {
   --d-sky-x: -8;
   --d-sky-y: 9;
   --d-sky-s: 0.85;
   --d-sky-o: 0.5;
 }
-/* On a phone the hero's words fill the width from the scene band down to the button, so the two lower
-   clouds wait below them, a fixed distance down: on a short phone they would otherwise sit behind the copy. */
+/* On a phone or a tablet the hero's words fill the width from the scene band down to the button, and the
+   first card follows about 680 px down. The two lower clouds wait behind that card, a fixed distance
+   down and inside its width: higher, their tops would peek over the card's edge or round the button.
+   They come out as the page scrolls. */
 .d-sky[data-scene="home"] .d-sky-b {
   --d-sky-x: 62;
-  --d-sky-ty: max(76 * var(--d-sky-vh), 640px);
+  --d-sky-ty: max(78 * var(--d-sky-vh), 712px);
   --d-sky-s: 0.6;
   --d-sky-o: 0.9;
 }
 .d-sky[data-scene="home"] .d-sky-c {
-  --d-sky-x: -14;
-  --d-sky-ty: max(66 * var(--d-sky-vh), 560px);
+  --d-sky-x: 5;
+  --d-sky-ty: max(82 * var(--d-sky-vh), 740px);
 }
 .d-sky[data-scene="home"] .d-sky-d {
   --d-sky-x: 70;
   --d-sky-y: 76;
   --d-sky-o: 0.95;
 }
-/* From a laptop up the words keep to the left column: the mid cloud goes to the foot of the hero's sun. */
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .d-sky[data-scene="home"] .d-sky-d {
+    --d-sky-x: 46;
+  }
+}
+/* From a laptop up the words keep to the left column: the mid cloud goes to the foot of the hero's sun,
+   and the far one keeps to the left gutter, its inner end 40 px short of the column (which starts at
+   50vw - 528px), so it slides off as the gutter narrows instead of sitting behind the wordmark. */
 @media (min-width: 1024px) {
+  .d-sky[data-scene="home"] .d-sky-a {
+    --d-sky-tx: calc(50vw - 840px);
+  }
   .d-sky[data-scene="home"] .d-sky-b {
     --d-sky-x: 58;
     --d-sky-ty: calc(46 * var(--d-sky-vh));
     --d-sky-s: 0.87;
   }
   .d-sky[data-scene="home"] .d-sky-c {
+    --d-sky-x: -14;
     --d-sky-ty: calc(66 * var(--d-sky-vh));
   }
 }
 
-/* Results, the climb: the quietest frame, so cards read. The sun is a warm corner. On a phone the
-   far cloud looks in from the right edge, beyond the end of the two captions that rest on the sky (the
-   date strip's and the flight count), and the other two stay below them: captions only ever travel up. */
-.d-sky[data-scene="results"] .d-sky-sun {
-  --d-sky-x: 103;
-  --d-sky-y: -5;
-  --d-sky-s: 0.756;
-}
+/* Results, the climb: the quietest frame, so cards read. The sun is a warm corner from 1200 px up. Below
+   a laptop the cards, the date strip and the filter row fill the width, so the far cloud waits just past
+   the right edge, ready to look in over the boarding pass (there is no free sky for it on the first screen) and the other two wait behind the first flight
+   card, inside its width and a fixed distance down (it starts 590 to 630 px down on a phone): higher,
+   their tops would peek over its edge. They come out between the cards as the list scrolls. */
 .d-sky[data-scene="results"] .d-sky-a {
-  --d-sky-tx: calc(100vw - 62px);
-  --d-sky-y: 47;
+  --d-sky-tx: calc(100vw + 8px);
+  --d-sky-y: 12;
   --d-sky-s: 0.9;
   --d-sky-o: 0.5;
 }
 .d-sky[data-scene="results"] .d-sky-b {
-  --d-sky-x: 62;
-  --d-sky-ty: max(78 * var(--d-sky-vh), 600px);
+  --d-sky-x: 50;
+  --d-sky-ty: max(78 * var(--d-sky-vh), 660px);
   --d-sky-o: 0.85;
 }
 .d-sky[data-scene="results"] .d-sky-c {
-  --d-sky-x: -12;
-  --d-sky-ty: max(66 * var(--d-sky-vh), 590px);
+  --d-sky-x: 5;
+  --d-sky-ty: max(66 * var(--d-sky-vh), 660px);
 }
 .d-sky[data-scene="results"] .d-sky-d {
   --d-sky-x: 104;
@@ -300,9 +324,17 @@
   --d-sky-o: 0;
 }
 /* The corner sun must stop short of the header's last link, whatever the window's shape: its radius is
-   the distance from its centre to the link's corner, less 12 px, and never more than the 31vmin it is
-   on a phone (the sprite is 41vmin, so sizes are ratios of that; tan(atan2(a, b)) is a / b for two
-   lengths). Browsers without that maths get a plainly small sun wherever the window could be the wrong shape. */
+   the distance from its centre to the link's corner, less 12 px, and never more than 31vmin (the sprite
+   is 41vmin, so sizes are ratios of that; tan(atan2(a, b)) is a / b for two lengths). Below 1200 px the
+   link is so near the corner that the sun would show as a wedge of gold beside it, so it stays out. The
+   home's sun waits at the same size, so the slide in is a move, not a zoom. Browsers without that maths
+   get a plainly small sun wherever the window could be the wrong shape. */
+@media (min-width: 1200px) {
+  .d-sky[data-scene="results"] .d-sky-sun {
+    --d-sky-x: 103;
+    --d-sky-y: -5;
+  }
+}
 @media (min-width: 640px) and (max-width: 1399.98px) {
   .d-sky[data-scene="home"] .d-sky-sun,
   .d-sky[data-scene="results"] .d-sky-sun {
@@ -341,15 +373,12 @@
 }
 
 /* Flight, above the clouds: the last low clouds have sunk into a deck that surfaced from below. */
-.d-sky[data-scene="flight"] .d-sky-sun {
-  --d-sky-x: 106;
-  --d-sky-y: -3;
-  --d-sky-s: 0.683;
-}
-/* The far cloud looks over the top of the boarding pass, right of where the back link ends and never
-   higher than it: on a short phone a share of the height would lift it behind the link. */
+/* On a phone the far cloud looks over the top of the boarding pass, against the right edge (as far from
+   the end of the back link as it can be) and never higher than the link: on a short phone a share of the
+   height would lift it behind it. On a tablet the pass comes up under the link and there is no room
+   above it, so the cloud waits just past the right edge, as it does on the results. */
 .d-sky[data-scene="flight"] .d-sky-a {
-  --d-sky-x: 58;
+  --d-sky-tx: calc(66vw - 14px);
   --d-sky-ty: max(10.5 * var(--d-sky-vh), 86px);
   --d-sky-o: 0.5;
 }
@@ -379,14 +408,10 @@
   --d-sky-ty: 0px;
   --d-sky-o: 1;
 }
-@media (min-width: 640px) and (max-width: 1399.98px) {
-  .d-sky[data-scene="flight"] .d-sky-sun {
-    --d-sky-s: 0.42;
-  }
-}
-@supports (scale: tan(atan2(1px, 1px))) and (width: hypot(1px, 1px)) {
-  .d-sky[data-scene="flight"] .d-sky-sun {
-    --d-sky-s: min(0.683, tan(atan2(2 * (hypot(6vw + var(--d-sky-nav), 3 * var(--d-sky-vh) + 20px) - 12px), 41vmin)));
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .d-sky[data-scene="flight"] .d-sky-a,
+  .d-sky[data-scene="compare"] .d-sky-a {
+    --d-sky-tx: calc(100vw + 8px);
   }
 }
 /* From a laptop up the far cloud has sunk a little further down the left gutter, the mid cloud has left
@@ -411,33 +436,47 @@
     --d-sky-y: 96;
   }
 }
-/* A gutter wide enough to hold it: the sun comes down out of its corner and shows whole, clear of the
-   column. Where the maths is there it sits in the middle of the gutter and is never wider than it. */
+/* The sun beside the boarding pass, where the right gutter is wide enough to hold it whole: the column
+   ends at 50vw + 528px, the disc starts 48 px after it and ends at least 24 px short of the window's
+   edge, and is never wider than 0.512 of the sprite. Narrower windows (and browsers without the maths)
+   keep it out of the frame: a corner sun there would be a wedge beside the header's link. */
 @media (min-width: 1400px) {
-  .d-sky[data-scene="flight"] .d-sky-sun {
-    --d-sky-x: 94;
-    --d-sky-y: 22;
-    --d-sky-s: 0.512;
-  }
   @supports (scale: tan(atan2(1px, 1px))) and (width: hypot(1px, 1px)) {
     .d-sky[data-scene="flight"] .d-sky-sun {
-      --d-sky-tx: calc(75vw + 272px);
-      --d-sky-s: min(0.512, tan(atan2(50vw - 532px, 41vmin)));
+      --d-sky-tx: calc(50vw + 576px + min(10.496vmin, 25vw - 300px));
+      --d-sky-y: 22;
+      --d-sky-s: min(0.512, tan(atan2(50vw - 600px, 41vmin)));
     }
   }
 }
 
-/* Compare, golden afternoon: the deck turns butter and the sun settles half behind it. */
-.d-sky[data-scene="compare"] .d-sky-sun {
-  --d-sky-x: 80;
-  --d-sky-y: 84;
+/* Compare, golden afternoon: the deck turns butter and, where the right gutter can hold it, the sun
+   settles half behind it, straight down the gutter from where it stood beside the boarding pass (the
+   same 48 px clear of the column, at most 0.7 of the sprite). Elsewhere the table fills the frame and
+   the sun has set out of it. */
+@media (min-width: 1400px) {
+  @supports (scale: tan(atan2(1px, 1px))) and (width: hypot(1px, 1px)) {
+    .d-sky[data-scene="compare"] .d-sky-sun {
+      --d-sky-tx: calc(50vw + 576px + min(14.35vmin, 25vw - 300px));
+      --d-sky-y: 84;
+      --d-sky-s: min(0.7, tan(atan2(50vw - 600px, 41vmin)));
+    }
+  }
 }
-/* The far cloud rests beside the "Add a flight" row, never higher: on a short phone a share of the
-   height would lift it behind the line under the heading. */
+/* On a phone the far cloud rests beside the "Add a flight" row, never higher: on a short phone a share of
+   the height would lift it behind the line under the heading. (On a tablet the row is the heading's and
+   the table comes up under it, so the cloud waits past the right edge: see the flight's rules.) */
 .d-sky[data-scene="compare"] .d-sky-a {
   --d-sky-x: 66;
   --d-sky-ty: max(16 * var(--d-sky-vh), 135px);
   --d-sky-o: 0.55;
+}
+/* From 414 px the line under the heading fits on one line and the row comes up with it: so does the cloud,
+   or its foot would rest on the card under the row. */
+@media (min-width: 414px) and (max-width: 639.98px) {
+  .d-sky[data-scene="compare"] .d-sky-a {
+    --d-sky-ty: 125px;
+  }
 }
 .d-sky[data-scene="compare"] .d-sky-deck-back {
   --d-sky-ty: calc(-3 * var(--d-sky-vh));
@@ -591,9 +630,17 @@
 }
 
 /* Pointer parallax, mouse only: DSky writes where the pointer is (-1 to 1 from the centre) on the sky
-   root a few times a second; each layer shifts against it by its depth and the transition does the easing. */
+   root a few times a second; each layer shifts against it by its depth and the transition does the easing.
+   The two values stop at the pointer wrappers, the root's children: the boxes inside reset them, so a
+   write restyles the root, its children and their children, and not the drawings and paths further in.
+   (Not @property with inherits: false and an explicit inherit, which would do the same in Chrome:
+   WebKit then never restyles the wrappers when the root's value changes, and the clouds hold still.) */
+.d-sky-ptr > * {
+  --d-sky-px: initial;
+  --d-sky-py: initial;
+}
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .d-sky-ptr {
+  .d-sky > .d-sky-ptr {
     translate: calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1) calc(var(--d-sky-py, 0) * var(--d-sky-depth, 0px) * -1);
     transition: translate 600ms cubic-bezier(0.22, 1, 0.36, 1);
   }
@@ -611,7 +658,7 @@
     --d-sky-depth: 16px;
   }
   /* The deck only slides sideways: lifted, it would show the frame's bottom edge. */
-  .d-sky-deck .d-sky-ptr {
+  .d-sky > .d-sky-ptr:is(.d-sky-deck-back, .d-sky-deck-front) {
     translate: calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1) 0;
   }
   .d-sky-deck-back {

@@ -53,12 +53,18 @@
   transform-origin: 50% 79%;
   transition: rotate 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
+/* One float as it arrives, 4.5 s, then rest: a stage cloud stands beside text (the home hero, the
+   heading of an empty, not-found or error card), and nothing loops beside text (section 7). A
+   page shown again floats once more. */
 .d-cloud-floats > .d-cloud-pose {
-  animation: d-cloud-float 4.5s ease-in-out infinite;
+  animation: d-cloud-float 4.5s ease-in-out 1;
+}
+/* The loading cloud is the loading indicator: it floats for as long as the loader shows. */
+[data-theme="d"] [aria-busy="true"] .d-cloud-floats > .d-cloud-pose {
+  animation-iteration-count: infinite;
 }
 /* A home cloud sits beside text and swaps places with the companion: it keeps still. */
-.d-cloud[data-cloud-home] > .d-cloud-pose,
-[data-theme="d"] [data-cloud-home] .d-cloud > .d-cloud-pose {
+.d-cloud[data-cloud-home] > .d-cloud-pose {
   animation: none;
 }
 @keyframes d-cloud-float {
@@ -241,10 +247,13 @@
   pointer-events: none;
   opacity: 0;
   transform-origin: 0 0;
+  /* The glide and the fade. components/d/cloud/companion.ts reads these two once for its timers. */
+  --d-companion-glide: 420ms;
+  --d-companion-fade: 160ms;
   transition:
-    translate 420ms cubic-bezier(0.22, 1, 0.36, 1),
-    scale 420ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 160ms linear;
+    translate var(--d-companion-glide) cubic-bezier(0.22, 1, 0.36, 1),
+    scale var(--d-companion-glide) cubic-bezier(0.22, 1, 0.36, 1),
+    opacity var(--d-companion-fade) linear;
 }
 @media (min-width: 640px) {
   [data-theme="d"] .d-companion {
@@ -261,10 +270,10 @@
 [data-theme="d"] .d-companion .d-cloud-shadow {
   opacity: 0.12;
 }
-/* One blink as it lands on a seat, late in the glide (0.7 of its 420 ms). In place of the usual
-   round of blinks while the mark is on, so the eyes only ever carry one animation. */
+/* One blink as it lands on a seat, late in the glide (0.7 of it). In place of the usual round of
+   blinks while the mark is on, so the eyes only ever carry one animation. */
 [data-theme="d"] .d-companion[data-blink] .d-cloud-blinks {
-  animation: d-cloud-blink-once 200ms linear 294ms;
+  animation: d-cloud-blink-once 200ms linear calc(var(--d-companion-glide) * 0.7);
 }
 
 /* ── Reduced motion ──────────────────────────────────────────────────────── */

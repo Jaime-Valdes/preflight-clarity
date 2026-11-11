@@ -4,7 +4,9 @@
  * card the visitor attends to:
  *
  *   mouse     the seat under the pointer, once it has stayed there 140 ms; the cloud then slides
- *             along the edge under the pointer
+ *             along the edge under the pointer. As on touch, when that seat's top edge has
+ *             scrolled off the top of the screen it sits on the next seat whose top edge is on
+ *             screen, and slides along that one
  *   touch     the seat crossing a line 40 % down the screen, once it has stayed there 140 ms (so
  *             a fling passes over), or a seat tapped in the last 4 s. When that seat's top edge
  *             has scrolled off the top of the screen the cloud sits on the next seat whose top
@@ -24,15 +26,18 @@
  */
 
 import { MOVE_MS, nudgeAttention, watchAttention, type Pointer } from "./attention";
-import { AWAY, HOME, SEAT, STAGE, cloudOf, isRendered } from "./dom";
+import { AWAY, HOME, SEAT, STAGE, behindSheet, cloudOf, isRendered } from "./dom";
 
 /** A seat has to hold the visitor's attention this long before the cloud moves to it. */
 const DWELL_MS = 140;
 /** A tapped seat keeps the cloud this long, whatever the reading line says. */
 const TAP_MS = 4000;
-/** The glide between places; the same number as the transition in d-cloud.css. */
+/**
+ * The glide between places and the fade out: read once from the companion's stylesheet
+ * (--d-companion-glide and --d-companion-fade in app/d/d-cloud.css, which its transitions and
+ * landing blink use), these numbers only if it has not arrived.
+ */
 const GLIDE_MS = 420;
-/** How long the cloud takes to fade out; the same number as the opacity transition in d-cloud.css. */
 const FADE_MS = 160;
 /** The cloud's centre stays this far (px) inside the two ends of a seat's top edge. */
 const INSET = 40;
@@ -60,13 +65,11 @@ const STAGE_SHARE = 0.3;
 const HOME_SHARE = 0.5;
 /** When it cannot lift out of its home (there is none, or it is off screen) the cloud appears from this far (px) below its place. */
 const RISE = 10;
-/** How long the mark for the landing blink stays on: the blink's delay and its 200 ms (both in d-cloud.css), and a little to spare. */
-const BLINK_MS = GLIDE_MS * 0.7 + 240;
+/** How long the mark for the landing blink stays on, past the blink's delay (0.7 of the glide, in d-cloud.css): its 200 ms and a little to spare. */
+const BLINK_MS = 240;
 
 /** A place the cloud can be: on a seat, or in its home (hidden, on a page without one). */
 type Spot = Element | "home";
-/** Where a seat is at a line across the screen: all of it above the line, its top edge above and the rest below, or all of it below. */
-type Side = "above" | "cut" | "below";
 
 export interface Companion {
   /** The address changed: straight back home, and nothing more until the visitor acts on the new page. */
@@ -74,7 +77,18 @@ export interface Companion {
   stop(): void;
 }
 
+/** A CSS time ("420ms", "0.42s") in milliseconds, or `fallback` when there is none. */
+function timeOf(text: string, fallback: number): number {
+  const value = Number.parseFloat(text);
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return text.trim().endsWith("ms") ? value : value * 1000;
+}
+
 export function startCompanion(root: HTMLElement, host: HTMLElement): Companion {
+  const look = getComputedStyle(host);
+  const glideMs = timeOf(look.getPropertyValue("--d-companion-glide"), GLIDE_MS);
+  const fadeMs = timeOf(look.getPropertyValue("--d-companion-fade"), FADE_MS);
+
   // ── What is on the page ────────────────────────────────────────────────────
   const seats = new Set<Element>();
   /** The seats in the order they come in the page. */
@@ -87,10 +101,6 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
   const inSight = new Set<Element>();
   /** How much of a stage, the home or a seat is on screen, 0 to 1. */
   const shares = new WeakMap<Element, number>();
-  /** Each seat at the line a top edge must stay below for the whole cloud to show above it. */
-  let atTop = new WeakMap<Element, Side>();
-  /** Each seat at a second line SLACK further down. */
-  let nearTop = new WeakMap<Element, Side>();
   /** Whether a marked element is, or sits inside, something sticky or fixed: such a thing is never a seat. */
   let stuck = new WeakMap<Element, boolean>();
 
@@ -102,6 +112,10 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
   /** The keyboard is driving. */
   let keys = false;
   let hover: Element | null = null;
+  /** When the pointer came onto the seat under it. */
+  let hoverSince = 0;
+  /** Where the cloud sits for the seat under the pointer, as last chosen: that seat, or the next one with its top edge on screen. */
+  let hoverSpot: { hover: Element; spot: Element | null } | null = null;
   let focused: Element | null = null;
   let tapped: Element | null = null;
 
@@ -184,8 +198,15 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     return best;
   }
 
-  /** The seat's top edge is low enough on the screen for the whole cloud to show above it. A seat not heard of yet counts as fine. */
-  const edgeShows = (el: Element) => (atTop.get(el) ?? "below") === "below";
+  /**
+   * How far (px) the seat's top edge is below the line where the cloud's outline would start to be
+   * cut: under 0 the edge is gone. Measured, one box per seat a decision looks at. The observers
+   * on the two lines (watchLine) only say when to look again: a seat that jumps from wholly above
+   * a line to wholly below it in one frame (focus moved, scrollIntoView, find in page) tells them
+   * nothing.
+   */
+  const edgeRoom = (el: Element) => el.getBoundingClientRect().top - edgesFor.line + 0.5;
+  const edgeShows = (el: Element) => edgeRoom(el) >= 0;
 
   /** The first seat further down the page whose top edge is on screen, with room for the cloud above it. */
   function seatBelow(el: Element): Element | null {
@@ -197,23 +218,31 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
   }
 
   /**
-   * Where the cloud sits for a seat the visitor attends to by touch. On it, while its top edge is
-   * on screen: the cloud is in the gap above the card being read. Once that edge has scrolled off
-   * the top, on the next seat whose top edge is on screen: in the gap below that card. Null when
-   * neither is in view. The same for every seat: nothing but where the boxes are decides it.
+   * Where the cloud sits for a seat the visitor attends to, by touch or under the mouse. On it,
+   * while its top edge is on screen: the cloud is in the gap above that card. Once that edge has
+   * scrolled off the top, on the next seat whose top edge is on screen: in the gap below that card.
+   * Null when neither is in view. The same for every seat: nothing but where the boxes are decides it.
    */
   function stand(el: Element): Element | null {
-    if (!edgeShows(el)) return seatBelow(el);
-    if ((nearTop.get(el) ?? "below") === "below") return el;
-    // Its edge is on screen but close to the top. A cloud that already moved down stays down, so a
-    // page nudged a few pixels back and forth does not send it back and forth.
-    const below = seatBelow(el);
-    return below !== null && state === "out" && seat === below ? below : el;
+    const room = edgeRoom(el);
+    if (room >= SLACK) {
+      if (edgeGone === el) edgeGone = null;
+      return el;
+    }
+    if (room < 0) edgeGone = el;
+    // Its edge is on screen but close to the top: it is the cloud's again only once it has come
+    // SLACK back down, so a page nudged a few pixels back and forth does not send it back and forth.
+    return edgeGone === el ? seatBelow(el) : el;
   }
+
+  /** The attended seat whose top edge last went off the top of the screen, until it has come SLACK back down. */
+  let edgeGone: Element | null = null;
 
   /** The seat on the reading line, and since when: a visitor who has been on one seat for a while is reading it, not flinging past. */
   let reading: { seat: Element | null; since: number } = { seat: null, since: 0 };
   const isReading = () => mode === "touch" && !keys && reading.seat !== null && performance.now() - reading.since >= DWELL_MS;
+  /** The same for a mouse: it has rested on one seat for a while. */
+  const isPointing = () => mode === "mouse" && !keys && hover !== null && performance.now() - hoverSince >= DWELL_MS;
 
   const lineWatch = new IntersectionObserver(
     (entries) => {
@@ -242,22 +271,18 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
   );
 
   /**
-   * Keeps `into` saying on which side of a line `y` px down the screen each seat is. The observer
-   * watches a thin band that ends at the line: a seat in the band has its top edge above the
-   * line and the rest of it below; out of the band it is wholly above or wholly below.
+   * Hears a seat's top edge cross a line `y` px down the screen: the observer watches a thin band
+   * that ends at the line, and a top edge passing it enters and leaves the band. Where the edge
+   * then is, is measured (edgeRoom), not taken from the observer.
    */
-  function watchLine(y: number, into: WeakMap<Element, Side>): IntersectionObserver {
+  function watchLine(y: number): IntersectionObserver {
     const share = Math.min(Math.max((y / Math.max(window.innerHeight, 1)) * 100, BAND), 100);
     return new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const line = entry.rootBounds?.bottom ?? y;
-          into.set(entry.target, entry.isIntersecting ? "cut" : entry.boundingClientRect.top >= line - 0.5 ? "below" : "above");
-        }
-        // The seat being read has not changed; only its top edge has reached the top of the screen.
-        // The cloud goes at once, while it can still be seen leaving. In a fling no seat is read
-        // for long enough, and the usual wait applies.
-        review(isReading());
+      () => {
+        // The seat being read, or pointed at, has not changed; only its top edge has reached the
+        // top of the screen. The cloud goes at once, while it can still be seen leaving. In a
+        // fling no seat is read for long enough, and the usual wait applies.
+        review(isReading() || isPointing());
       },
       // In percent, like the reading line: whatever height the browser counts as the screen, the band keeps its place in it.
       { rootMargin: `-${(share - BAND).toFixed(3)}% 0px -${(100 - share).toFixed(3)}% 0px` },
@@ -282,10 +307,8 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     edgesFor = { line, height };
     topWatch?.disconnect();
     nearWatch?.disconnect();
-    atTop = new WeakMap();
-    nearTop = new WeakMap();
-    topWatch = watchLine(line, atTop);
-    nearWatch = watchLine(line + SLACK, nearTop);
+    topWatch = watchLine(line);
+    nearWatch = watchLine(line + SLACK);
     for (const el of seats) {
       topWatch.observe(el);
       nearWatch.observe(el);
@@ -327,16 +350,11 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
         onLine.delete(el);
         inSight.delete(el);
         shares.delete(el);
-        atTop.delete(el);
-        nearTop.delete(el);
       },
     );
 
     const foundStages = new Set<Element>();
-    for (const el of root.querySelectorAll(STAGE)) {
-      const cloud = cloudOf(el) ?? el;
-      if (isRendered(cloud)) foundStages.add(cloud);
-    }
+    for (const el of root.querySelectorAll(STAGE)) if (isRendered(el)) foundStages.add(el);
     sync(
       stages,
       foundStages,
@@ -350,9 +368,8 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
 
     let foundHome: HTMLElement | null = null;
     for (const el of root.querySelectorAll<HTMLElement>(HOME)) {
-      const cloud = cloudOf(el) ?? el;
-      if (!isRendered(cloud)) continue;
-      foundHome = cloud;
+      if (!isRendered(el)) continue;
+      foundHome = el;
       break;
     }
     if (foundHome !== home) {
@@ -377,9 +394,13 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
   function choose(): Spot | null {
     if (!armed || stageOn()) return "home";
     const pressed = tapped && usable(tapped) ? tapped : null;
-    if (!pressed) {
-      if (keys) return focused && usable(focused) ? focused : null;
-      if (mode === "mouse") return hover && usable(hover) ? hover : null;
+    if (!pressed && keys) return focused && usable(focused) ? focused : null;
+    if (!pressed && mode === "mouse") {
+      // Under the mouse: the seat pointed at, or the next one down while its top edge is off the top of the screen.
+      if (!hover || !usable(hover)) return null;
+      const spot = stand(hover);
+      hoverSpot = { hover, spot };
+      return spot ?? (homeOn() ? "home" : null);
     }
     // By touch: the seat just tapped, else the one being read, as long as there is a top edge in view to sit on.
     const attended = pressed ?? lineSeat();
@@ -398,7 +419,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
 
   function review(now = false) {
     // While a sheet is open the page behind it is inert, and the companion does nothing.
-    if (root.inert) return;
+    if (behindSheet(root)) return;
     const want = settled(choose());
     const here: Spot = state === "out" && seat ? seat : "home";
     if (want === here) {
@@ -419,7 +440,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       dwellTimer = null;
       const held = pending;
       pending = null;
-      if (held === null || root.inert) return;
+      if (held === null || behindSheet(root)) return;
       if (settled(choose()) === held) go(held);
       else review();
     }, DWELL_MS);
@@ -453,13 +474,16 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     return node === root && Math.abs(y - drawn) <= DRIFT ? y : drawn;
   }
 
+  /** The cloud on `el` is there for the seat under the mouse (that seat, or the next one down in its place): it slides with the pointer. */
+  const slides = (el: Element) => mode === "mouse" && !keys && pointer?.known === true && hover !== null && (hover === el || (hoverSpot?.hover === hover && hoverSpot.spot === el));
+
   /** The cloud's place on a seat: on the top edge, its base a little over the card, the rest above it. */
   function perch(el: Element) {
     const frame = root.getBoundingClientRect();
     const card = el.getBoundingClientRect();
     const width = host.offsetWidth;
     // Under a mouse it slides along the edge with the pointer; once the pointer leaves the card it keeps its place.
-    if (mode === "mouse" && !keys && pointer?.known && hover === el) along = pointer.x - card.left;
+    if (pointer && slides(el)) along = pointer.x - card.left;
     const wanted = card.left + (along ?? card.width * ALONG);
     const centre = card.width > INSET * 2 ? Math.min(Math.max(wanted, card.left + INSET), card.right - INSET) : card.left + card.width / 2;
     return { x: centre - width / 2 - frame.left, y: restTop(el, card.top - frame.top) + OVERLAP - BASE * width };
@@ -482,7 +506,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     arriveTimer = window.setTimeout(() => {
       arriveTimer = null;
       nudgeAttention();
-    }, GLIDE_MS + 40);
+    }, glideMs + 40);
   }
 
   /** Changes made in `change` take effect at once, without the glide. */
@@ -518,12 +542,12 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     blinkTimer = window.setTimeout(() => {
       blinkTimer = null;
       host.removeAttribute("data-blink");
-    }, BLINK_MS);
+    }, glideMs * 0.7 + BLINK_MS);
   }
 
   /** Measures the seat again and moves if it has moved: the page grew, the pointer slid along, an entrance finished. */
   function follow() {
-    if (root.inert) return;
+    if (behindSheet(root)) return;
     if (state === "returning" && home && isRendered(home)) {
       const to = boxIn(home);
       place(to.x, to.y, to.width / host.offsetWidth);
@@ -584,7 +608,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     settleTimer = window.setTimeout(() => {
       settleTimer = null;
       follow();
-    }, GLIDE_MS + 80);
+    }, glideMs + 80);
   }
 
   /**
@@ -624,7 +648,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       // It fades out where it is; once it cannot be seen it is taken off the page's far reaches.
       swap();
       parkTimer = clear(parkTimer);
-      parkTimer = window.setTimeout(park, FADE_MS + 40);
+      parkTimer = window.setTimeout(park, fadeMs + 40);
     }
   }
 
@@ -648,7 +672,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     const to = boxIn(home);
     place(to.x, to.y, to.width / host.offsetWidth);
     state = "returning";
-    returnTimer = window.setTimeout(() => land(true), GLIDE_MS + 30);
+    returnTimer = window.setTimeout(() => land(true), glideMs + 30);
   }
 
   function go(spot: Spot) {
@@ -675,26 +699,29 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       const next = seatAt(target);
       if (next === hover) return;
       hover = next;
+      hoverSince = performance.now();
       if (mode === "mouse") review();
     },
     move(p, real) {
       pointer = p;
-      if (root.inert || p.kind !== "mouse") return;
+      if (behindSheet(root) || p.kind !== "mouse") return;
       if (real) {
         const woke = !armed || mode !== "mouse" || keys;
         mode = "mouse";
         keys = false;
         armed = true;
         if (woke) {
-          hover = seatAt(p.target);
+          const next = seatAt(p.target);
+          if (next !== hover) hoverSince = performance.now();
+          hover = next;
           review();
         }
       }
-      if (state === "out" && seat !== null && seat === hover) follow();
+      if (state === "out" && seat !== null && slides(seat)) follow();
     },
     touch(down, p) {
       pointer = p;
-      if (root.inert || !down) return;
+      if (behindSheet(root) || !down) return;
       mode = "touch";
       keys = false;
       armed = true;
@@ -704,7 +731,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     },
     tap(target, p) {
       pointer = p;
-      if (root.inert) return;
+      if (behindSheet(root)) return;
       const woke = !armed;
       armed = true;
       // Under a mouse the tapped seat is already the one being pointed at.
@@ -724,7 +751,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       review(true);
     },
     focus(target, byKeys) {
-      if (root.inert) return;
+      if (behindSheet(root)) return;
       keys = byKeys;
       focused = byKeys ? seatAt(target) : null;
       if (!byKeys) return;
@@ -732,7 +759,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       review(true);
     },
     stir() {
-      if (root.inert || armed) return;
+      if (behindSheet(root) || armed) return;
       armed = true;
       review();
     },
@@ -756,6 +783,8 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       armed = false;
       keys = false;
       hover = null;
+      hoverSpot = null;
+      edgeGone = null;
       focused = null;
       tapped = null;
       pending = null;

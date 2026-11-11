@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
   cacheComponents: true,
   partialPrefetching: true,
+  experimental: {
+    // Every build starts cold. Turbopack's build cache (.next/cache/turbopack, on by default
+    // since Next 16.3, and restored between builds on Vercel) once got stuck on an old
+    // globals.css: the build served it after the file had changed, and rebuilding did not
+    // clear it. A cold build takes seconds here. After a build, run scripts/d-css-check.mjs.
+    turbopackFileSystemCacheForBuild: false,
+  },
   transpilePackages: ["@preflight/shared"],
   turbopack: {
     rules: {

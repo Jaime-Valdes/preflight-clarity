@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
  *
  *   .d-cloud              the box: width from the caller, receives --gx / --gy (-1 to 1, where it looks)
  *                         and data-mood (calm by default; curious, nod, glad)
- *   .d-cloud-pose         floats, and leans when curious
+ *   .d-cloud-pose         floats once as it arrives (a loading cloud for as long as it loads), and leans when curious
  *   .d-cloud-art          the drawing; dips for a nod
  *     (svg)               the body
  *     .d-cloud-face       cheeks and mouth; slides toward the look with everything in it: a head turning

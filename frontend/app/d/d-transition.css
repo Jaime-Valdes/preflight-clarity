@@ -189,7 +189,7 @@ html[data-d-on]::view-transition-group(.d-plane) {
       its middle --d-vt-lead ahead of the seam, in clear air. The drawing is 2.5 plane lengths
       wide and 1 tall, with the middle of the plane 1.75 lengths from its left edge and half a
       length from its top. It flies at the height of the tap that caused the move: --d-tap-y on
-      <html>, a length, written by the motion layer on pointer-down. */
+      <html>, a length, written by the motion layer on the click that starts a page move. */
 html[data-d-on]::view-transition-image-pair(.d-plane) {
   background: var(--d-vt-art-plane) no-repeat
     calc(var(--d-vt-reach) + var(--d-vt-lead) - var(--d-vt-plane) * 1.75)
@@ -223,10 +223,17 @@ html[data-d-on]::view-transition-old(.d-plane) {
 
 /* 6. Reduced motion: no ribbon, no plane, no wipe; the old page fades into the live one in
       150 ms and takes no taps while it does. The app's global reduced-motion rule does not
-      reach these pseudo-elements, so this block is required. */
+      reach these pseudo-elements, so this block is required. The hidden plane's animations are
+      switched off as well: Safari still counts them while the group is not displayed, and the
+      transition (and every page move and loading reveal React holds behind it) would last the
+      full 760 ms instead of 150. */
 @media (prefers-reduced-motion: reduce) {
   html[data-d-on]::view-transition-group(.d-plane) {
     display: none;
+    animation: none;
+  }
+  html[data-d-on]::view-transition-image-pair(.d-plane) {
+    animation: none;
   }
   html[data-d-on]::view-transition-group(root) {
     padding-right: 0;

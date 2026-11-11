@@ -9,7 +9,8 @@
  *   3. D's buttons and links (.d-btn-primary, .d-btn-outline, .d-btn-selected, .d-link) and the
  *      shared primaries D shows, which take the same look without their files changing.
  *   4. Fields and the shared small controls: press and hover only, colours stay the theme's.
- *   5. Utilities for D's own markup (.d-lift, .d-reveal, .d-route-plane, .d-pop, .d-stamp, .d-settle).
+ *   5. Utilities for D's own markup (.d-lift, .d-route-plane, .d-pop, .d-settle; .d-reveal is played by
+ *      script, components/d/motion/DMotionLayer.tsx).
  *      .d-chip and .d-row, for D's own chips and tappable rows, sit with the shared controls they match.
  *
  * Three rules hold throughout. Hover styles sit inside (hover: hover) and (pointer: fine), so
@@ -312,12 +313,12 @@ html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.b
   background-size: 100% 0.42em;
 }
 
-/* An arrow that points onward leans onward; a back chevron leans back (.d-lead for any other leading icon). */
+/* An arrow that points onward leans onward (.d-trail for any other trailing icon); a back chevron leans back. */
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .d-link:hover > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail) {
     translate: 3px 0;
   }
-  .d-link:hover > :is(.lucide-arrow-left, .lucide-chevron-left, .d-lead) {
+  .d-link:hover > :is(.lucide-arrow-left, .lucide-chevron-left) {
     translate: -3px 0;
   }
 }
@@ -500,9 +501,8 @@ html[data-d-on] [role="dialog"][aria-modal="true"] label > input[type="checkbox"
   }
 }
 
-/* Rating rows (the flight page's four, found by structure), and .d-row for any of D's tappable rows. */
-.d-row,
-[data-theme="d"] ul > li > button[aria-haspopup="dialog"] {
+/* .d-row: D's tappable rows (the flight page's rating rows, "More detail"). */
+.d-row {
   transition:
     background-color var(--d-quick) var(--d-ease-out),
     color var(--d-quick) var(--d-ease-out),
@@ -511,32 +511,27 @@ html[data-d-on] [role="dialog"][aria-modal="true"] label > input[type="checkbox"
     scale var(--d-quick) var(--d-ease-out);
 }
 
-.d-row > svg,
-[data-theme="d"] ul > li > button[aria-haspopup="dialog"] > svg {
+.d-row > svg {
   transition: translate var(--d-quick) var(--d-ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .d-row:hover,
-  [data-theme="d"] ul > li > button[aria-haspopup="dialog"]:hover {
+  .d-row:hover {
     translate: 0 -2px;
   }
-  .d-row:hover > :is(.lucide-chevron-right, .lucide-arrow-right, .d-trail),
-  [data-theme="d"] ul > li > button[aria-haspopup="dialog"]:hover > :is(.lucide-chevron-right, .lucide-arrow-right, .d-trail) {
+  .d-row:hover > :is(.lucide-chevron-right, .lucide-arrow-right, .d-trail) {
     translate: 3px 0;
   }
 }
 
-.d-row:active,
-[data-theme="d"] ul > li > button[aria-haspopup="dialog"]:active {
+.d-row:active {
   background-color: #eef6f9;
   background-color: color-mix(in srgb, var(--color-sky) 40%, var(--color-surface));
   transition-duration: var(--d-press);
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .d-row:active,
-  [data-theme="d"] ul > li > button[aria-haspopup="dialog"]:active {
+  .d-row:active {
     scale: 0.99;
   }
 }
@@ -596,14 +591,6 @@ html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origi
   }
 }
 
-/* The compare tray arrives: its contents rise 10 px into place. The tray's own box is never moved: the shared
-   keepClearOfTray() measures it on the next frame to scroll the pressed control clear of it. */
-@media (prefers-reduced-motion: no-preference) {
-  [data-theme="d"] #c-compare-tray > div {
-    animation: d-kit-settle var(--d-move) var(--d-ease-out) backwards;
-  }
-}
-
 /* Less motion asked for: a pressed control changes colour and stays its size. The rules above already keep
    their own movement out; this also stills a press-scale utility a component still carries (active:scale-…). */
 @media (prefers-reduced-motion: reduce) {
@@ -612,7 +599,6 @@ html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origi
   .d-btn-selected:active,
   .d-chip:active,
   .d-row:active,
-  [data-theme="d"] ul > li > button[aria-haspopup="dialog"]:active,
   [data-theme="d"] main :is(button, a).rounded-full.ring-inset:is(.ring-1, .ring-2):active,
   html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.ring-inset:is(.ring-1, .ring-2):active {
     scale: none;
@@ -646,22 +632,11 @@ html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origi
 }
 
 /*
- * .d-reveal — as the element scrolls into view it rises its last 16 px into place. Position
- * only: opacity is never touched, so text is never dimmed, and an element already on screen
- * is simply there. Driven by the scroll position itself (no listener, nothing to wait for);
- * browsers without scroll-driven animations show nothing at all. `backwards`, never `both`:
- * once the element is in, no transform is left on it. The 1 ms duration is for engines that
- * want one before they attach a scroll timeline.
+ * .d-reveal — no CSS: the class is a marker. An element wearing it that is below the screen when
+ * first seen rises its last 16 px once as it comes in (components/d/motion/DMotionLayer.tsx, a
+ * Web Animations API one-shot of 360 ms). It is not a scroll-driven animation on purpose: one of
+ * those keeps every card a compositor layer for the page's whole life.
  */
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .d-reveal:not(:has([role="combobox"])):not([aria-labelledby^="c-interest-"]) {
-      animation: d-kit-reveal 1ms linear backwards;
-      animation-timeline: view();
-      animation-range: entry 0% entry 40%;
-    }
-  }
-}
 
 /*
  * .d-route-plane — a full-width wrapper laid over a card's time line, with one child (the
@@ -693,19 +668,15 @@ html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origi
 }
 
 /*
- * .d-pop, .d-stamp, .d-settle — the same three presets as animateOnce() in motion.ts, for an
- * element that mounts in its arrived state (a check that replaces a plus, a rank number, a
- * badge, a block of content). Transform only; opacity stays put. They are added to the
+ * .d-pop, .d-settle — two of the presets animateOnce() in motion.ts plays, for an element that
+ * mounts in its arrived state (a check that replaces a plus, a rank number, a block of
+ * content). The third preset, stamp, is script only. Transform only; opacity stays put. They are added to the
  * element's own transform, and they fill backwards, so a stagger set with animation-delay
  * holds the first frame and nothing is left behind afterwards.
  */
 @media (prefers-reduced-motion: no-preference) {
   .d-pop {
     animation: d-kit-pop 260ms var(--d-ease-out) backwards;
-    animation-composition: add;
-  }
-  .d-stamp {
-    animation: d-kit-stamp 240ms var(--d-ease-out) backwards;
     animation-composition: add;
   }
   .d-settle {
@@ -719,15 +690,6 @@ html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origi
 @keyframes d-kit-bar {
   from {
     transform: scaleX(0);
-  }
-}
-
-@keyframes d-kit-reveal {
-  from {
-    transform: translateY(16px);
-  }
-  to {
-    transform: translateY(0);
   }
 }
 
@@ -748,15 +710,6 @@ html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origi
   55% {
     transform: scale(1.08);
     animation-timing-function: ease-in-out;
-  }
-  to {
-    transform: scale(1);
-  }
-}
-
-@keyframes d-kit-stamp {
-  from {
-    transform: scale(0.8);
   }
   to {
     transform: scale(1);

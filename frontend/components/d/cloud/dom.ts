@@ -6,9 +6,9 @@
 
 /** An in-flow card the companion may perch on. Never a sticky element. */
 export const SEAT = "[data-cloud-seat]";
-/** The small inline cloud the companion starts from on a page, and returns to. */
+/** The small inline cloud the companion starts from on a page, and returns to. On the drawing itself (CloudMascot's prop), never on a wrapper. */
 export const HOME = "[data-cloud-home]";
-/** A large inline cloud: while it is on screen the companion stays away. */
+/** A large inline cloud: while it is on screen the companion stays away. On the drawing itself, like the home mark. */
 export const STAGE = "[data-cloud-stage]";
 /** Every cloud drawing (components/d/brand/CloudMascot.tsx). */
 export const CLOUD = ".d-cloud";
@@ -33,9 +33,17 @@ export function isSeen(el: Element): boolean {
   return el.getClientRects().length > 0;
 }
 
-/** The drawing inside a marked element: the attribute may sit on the cloud itself or on a wrapper around it. */
-export function cloudOf(el: Element): HTMLElement | null {
-  return el.matches(CLOUD) ? (el as HTMLElement) : el.querySelector<HTMLElement>(CLOUD);
+/** The drawing inside the companion's box. (A home or stage mark is always on the drawing itself: CloudMascot sets it.) */
+export function cloudOf(host: Element): HTMLElement | null {
+  return host.querySelector<HTMLElement>(CLOUD);
+}
+
+/**
+ * A sheet is open over the page: the sheet makes everything beside it inert (components/c/common/Sheet.tsx
+ * marks the children of <body>), and so the D root, wherever it sits, has an inert ancestor or is one.
+ */
+export function behindSheet(root: Element): boolean {
+  return root.closest("[inert]") !== null;
 }
 
 /** Whether any part of the box is in the viewport. */

@@ -114,6 +114,47 @@
   }
 }
 
+/*
+ * When three flights do not fit, two columns share what the labels leave, so a full swipe moves
+ * by exactly one column and comes to rest with the second flight against the labels: no cut
+ * column beside them. The table's min-width takes the larger of this and the least column (two
+ * flights then fill the card as before; with no answer here nothing changes). Each threshold is
+ * the label column plus three least columns of that band, measured on the card itself.
+ */
+[data-theme="d"] .d-compare-card {
+  container: d-compare-card / inline-size;
+}
+
+@media (max-width: 399.98px) {
+  [data-theme="d"] .d-compare-card > table {
+    --d-compare-fill: calc((100% - var(--d-compare-label)) / 2);
+  }
+}
+
+@media (min-width: 400px) and (max-width: 639.98px) {
+  @container d-compare-card (width < 476px) {
+    [data-theme="d"] .d-compare-card > table {
+      --d-compare-fill: calc((100% - var(--d-compare-label)) / 2);
+    }
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  @container d-compare-card (width < 44.5rem) {
+    [data-theme="d"] .d-compare-card > table {
+      --d-compare-fill: calc((100% - var(--d-compare-label)) / 2);
+    }
+  }
+}
+
+@media (min-width: 1024px) {
+  @container d-compare-card (width < 51.5rem) {
+    [data-theme="d"] .d-compare-card > table {
+      --d-compare-fill: calc((100% - var(--d-compare-label)) / 2);
+    }
+  }
+}
+
 /* Sideways padding lives here, so every row agrees; rows set their own height with utilities. */
 [data-theme="d"] .d-compare-sticky {
   padding-left: var(--d-compare-pad);
@@ -444,6 +485,18 @@
   display: flex;
   min-height: 44px;
   align-items: center;
+}
+
+/* The pick row: every tile on one centre line with the label, whichever are picked. On phones a
+   picked tile's label takes two lines, so every tile there is that tall, picked or not. */
+[data-theme="d"] .d-compare-row:has(.d-compare-choose) > :is(th, td) {
+  vertical-align: middle;
+}
+
+@media (max-width: 639.98px) {
+  [data-theme="d"] .d-compare-choose > button {
+    min-height: max(2.75rem, calc(2.5em + 1rem + 2px));
+  }
 }
 
 /* The pick tile and the tier tiles share a width from 640 px, so a column reads as one stack. */

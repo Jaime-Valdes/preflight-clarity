@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { PaperPlane } from "@/components/d/brand/FlightPath";
 import {
+  animateOnce,
   D_FLY_EVENT,
   D_FLY_MS,
   D_RING_FROM_EVENT,
@@ -20,6 +22,11 @@ const RING_FROM = 12 / 44;
 const TAP_SLOP = 12;
 /** A click belongs to the release just before it; anything older is not its release. */
 const RELEASE_WINDOW_MS = 700;
+/**
+ * What can start a page move: a link, or a form's submit button (the search form pushes a route on submit;
+ * pressing Enter in a field clicks its submit button too). Only a click on one of these writes --d-tap-y.
+ */
+const NAVIGATES = 'a[href], form button:not([type="button"]):not([type="reset"]), form input[type="submit"]';
 /** The plane's place is sampled this many times along its arc; the browser interpolates between the samples. */
 const ARC_STEPS = 12;
 /** The plane keeps its nose a few degrees up the whole way: it glides, it never dives. */
@@ -39,6 +46,85 @@ function cancelAll(el: Element) {
   for (const animation of el.getAnimations()) animation.cancel();
 }
 
+/** The scroll reveal's class (docs/ui-d-cinematic.md, "Motion kit"), and what it never moves: a card holding a
+    combobox (its suggestion list would be trapped under the next card) and the sign-up card (its view event
+    watches its box). */
+const REVEAL = ".d-reveal";
+const REVEAL_NEVER = ':has([role="combobox"]), [aria-labelledby^="c-interest-"]';
+
+/** document.activeViewTransition (Chrome 142+, Safari 26.2+), not yet in TypeScript's DOM types. */
+type ActiveViewTransitionDocument = Document & { activeViewTransition?: { skipTransition(): void } | null };
+
+interface Reveals {
+  /** Looks again at every .d-reveal not yet seen: after a route change, a kept-alive page may be showing. */
+  rescan(): void;
+  stop(): void;
+}
+
+/**
+ * .d-reveal: an element that is below the screen when it is first seen rises its last 16 px, once, as it comes
+ * in; one already on screen (or above it) when first seen never moves. One IntersectionObserver for the whole
+ * layout and a childList observer to find new ones; the rise is a Web Animations API one-shot (animateOnce,
+ * "reveal"), so nothing is written to the DOM and nothing stays on the element, not even a compositor layer,
+ * once it has played. Position only; nothing at all under reduced motion. The input is the scroll position and
+ * nothing else, so every card is treated the same.
+ *
+ * An element is "seen" when the observer first reports it with a box: a kept-alive page is display: none, and
+ * its elements wait (unseen) until it shows again and rescan() asks the observer for a fresh report.
+ */
+function watchReveals(root: Element): Reveals | null {
+  if (typeof IntersectionObserver !== "function" || typeof MutationObserver !== "function") return null;
+  const done = new WeakSet<Element>();
+  const below = new WeakSet<Element>();
+  const io = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const el = entry.target;
+      const box = entry.boundingClientRect;
+      const bottom = entry.rootBounds?.bottom ?? window.innerHeight;
+      if (entry.isIntersecting) {
+        done.add(el);
+        io.unobserve(el);
+        // It came in from below; anything else (on screen when first seen, or back in from above) stays put.
+        if (below.has(el) && box.top > 0 && !el.matches(REVEAL_NEVER)) animateOnce(el, "reveal");
+      } else if (box.width === 0 && box.height === 0) {
+        // Not laid out: a hidden page. Not seen yet.
+      } else if (box.top >= bottom) {
+        below.add(el);
+      } else if (box.bottom <= 0) {
+        done.add(el);
+        io.unobserve(el);
+      }
+    }
+  });
+  const watch = (el: Element) => {
+    if (!done.has(el)) io.observe(el);
+  };
+  const scan = (node: Element) => {
+    if (node.matches(REVEAL)) watch(node);
+    for (const el of node.querySelectorAll(REVEAL)) watch(el);
+  };
+  const mo = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) if (node instanceof Element) scan(node);
+    }
+  });
+  mo.observe(root, { childList: true, subtree: true });
+  scan(root);
+  return {
+    rescan() {
+      for (const el of root.querySelectorAll(REVEAL)) {
+        if (done.has(el)) continue;
+        io.unobserve(el);
+        io.observe(el);
+      }
+    },
+    stop() {
+      mo.disconnect();
+      io.disconnect();
+    },
+  };
+}
+
 /**
  * The fixed layer for small motion that belongs to no component (docs/ui-d-cinematic.md,
  * "Motion kit"). Mounted once in app/d/layout.tsx, above the page and the tray, below sheets.
@@ -46,10 +132,14 @@ function cancelAll(el: Element) {
  *  - The tap ring: every click made with a pointer leaves one soft gold ring at the tap
  *    point. Three pooled elements restarted with the Web Animations API, so a tap adds no
  *    DOM node and writes no attribute (session replay records both).
- *  - `--d-tap-y` on <html>: the height of the last press, which the page transition's
- *    plane enters at. One custom-property write per press, and only when it changed.
+ *  - `--d-tap-y` on <html>: the height of the press behind the last click on a link or a
+ *    submit button, which the page transition's plane enters at. Written on that click and
+ *    only when it changed, never on a bare press: any custom property changed on <html>
+ *    restyles the whole document (in Chrome, registered as not inherited or not), and every
+ *    scroll on a phone starts with a press.
  *  - The fly-to plane and the soft ring around a control: flyTo() and ringFrom() in
  *    ./motion ask for them with a window event that carries geometry and nothing else.
+ *  - The scroll reveal for every .d-reveal in the layout (watchReveals, above).
  *
  * Decoration only: aria-hidden, no pointer events, nothing focusable, no analytics. Its
  * listeners are passive, sit on the window (the pointer and click ones in the capture
@@ -59,6 +149,25 @@ function cancelAll(el: Element) {
  */
 export function DMotionLayer() {
   const layerRef = useRef<HTMLDivElement>(null);
+  const revealsRef = useRef<Reveals | null>(null);
+  const pathname = usePathname();
+
+  // The layer is the last child of the layout's root, which holds the header, every page and the footer.
+  useEffect(() => {
+    const root = layerRef.current?.parentElement;
+    if (!root) return;
+    const reveals = watchReveals(root);
+    revealsRef.current = reveals;
+    return () => {
+      reveals?.stop();
+      revealsRef.current = null;
+    };
+  }, []);
+
+  // A route change can show a kept-alive page whose elements were never laid out: look at them again.
+  useEffect(() => {
+    revealsRef.current?.rescan();
+  }, [pathname]);
 
   useEffect(() => {
     const layer = layerRef.current;
@@ -94,7 +203,6 @@ export function DMotionLayer() {
       if (!event.isPrimary) return;
       downX = event.clientX;
       downY = event.clientY;
-      setTapY(event.clientY);
     }
 
     function onPointerUp(event: PointerEvent) {
@@ -121,21 +229,26 @@ export function DMotionLayer() {
       // pointerType where click is a PointerEvent. It gets no ring; the transition's plane enters level
       // with the focused control instead.
       const pointerType = (event as PointerEvent).pointerType;
+      const navigates = event.target instanceof Element && event.target.closest(NAVIGATES) !== null;
+      // A second page move asked for while a wipe still runs: React holds the next page until the running
+      // transition has finished, so the new tap would wait out the old wipe. Finish that wipe now instead.
+      if (navigates) (document as ActiveViewTransitionDocument).activeViewTransition?.skipTransition();
       if (event.detail === 0 || pointerType === "") {
         const focused = document.activeElement;
         const el = focused instanceof Element && focused !== document.body ? focused : event.target;
-        if (el instanceof Element) {
+        if (navigates && el instanceof Element) {
           const box = el.getBoundingClientRect();
           if (box.width > 0 || box.height > 0) setTapY(box.top + box.height / 2);
         }
         return;
       }
+      // The ring grows from where the finger lifted. A touch browser may nudge the click itself onto the
+      // nearest control, so the click's own point is only the fallback; the plane enters where it pressed.
+      const released = event.timeStamp - upAt < RELEASE_WINDOW_MS;
+      if (navigates) setTapY(released ? downY : event.clientY);
       if (!canAnimate || reduced.matches) return;
       // A label passes its click on to its control: one tap, one ring.
       if (event.timeStamp - lastRingAt < 40) return;
-      // The ring grows from where the finger lifted. A touch browser may nudge the click itself onto the
-      // nearest control, so the click's own point is only the fallback.
-      const released = event.timeStamp - upAt < RELEASE_WINDOW_MS;
       if (released && Math.hypot(upX - downX, upY - downY) > TAP_SLOP) return;
       // This layer sits under an open sheet (the layer table in the contract), so a ring there would only show
       // as a sliver beside the panel. A tap on the scrim closes the sheet and gets its ring on the page.

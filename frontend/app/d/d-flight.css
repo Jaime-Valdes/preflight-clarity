@@ -211,3 +211,96 @@ html[data-d-on]:active-view-transition .d-pass-plane {
     transform: translateY(0);
   }
 }
+
+/* ── 5. The flight page's notices ────────────────────────────────────────────────────────── */
+
+/*
+ * The four dead ends of version C's shared flight page (components/c/flight/Notice.tsx: a link with no
+ * route, a date out of range, a flight not on the schedule, a flight that has left) wear D's dead-end
+ * card: the same paper card as "not found" and the empty compare, the primary at D's full size with
+ * its lip (the kit already gives it the royal fill), and the secondary as D's 2 px ink outline. The
+ * card is found by its shape: the one card whose first child is the icon tile and whose second is the
+ * page's h1. Copy, markup and links are unchanged.
+ */
+[data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) {
+  border-radius: 24px;
+  box-shadow: var(--shadow-soft);
+  padding: 2rem 1.25rem 1.75rem;
+}
+
+[data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > h1 {
+  color: var(--color-ink);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+[data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > div:last-child > a {
+  width: 100%;
+  max-width: 24rem;
+  height: 3.5rem;
+  margin-inline: auto;
+  padding-inline: 1.5rem;
+  font-size: 17px;
+}
+
+/* In place of the icon tile, a still drawing of the cloud as the other dead ends show it on their stage (the
+   same body, face and colours as components/d/brand/CloudMascot.tsx, at rest). A picture on the tile, its icon
+   hidden: no text and no element is added, and it is decoration only (the tile is aria-hidden). */
+[data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > [aria-hidden].size-14:first-child {
+  width: 6rem;
+  height: 4.8rem;
+  border-radius: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 96'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='.3' stop-color='%23fff4dc'/%3E%3Cstop offset='1' stop-color='%23FFF1CF'/%3E%3C/linearGradient%3E%3CclipPath id='c'%3E%3Cpath d='M24 74C8 74 6 54 20 50C16 36 32 26 42 35C44 17 68 13 75 30C87 23 103 34 97 50C111 52 111 74 96 74Z'/%3E%3C/clipPath%3E%3C/defs%3E%3Cpath d='M24 74C8 74 6 54 20 50C16 36 32 26 42 35C44 17 68 13 75 30C87 23 103 34 97 50C111 52 111 74 96 74Z' fill='url(%23f)'/%3E%3Cg clip-path='url(%23c)'%3E%3Cellipse cx='60' cy='86' rx='56' ry='18' fill='%23fce7b4'/%3E%3C/g%3E%3Cpath d='M27 43C29 36 35 33 40 35' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M24 74C8 74 6 54 20 50C16 36 32 26 42 35C44 17 68 13 75 30C87 23 103 34 97 50C111 52 111 74 96 74Z' fill='none' stroke='%2314213d' stroke-width='4' stroke-linejoin='round'/%3E%3Cellipse cx='41' cy='59' rx='4.6' ry='3' fill='%23ffc53d'/%3E%3Cellipse cx='75' cy='59' rx='4.6' ry='3' fill='%23ffc53d'/%3E%3Ccircle cx='49' cy='52' r='3.5' fill='%2314213d'/%3E%3Ccircle cx='67' cy='52' r='3.5' fill='%2314213d'/%3E%3Ccircle cx='50' cy='50.8' r='1.05' fill='%23fff'/%3E%3Ccircle cx='68' cy='50.8' r='1.05' fill='%23fff'/%3E%3Cpath d='M52 60.5C55 64.5 61 64.5 64 60.5' fill='none' stroke='%2314213d' stroke-width='3.2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  box-shadow: none;
+}
+
+[data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > [aria-hidden].size-14:first-child > svg {
+  display: none;
+}
+
+[data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > h1 {
+  margin-top: 0.375rem;
+}
+
+/* The secondary ("New search"): D's outline pill, the look of D_PILL_OUTLINE, a step quieter than the primary. */
+[data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > div:last-child > a:not(.bg-night-900) {
+  background-color: transparent;
+  color: var(--color-ink);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow:
+    inset 0 0 0 2px var(--color-ink),
+    0 0 0 0 rgb(29 73 188 / 0);
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > div:last-child > a:not(.bg-night-900):hover {
+    background-color: rgb(20 33 61 / 0.06);
+  }
+}
+
+[data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > div:last-child > a:not(.bg-night-900):active {
+  background-color: rgb(20 33 61 / 0.1);
+  transition-duration: var(--d-press);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > div:last-child > a:not(.bg-night-900):active {
+    scale: 0.97;
+  }
+}
+
+@media (min-width: 640px) {
+  [data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) {
+    padding-inline: 2rem;
+  }
+  [data-theme="d"] .rounded-3xl:has(> [aria-hidden].size-14:first-child + h1) > div:last-child > a {
+    width: auto;
+    min-width: 14rem;
+    max-width: none;
+    margin-inline: 0;
+  }
+}
