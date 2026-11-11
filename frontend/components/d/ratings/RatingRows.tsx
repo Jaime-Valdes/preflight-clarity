@@ -1,9 +1,10 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Rating } from "@preflight/shared/ratings";
 import { CategoryIcon } from "@/components/d/brand/CategoryIcon";
+import { animateOnce } from "@/components/d/motion/motion";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { RatingSheet } from "./RatingSheet";
@@ -17,15 +18,44 @@ interface RatingRowsProps {
   className?: string;
 }
 
+/** How much of a row has to be on screen before its badge stamps: by then the badge itself is in view. */
+const STAMP_AT = 0.5;
+
 /**
  * The four ratings as rows: the category's outlined icon on its tier's tint,
  * the category, the tier in words, the one-line meaning and the basis; a tap
  * opens the detail sheet. Used on the flight page (and anywhere all four are
  * listed).
+ *
+ * Motion (docs/ui-d-cinematic.md, "Small interactions"): a row rises its last
+ * 16 px as it scrolls in (d-reveal), lifts under a mouse and gives under a
+ * press (d-row), and its icon badge stamps once when the row is half on
+ * screen. Every row gets the same, whatever its rating: the only input is
+ * whether the row is in view.
  */
 export function RatingRows({ ratings, flightLabel, from, className }: RatingRowsProps) {
+  const listRef = useRef<HTMLUListElement>(null);
+
+  // One observer for the list. A row is watched until it has been seen once; animateOnce stays quiet under reduced motion.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          observer.unobserve(entry.target);
+          animateOnce(entry.target.querySelector("[data-rating-badge]"), "stamp");
+        }
+      },
+      { threshold: STAMP_AT },
+    );
+    for (const row of Array.from(list.children)) observer.observe(row);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <ul className={cn("flex flex-col gap-2.5", className)}>
+    <ul ref={listRef} className={cn("flex flex-col gap-3", className)}>
       {ratings.map((rating, index) => (
         <RatingRow key={rating.category} rating={rating} flightLabel={flightLabel} from={from} index={index} />
       ))}
@@ -45,9 +75,13 @@ function RatingRow({ rating, flightLabel, from, index }: { rating: Rating; fligh
           setOpen(true);
           track("d_rating_open", { category: rating.category, tier: rating.tier, basis: rating.basis, from });
         }}
-        className="flex w-full items-start gap-3 rounded-[20px] bg-surface px-4 py-3.5 text-left shadow-soft transition-[background-color,transform] duration-[120ms] hover:bg-canvas/40 active:scale-[0.99]"
+        className="d-row d-reveal d-rating-row flex w-full items-start gap-3.5 rounded-[24px] bg-surface p-4 text-left shadow-soft sm:px-5"
       >
-        <span aria-hidden className={cn("mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full ring-2 ring-ink", tone.bg)}>
+        <span
+          aria-hidden
+          data-rating-badge
+          className={cn("mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full ring-2 ring-ink", tone.bg)}
+        >
           <CategoryIcon category={rating.category} />
         </span>
         <span className="min-w-0 flex-1">

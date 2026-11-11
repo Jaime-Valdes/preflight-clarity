@@ -5,8 +5,9 @@
  * Two parts. The rig: how components/d/brand/CloudMascot.tsx looks, floats, blinks, looks around
  * and wears a mood. The companion: the one roaming cloud components/d/cloud/DCompanion.tsx places
  * on the top edge of a card. The scripts under components/d/cloud write only --gx / --gy and
- * data-mood on a cloud, data-cloud-away on a home cloud, and translate / scale / data-on on the
- * companion; everything that moves is a transition or an animation declared here.
+ * data-mood on a cloud, data-cloud-away on a home cloud, and translate / scale / data-on /
+ * data-blink on the companion; everything that moves is a transition or an animation declared
+ * here, on an HTML box, so the browser can run it without laying out or painting anything again.
  */
 
 /* ── The rig ─────────────────────────────────────────────────────────────── */
@@ -22,21 +23,21 @@
 .d-cloud {
   /* The face reads the cloud's own width: a look has to travel further to read on a small cloud. */
   container-type: inline-size;
-  /* How far a full look (--gx or --gy at 1) carries the face and, on top of that, the eyes. In the
-     drawing's own units: 120 of them span the cloud. */
-  --d-cloud-face-x: 3px;
-  --d-cloud-face-y: 2.4px;
-  --d-cloud-eye-x: 1.4px;
-  --d-cloud-eye-y: 1.2px;
+  /* How far a full look (--gx or --gy at 1) carries the face and, on top of that, the eyes. In
+     hundredths of the cloud's width: the drawing is 120 units wide, so 2.5cqw is 3 of its units. */
+  --d-cloud-face-x: 2.5cqw;
+  --d-cloud-face-y: 2cqw;
+  --d-cloud-eye-x: 1.1667cqw;
+  --d-cloud-eye-y: 1cqw;
   /* How far a nod dips. */
   --d-cloud-dip: 2.5px;
 }
 @container (max-width: 111.9px) {
   .d-cloud-pose {
-    --d-cloud-face-x: 4.5px;
-    --d-cloud-face-y: 3.6px;
-    --d-cloud-eye-x: 2.1px;
-    --d-cloud-eye-y: 1.8px;
+    --d-cloud-face-x: 3.75cqw;
+    --d-cloud-face-y: 3cqw;
+    --d-cloud-eye-x: 1.75cqw;
+    --d-cloud-eye-y: 1.5cqw;
   }
 }
 @container (min-width: 126px) {
@@ -70,19 +71,41 @@
   }
 }
 
+/* The drawing is a stack of layers the size of the cloud's box: the body, and over it the face,
+   which holds the eyes. The parts that move are HTML boxes around their piece of the drawing, not
+   groups inside one SVG, so that every look, blink and nod is a transform the browser can run off
+   the main thread: nothing is laid out or painted again while the eyes follow a pointer. */
 .d-cloud-art {
+  display: block;
+  position: relative;
+  isolation: isolate;
   transform-origin: 50% 79%;
+}
+.d-cloud-face,
+.d-cloud-eyes,
+.d-cloud-blinks {
+  display: block;
+  position: absolute;
+  inset: 0;
 }
 
 /* The look. The whole face slides toward it and the eyes go a little further, sooner: eyes lead,
-   face follows. Lengths on SVG groups are the drawing's units. */
+   face follows. */
 .d-cloud-face {
-  transform: translate(calc(var(--gx, 0) * var(--d-cloud-face-x)), calc(var(--gy, 0) * var(--d-cloud-face-y)));
-  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  translate: calc(var(--gx, 0) * var(--d-cloud-face-x)) calc(var(--gy, 0) * var(--d-cloud-face-y));
+  transition: translate 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .d-cloud-eyes {
-  transform: translate(calc(var(--gx, 0) * var(--d-cloud-eye-x)), calc(var(--gy, 0) * var(--d-cloud-eye-y)));
-  transition: transform 90ms cubic-bezier(0.22, 1, 0.36, 1);
+  translate: calc(var(--gx, 0) * var(--d-cloud-eye-x)) calc(var(--gy, 0) * var(--d-cloud-eye-y));
+  transition: translate 90ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* A look is written on the cloud's box about twelve times a second and inherits down to the two
+   boxes above. The drawings in them never read it, and here they say so: a look that kept
+   inheriting into them would restyle every shape, and repaint the layer under the cloud, on
+   each write. With it stopped at the drawings a write restyles ten boxes and paints nothing. */
+.d-cloud-art svg {
+  --gx: initial;
+  --gy: initial;
 }
 
 /* Eye and mouth states swap by opacity; nothing morphs. */
@@ -109,11 +132,11 @@
   opacity: 0;
 }
 
-/* The blink: 70 ms closing, 20 ms shut, 110 ms opening, around the eye line. Three in a 9.6 s
-   round, the last two close together, so it does not tick like a clock. */
+/* The blink: 70 ms closing, 20 ms shut, 110 ms opening, around the eye line: (58, 52) in the
+   drawing's 120 x 96 box. Three in a 9.6 s round, the last two close together, so it does not tick
+   like a clock. */
 .d-cloud-blinks {
-  transform-box: view-box;
-  transform-origin: 58px 52px;
+  transform-origin: 48.333% 54.167%;
   animation: d-cloud-blink 9.6s linear 1.4s infinite;
 }
 @keyframes d-cloud-blink {
@@ -161,6 +184,10 @@
 .d-cloud[data-mood="nod"] .d-cloud-blinks {
   animation: d-cloud-blink-once 200ms linear 70ms;
 }
+/* Only open eyes blink: the happy and the closed ones are arcs already. */
+.d-cloud:is([data-mood="glad"], [data-eyes]) .d-cloud-blinks {
+  animation: none;
+}
 @keyframes d-cloud-nod {
   0% {
     transform: none;
@@ -190,9 +217,14 @@
   opacity: 0;
 }
 
-/* A home cloud whose place the companion has taken: it left its box to sit with the visitor. */
+/* A home cloud whose place the companion has taken: it left its box to sit with the visitor. The
+   box empties in the frame the companion lifts out of it. When the companion appears somewhere
+   else instead (the home was half off the screen's edge), what shows of the home cloud fades. */
 .d-cloud[data-cloud-away] {
   opacity: 0;
+}
+.d-cloud[data-cloud-away="fade"] {
+  transition: opacity 160ms linear;
 }
 
 /* ── The companion ───────────────────────────────────────────────────────── */
@@ -229,6 +261,11 @@
 [data-theme="d"] .d-companion .d-cloud-shadow {
   opacity: 0.12;
 }
+/* One blink as it lands on a seat, late in the glide (0.7 of its 420 ms). In place of the usual
+   round of blinks while the mark is on, so the eyes only ever carry one animation. */
+[data-theme="d"] .d-companion[data-blink] .d-cloud-blinks {
+  animation: d-cloud-blink-once 200ms linear 294ms;
+}
 
 /* ── Reduced motion ──────────────────────────────────────────────────────── */
 
@@ -249,6 +286,6 @@
   }
   .d-cloud-face,
   .d-cloud-eyes {
-    transform: none;
+    translate: none;
   }
 }

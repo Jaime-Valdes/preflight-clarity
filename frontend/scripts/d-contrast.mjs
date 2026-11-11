@@ -6,7 +6,8 @@
  *
  * Prints every text / background pair the look relies on with its WCAG 2.x contrast ratio and exits 1 when one is
  * under its threshold: 4.5 : 1 for text, 3 : 1 for large text (24 px and up, or 19 px and up in bold) and for
- * non-text marks (rings, outlines, icons). Exits 2 when a token it needs is missing.
+ * non-text marks (rings, outlines, icons). Two texts that must not be taken for each other (an empty field's example
+ * and a typed answer) have to be 3 : 1 apart. Exits 2 when a token it needs is missing.
  *
  * Colours are read from app/globals.css (the D palette in `@theme static` and the re-pointing block under
  * [data-theme="d"]), so a token changed there is checked here without a second edit. The four sky gradients are
@@ -20,6 +21,7 @@ import { fileURLToPath } from "node:url";
 const TEXT = 4.5;
 const LARGE = 3;
 const MARK = 3;
+const APART = 3;
 
 const cssPath = fileURLToPath(new URL("../app/globals.css", import.meta.url));
 const skyCssPath = fileURLToPath(new URL("../app/d/d-sky.css", import.meta.url));
@@ -143,7 +145,7 @@ const WHITE = "#FFFFFF";
 
 const rows = [];
 let section = "";
-/** kind: "text" (4.5), "large" (3) or "mark" (3). */
+/** kind: "text" (4.5), "large" (3), "mark" (3) or "apart" (3: two texts that must look different). */
 function pair(fgLabel, fg, bgLabel, bg, where, kind = "text") {
   rows.push({ section, fgLabel, fg, bgLabel, bg, where, kind });
 }
@@ -191,7 +193,13 @@ section = "On paper (cards, the tray, sheets)";
 pair("ink", t["ink-900"], "surface", t.surface, "card headings, fares");
 pair("ink-soft", t["ink-700"], "surface", t.surface, "card body");
 pair("ink-mute", t["ink-500"], "surface", t.surface, "secondary text, the tray's note");
-pair("ink-mute (ink-400)", t["ink-400"], "surface", t.surface, "placeholders, chevrons");
+pair("ink-mute (ink-400)", t["ink-400"], "surface", t.surface, "chevrons and small icons");
+// Placeholders. Every field D shows is filled with surface (flow/AirportField, c/search/SearchForm, the sign-up sheet);
+// the contract's paper is checked as written too, so the pair holds even if the token moves.
+pair("ink-faint", t["ink-faint"], "paper #FFFDF8", "#FFFDF8", "the example in an empty field: City or airport, Alex");
+pair("ink-faint", t["ink-faint"], "surface (a field's fill)", t.surface, "the same, on the fill the fields ask for");
+pair("ink-faint", t["ink-faint"], "ink (a typed answer)", t["ink-900"], "an example must not read as an answer", "apart");
+pair("sky-ink", t["sky-ink"], "surface", t.surface, "a form's hint about a field to fix");
 pair("royal", t.royal, "surface", t.surface, "royal words or icons on a card");
 const skyTile = over(t.canvas, 0.7, t.surface);
 pair("ink", t.ink, "sky tile (sky 70% on paper)", skyTile, "priority tiles, route chips");
@@ -205,18 +213,19 @@ const trayOff = over(t.line, 0.7, t.surface);
 pair("ink-mute (ink-400)", t["ink-400"], "line 70% on paper", trayOff, "shared disabled pills (exempt as disabled; kept readable)");
 
 section = "Controls: royal is for doing";
-pair("white", WHITE, "royal", t.royal, "primary buttons, the chosen day and sort, a ranked tile, the compare count");
+pair("white", WHITE, "royal", t.royal, "primary buttons, the chosen day and sort, a ranked tile, the compare count, the check in a shared Compare toggle");
 pair("white", WHITE, "royal-hover", t["royal-hover"], "a primary under the pointer");
 pair("white", WHITE, "royal-press", t["royal-press"], "a primary while pressed");
 pair("white 75%", over(WHITE, 0.75, t.royal), "royal", t.royal, "a ranked tile's second line");
 pair("white 70%", over(WHITE, 0.7, t.royal), "royal", t.royal, "the chosen day: weekday and flight count");
-pair("royal", t.royal, "royal-100", t["royal-100"], "a selected outline control: Compare on, Your pick");
+pair("royal", t.royal, "royal-100", t["royal-100"], "a selected outline control: Compare on, Your pick, the shared In compare row and Compare toggle");
 pair("ink", t.ink, "royal-100", t["royal-100"], "ink beside it");
+pair("ink-soft", t["ink-700"], "royal-100", t["royal-100"], "Remove, beside In compare");
 pair("ink-mute", t["ink-mute"], "sky-deep", t["sky-deep"], "a disabled primary's label");
 pair("white", WHITE, "night-900 (re-pointed)", t["night-900"], "every shared primary and selected state");
 pair("white", WHITE, "night-800 (re-pointed)", t["night-800"], "their hover");
 pair("white", WHITE, "night-950 (re-pointed)", t["night-950"], "their press");
-pair("white", WHITE, "ink", t.ink, "the brand tile, an airline tile kept on ink, D's ink pills");
+pair("white", WHITE, "ink", t.ink, "the brand tile, every airline tile, D's ink pills");
 pair("ink", t.ink, "gold", t.gold, "the rank number on its coin");
 pair("ink", t.ink, "butter", t.butter, "selected text, the link highlighter");
 
@@ -229,20 +238,17 @@ for (const tier of ["leaf", "sun", "amber"]) {
 }
 
 section = "Shared scales, re-pointed (calm = leaf, breeze = sky, dusk = cream, sand = amber)";
-pair("white", WHITE, "calm-500", t["calm-500"], "airline tile");
-pair("white", WHITE, "breeze-500", t["breeze-500"], "airline tile");
+// Airline tiles are ink for every airline (see Controls), so no tile pair is listed here any more.
 pair("calm-700", t["calm-700"], "calm-50", t["calm-50"], "benchmark tags, good notes");
-pair("calm-700", t["calm-700"], "calm-100", t["calm-100"], "airline tile");
 pair("calm-800", t["calm-800"], "calm-50", t["calm-50"], "the seat note");
-pair("breeze-700", t["breeze-700"], "breeze-50", t["breeze-50"], "info notes, icon tiles");
-pair("breeze-700", t["breeze-700"], "breeze-100", t["breeze-100"], "filter chips, airline tile");
+pair("breeze-700", t["breeze-700"], "breeze-50", t["breeze-50"], "info notes, icon tiles (the shared calm ones too)");
+pair("breeze-700", t["breeze-700"], "breeze-100", t["breeze-100"], "a filter chip under the pointer");
 pair("breeze-600", t["breeze-600"], "surface", t.surface, "the forecast marker's label");
-pair("dusk-600", t["dusk-600"], "dusk-100 (cream)", t["dusk-100"], "airline tile");
+pair("dusk-600", t["dusk-600"], "dusk-50", t["dusk-50"], "the pilot cards' icon tiles");
 pair("dusk-700", t["dusk-700"], "dusk-50", t["dusk-50"], "the sign-up card's icon tile, people notes");
 pair("dusk-700", t["dusk-700"], "surface", t.surface, "the pilot card's button");
 pair("sand-700", t["sand-700"], "sand-50", t["sand-50"], "benchmark tags");
-pair("sand-700", t["sand-700"], "sand-100", t["sand-100"], "airline tile");
-pair("sand-700", t["sand-700"], "surface", t.surface, "form hints");
+pair("sand-700", t["sand-700"], "surface", t.surface, "benchmark lines behind typical");
 
 section = "Non-text marks";
 pair("focus ring: ink", t.ink, `the deepest sky ${deepest.colour}`, deepest.colour, "keyboard focus on the sky", "mark");
@@ -258,7 +264,7 @@ pair("icon: breeze-500", t["breeze-500"], "surface", t.surface, "info icons", "m
 
 // ── Report ──────────────────────────────────────────────────────────────────────
 
-const NEEDS = { text: TEXT, large: LARGE, mark: MARK };
+const NEEDS = { text: TEXT, large: LARGE, mark: MARK, apart: APART };
 /** Two decimals; four when a ratio under its threshold would round up to it, so a failure never reads as a pass. */
 function show(ratio, needs) {
   const two = ratio.toFixed(2);

@@ -4,15 +4,22 @@ import { countdownLabel, formatDuration, formatLongDate, formatTime12 } from "@p
 import { availabilityFor } from "@preflight/shared/forecast";
 import type { Flight } from "@preflight/shared/types";
 import { dayOffsetWords } from "@/components/c/flight/copy";
+import { CloudMascot } from "@/components/d/brand/CloudMascot";
 import { PaperPlane } from "@/components/d/brand/FlightPath";
 import { cn } from "@/lib/cn";
 
 /*
- * Version D's flight header (docs/ui-d-theme.md): the same facts as the
- * dashboard's boarding-pass header — airline and flight number, the route in
- * big codes, date and countdown, times, aircraft, gate or terminal — on a
- * white card, with the ink flight path drawing itself between the two codes.
- * Shows only what is knowable this many days before departure.
+ * Version D's flight header (docs/ui-d-cinematic.md, "Flight"): a boarding pass. The same facts as
+ * the dashboard's header, on two paper panels that meet at a dashed tear line: airline, flight
+ * number and the route in big codes above; times, aircraft and gate or terminal below. Both panels
+ * have 24 px corners, so where they meet a notch is left at each end of the line and the sky shows
+ * through it. The section itself paints nothing: the paper and its shadow belong to the panels.
+ *
+ * Between the codes the ink route line draws itself over a gold under-stroke while a paper plane
+ * flies it from the origin's code to the destination's, once (app/d/d-flight.css; under reduced
+ * motion the line is simply there and the plane has landed). The page's home cloud sits on the
+ * line's level stretch: decoration over decoration, so it covers no text at any width. The pass is
+ * also the companion's seat. Shows only what is knowable this many days before departure.
  */
 
 interface DFlightHeaderProps {
@@ -22,9 +29,15 @@ interface DFlightHeaderProps {
   className?: string;
 }
 
-/** The short path between the codes: one gentle curve, left to right, with the plane resting at its end. */
-const PATH = "M4 40C70 4 150 52 236 12";
-const END = { x: 236, y: 12, angle: -22 };
+/**
+ * The route between the codes, in a 240 x 56 box: a climb out of the origin, a level cruise and a
+ * last climb into the destination. It never descends, so the plane that flies it never dips its nose.
+ * app/d/d-flight.css places the home cloud on the cruise (49 % across, 43.2 % down).
+ */
+const PATH = "M6 42C70 10 150 36 230 14";
+/** Where the path ends and its direction there: the plane's place where CSS motion paths are missing. */
+const END = { x: 230, y: 14, angle: -15.4 };
+const VIEW_BOX = "0 0 240 56";
 
 function dayOffsetLabel(offset: number): string | null {
   if (offset === 0) return null;
@@ -40,11 +53,12 @@ function Eyebrow({ children, className }: { children: ReactNode; className?: str
   return <p className={cn("text-[11px] font-bold uppercase tracking-[0.1em] text-ink-mute", className)}>{children}</p>;
 }
 
+/** A fact chip. Always sky with ink text: leaf, sun and amber are kept for ratings. */
 function Chip({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-canvas px-2.5 py-1 text-[12px] font-bold text-ink",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-sky px-2.5 py-1 text-[12px] font-bold text-ink",
         className,
       )}
     >
@@ -53,115 +67,145 @@ function Chip({ children, className }: { children: ReactNode; className?: string
   );
 }
 
+/** One paper panel of the pass. d-pass-panel gives it its shadow, laid under both panels (app/d/d-flight.css). */
+const PANEL = "d-pass-panel relative rounded-[24px] bg-surface px-5 sm:px-6";
+
 export function DFlightHeader({ flight, daysUntil, className }: DFlightHeaderProps) {
   const { origin, destination, aircraft } = flight;
   const offset = dayOffsetLabel(flight.arriveDayOffset);
   const known = availabilityFor(daysUntil);
 
   return (
-    <section data-cloud-seat aria-label="Flight details" className={cn("rounded-[24px] bg-surface p-5 shadow-soft sm:p-6", className)}>
-      {/* Airline + flight number */}
-      <div className="flex items-start justify-between gap-3">
-        <h1 className="min-w-0">
-          <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-mute">Flight details</span>
-          <span className="block text-[17px] font-extrabold leading-snug tracking-tight text-ink [overflow-wrap:anywhere]">{flight.airline.name}</span>
-          <span className="mt-0.5 block text-[13px] font-normal text-ink-mute tabular-nums">Flight {flight.flightNumber}</span>
-          <span className="sr-only">
-            , {origin.code} to {destination.code}
+    <section data-cloud-seat aria-label="Flight details" className={cn("d-pass isolate rounded-[24px]", className)}>
+      {/* The upper panel: who flies it, and the route. */}
+      <div className={cn(PANEL, "pb-5 pt-5 sm:pt-6")}>
+        {/* Airline + flight number */}
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="min-w-0">
+            <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-mute">Flight details</span>
+            <span className="block text-[17px] font-extrabold leading-snug tracking-tight text-ink [overflow-wrap:anywhere]">{flight.airline.name}</span>
+            <span className="mt-0.5 block text-[13px] font-normal text-ink-mute tabular-nums">Flight {flight.flightNumber}</span>
+            <span className="sr-only">
+              , {origin.code} to {destination.code}
+            </span>
+          </h1>
+          <Chip className="mt-0.5">Nonstop</Chip>
+        </div>
+
+        {/* Route: the codes, with the path between them. */}
+        <div className="mt-5 grid grid-cols-[auto_minmax(3rem,1fr)_auto] items-center gap-3 sm:gap-5">
+          <span className="text-[36px] font-extrabold leading-none tracking-[-0.03em] text-ink sm:text-[44px]">{origin.code}</span>
+          <div aria-hidden className="d-pass-route relative">
+            <svg viewBox={VIEW_BOX} className="block h-auto w-full overflow-visible">
+              <path
+                d={PATH}
+                pathLength={1}
+                fill="none"
+                stroke="var(--color-gold)"
+                strokeOpacity="0.55"
+                strokeWidth="7"
+                strokeLinecap="round"
+                strokeDasharray="1 2"
+                className="d-pass-line d-pass-gold"
+              />
+              <path
+                d={PATH}
+                pathLength={1}
+                fill="none"
+                stroke="var(--color-ink)"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray="1 2"
+                className="d-pass-line d-pass-ink"
+              />
+            </svg>
+            {/* Where the companion starts on this page (components/d/cloud). */}
+            <CloudMascot data-cloud-home float={false} className="d-pass-cloud" />
+            {/* The plane has a layer of its own, so it passes in front of the cloud. */}
+            <svg viewBox={VIEW_BOX} className="pointer-events-none absolute inset-0 block size-full overflow-visible">
+              <g
+                className="d-pass-plane"
+                transform={`translate(${END.x} ${END.y}) rotate(${END.angle})`}
+                style={{ offsetPath: `path("${PATH}")` }}
+              >
+                <PaperPlane />
+              </g>
+            </svg>
+          </div>
+          <span className="text-right text-[36px] font-extrabold leading-none tracking-[-0.03em] text-ink sm:text-[44px]">{destination.code}</span>
+        </div>
+        <div className="mt-1.5 flex items-start justify-between gap-4 text-[13px] text-ink-mute">
+          <span className="min-w-0 truncate">{origin.city}</span>
+          <span className="min-w-0 truncate text-right">{destination.city}</span>
+        </div>
+
+        {/* Countdown + date */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Chip>
+            <Clock3 aria-hidden className="size-3.5" />
+            {countdown(daysUntil)}
+          </Chip>
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] text-ink-soft">
+            <CalendarDays aria-hidden className="size-3.5 shrink-0 text-ink-mute" />
+            <span className="truncate">{formatLongDate(flight.input.date)}</span>
           </span>
-        </h1>
-        <Chip className="mt-0.5">Nonstop</Chip>
-      </div>
-
-      {/* Route: the codes, with the path between them. */}
-      <div className="mt-5 grid grid-cols-[auto_minmax(3rem,1fr)_auto] items-center gap-3 sm:gap-5">
-        <span className="text-[36px] font-extrabold leading-none tracking-[-0.03em] text-ink sm:text-[44px]">{origin.code}</span>
-        <svg viewBox="0 0 240 56" aria-hidden className="block h-auto w-full overflow-visible">
-          <path
-            d={PATH}
-            pathLength={1}
-            fill="none"
-            stroke="var(--color-ink)"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeDasharray="1"
-            className="animate-d-draw"
-          />
-          <g transform={`translate(${END.x} ${END.y}) rotate(${END.angle})`}>
-            <PaperPlane />
-          </g>
-        </svg>
-        <span className="text-right text-[36px] font-extrabold leading-none tracking-[-0.03em] text-ink sm:text-[44px]">{destination.code}</span>
-      </div>
-      <div className="mt-1.5 flex items-start justify-between gap-4 text-[13px] text-ink-mute">
-        <span className="min-w-0 truncate">{origin.city}</span>
-        <span className="min-w-0 truncate text-right">{destination.city}</span>
-      </div>
-
-      {/* Countdown + date */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <Chip className="bg-leaf-100 text-leaf-ink">
-          <Clock3 aria-hidden className="size-3.5" />
-          {countdown(daysUntil)}
-        </Chip>
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] text-ink-soft">
-          <CalendarDays aria-hidden className="size-3.5 shrink-0 text-ink-mute" />
-          <span className="truncate">{formatLongDate(flight.input.date)}</span>
-        </span>
-      </div>
-
-      <div aria-hidden className="mt-5 border-t-2 border-dashed border-slate/60" />
-
-      {/* Times, aircraft, gate */}
-      <div className="mt-4 grid grid-cols-[auto_1fr_auto] items-end gap-3">
-        <div>
-          <Eyebrow>Departs</Eyebrow>
-          <p className="mt-1 whitespace-nowrap text-[20px] font-extrabold leading-none text-ink tabular-nums">{formatTime12(flight.departTime)}</p>
-          <p className="mt-1 text-[12px] text-ink-mute">{origin.code}</p>
-        </div>
-        <div className="min-w-0 text-center">
-          <Eyebrow>Duration</Eyebrow>
-          <p className="mt-1 whitespace-nowrap text-[15px] font-bold leading-[20px] text-ink tabular-nums">{formatDuration(flight.blockMin)}</p>
-          <p className="mt-1 whitespace-nowrap text-[12px] text-ink-mute tabular-nums">{flight.distanceMi.toLocaleString("en-US")} mi</p>
-        </div>
-        <div className="text-right">
-          <Eyebrow>Arrives</Eyebrow>
-          <p className="mt-1 whitespace-nowrap text-[20px] font-extrabold leading-none text-ink tabular-nums">
-            {formatTime12(flight.arriveTime)}
-            {offset ? (
-              <>
-                <sup aria-hidden className="ml-0.5 text-[11px] font-bold text-ink-mute">
-                  {offset}
-                </sup>
-                <span className="sr-only"> ({dayOffsetWords(flight.arriveDayOffset)})</span>
-              </>
-            ) : null}
-          </p>
-          <p className="mt-1 text-[12px] text-ink-mute">{destination.code}</p>
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-[1fr_auto] items-start gap-3">
-        <div className="min-w-0">
-          <Eyebrow>{known.airframe ? "Aircraft" : "Scheduled aircraft"}</Eyebrow>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="text-[15px] font-bold leading-snug text-ink">{aircraft.fullName}</p>
-            <Chip>{aircraft.bodyType === "wide" ? "Wide-body" : "Narrow-body"}</Chip>
+      {/* The lower panel, the pass's stub: times, aircraft, gate. The tear line lies on the seam between the two. */}
+      <div className={cn(PANEL, "pb-5 pt-[18px] sm:pb-6")}>
+        <div aria-hidden className="absolute inset-x-6 -top-px border-t-2 border-dashed border-slate/60" />
+
+        <div className="grid grid-cols-[auto_1fr_auto] items-end gap-3">
+          <div>
+            <Eyebrow>Departs</Eyebrow>
+            <p className="mt-1 whitespace-nowrap text-[20px] font-extrabold leading-none text-ink tabular-nums">{formatTime12(flight.departTime)}</p>
+            <p className="mt-1 text-[12px] text-ink-mute">{origin.code}</p>
           </div>
-        </div>
-        {known.gate ? (
+          <div className="min-w-0 text-center">
+            <Eyebrow>Duration</Eyebrow>
+            <p className="mt-1 whitespace-nowrap text-[15px] font-bold leading-[20px] text-ink tabular-nums">{formatDuration(flight.blockMin)}</p>
+            <p className="mt-1 whitespace-nowrap text-[12px] text-ink-mute tabular-nums">{flight.distanceMi.toLocaleString("en-US")} mi</p>
+          </div>
           <div className="text-right">
-            <Eyebrow>Gate</Eyebrow>
-            <p className="mt-1 text-[15px] font-bold leading-snug text-ink tabular-nums">{flight.gate}</p>
-            <p className="text-[12px] text-ink-mute">Terminal {flight.terminal} · can change</p>
+            <Eyebrow>Arrives</Eyebrow>
+            <p className="mt-1 whitespace-nowrap text-[20px] font-extrabold leading-none text-ink tabular-nums">
+              {formatTime12(flight.arriveTime)}
+              {offset ? (
+                <>
+                  <sup aria-hidden className="ml-0.5 text-[11px] font-bold text-ink-mute">
+                    {offset}
+                  </sup>
+                  <span className="sr-only"> ({dayOffsetWords(flight.arriveDayOffset)})</span>
+                </>
+              ) : null}
+            </p>
+            <p className="mt-1 text-[12px] text-ink-mute">{destination.code}</p>
           </div>
-        ) : (
-          <div className="text-right">
-            <Eyebrow>Terminal</Eyebrow>
-            <p className="mt-1 text-[15px] font-bold leading-snug text-ink tabular-nums">{flight.terminal}</p>
-            <p className="whitespace-nowrap text-[12px] text-ink-mute">Gate posted on the day</p>
+        </div>
+
+        <div className="mt-4 grid grid-cols-[1fr_auto] items-start gap-3">
+          <div className="min-w-0">
+            <Eyebrow>{known.airframe ? "Aircraft" : "Scheduled aircraft"}</Eyebrow>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="text-[15px] font-bold leading-snug text-ink">{aircraft.fullName}</p>
+              <Chip>{aircraft.bodyType === "wide" ? "Wide-body" : "Narrow-body"}</Chip>
+            </div>
           </div>
-        )}
+          {known.gate ? (
+            <div className="text-right">
+              <Eyebrow>Gate</Eyebrow>
+              <p className="mt-1 text-[15px] font-bold leading-snug text-ink tabular-nums">{flight.gate}</p>
+              <p className="text-[12px] text-ink-mute">Terminal {flight.terminal} · can change</p>
+            </div>
+          ) : (
+            <div className="text-right">
+              <Eyebrow>Terminal</Eyebrow>
+              <p className="mt-1 text-[15px] font-bold leading-snug text-ink tabular-nums">{flight.terminal}</p>
+              <p className="whitespace-nowrap text-[12px] text-ink-mute">Gate posted on the day</p>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

@@ -4,6 +4,9 @@ import { Check, Heart } from "lucide-react";
 import { useState } from "react";
 import { priceRank, type Rating, type RatingCategory } from "@preflight/shared/ratings";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
+import { D_PILL_PRIMARY, D_PILL_SELECTED } from "@/components/d/brand/buttons";
+import { cloudReact } from "@/components/d/cloud/react";
+import { ringFrom } from "@/components/d/motion/motion";
 import { track } from "@/lib/analytics";
 import { itemId, parseItemId, type CompareItem } from "@/lib/c/model";
 import { chooseFlight, clearChoice, useChoice } from "@/lib/d/choice";
@@ -18,7 +21,17 @@ import { cn } from "@/lib/cn";
  * d_flight_chosen with the flight's tiers, price rank, the dollars over the
  * cheapest flight that day and, when the pick replaces an earlier one for the
  * same route and day, the replaced flight's key (docs/ANALYTICS.md).
+ *
+ * Look (docs/ui-d-cinematic.md, "Small interactions"): the royal primary at
+ * rest; picked, the selected look (royal-100, a royal ring and label), never a
+ * rating's colour. The pick is the study's measured outcome, so it is
+ * acknowledged and never rewarded: one soft ring leaves the control and the
+ * cloud nods, and withdrawing a pick gets exactly the same ring and nod.
+ * Neither call is told anything about the flight.
  */
+
+/** The compact tile keeps its own shape (a table cell is no place for a pill) and takes the kit's colours and states. */
+const TILE = "inline-flex min-h-11 w-full items-center justify-center rounded-2xl px-2 py-2 text-[13px] leading-tight";
 
 export type ChooseFrom = "flight" | "compare";
 
@@ -107,13 +120,18 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
       <button
         type="button"
         aria-pressed={chosen}
-        onClick={toggle}
-        className={cn(
-          "inline-flex w-full items-center justify-center font-bold transition-[background-color,transform] duration-[120ms] active:scale-[0.98]",
+        onClick={(event) => {
+          toggle();
+          // The same for a pick and for a withdrawal.
+          ringFrom(event.currentTarget);
+          cloudReact("nod");
+        }}
+        className={
           // A table cell is about 88 px wide on phones: a soft tile with a short label, never a wrapped blob.
-          compact ? "min-h-11 rounded-2xl px-2 py-2 text-[13px] leading-tight" : "h-14 gap-2 rounded-full px-6 text-[17px]",
-          chosen ? "bg-leaf-100 text-leaf-ink ring-2 ring-inset ring-leaf-ink hover:bg-leaf-100/70" : "bg-ink text-white hover:bg-night-800",
-        )}
+          compact
+            ? cn(TILE, chosen ? "d-btn-selected font-bold" : "d-btn-primary font-extrabold")
+            : cn(chosen ? D_PILL_SELECTED : D_PILL_PRIMARY, "h-14 w-full px-6 text-[17px]")
+        }
       >
         {compact ? (
           <>
@@ -157,7 +175,7 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
         )}
       </button>
       {compact ? null : (
-        <p className={cn("mt-2 text-center text-xs leading-snug", chosen ? "text-leaf-ink" : "text-ink-mute")}>
+        <p className="mt-2 text-center text-xs leading-snug text-ink-mute">
           {chosen ? "Noted — nothing is booked" : "Just a note for us — nothing is booked here."}
         </p>
       )}

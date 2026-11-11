@@ -1,0 +1,473 @@
+/*
+ * Version D — d-home (docs/ui-d-cinematic.md, "Screen by screen"): the home: the hero scene (in-flow sun, stage cloud, flight line), the setup card and the search card.
+ * Plain CSS, loaded by app/d/layout.tsx after the kit (d-motion.css), so a rule here wins a tie with it.
+ * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders;
+ * keyframes and custom properties are prefixed d-home- / --d-home-.
+ *
+ * How it is laid out:
+ *   1. The hero's layout: a scene band above the words on phones, two columns from 1024 px.
+ *   2. The scene: a stage of fixed proportions holding the sun, the flight line and the stage cloud
+ *      (and, on laptops, a cloud bank at the sun's foot).
+ *   3. The title sequence: what the scene does on arrival. Scenery only; words and the button never wait.
+ *   4. The setup card: the priority tiles and the rank coins.
+ *
+ * Still frames first: every rule that moves something sits inside `prefers-reduced-motion: no-preference`,
+ * so a visitor who asked for less motion gets the finished picture and nothing else.
+ */
+
+/* ── 1. The hero's layout ────────────────────────────────────────────────────────────────── */
+
+/* Phones and tablets: the scene is a band of sky under the header, then the words. The band is 216 px
+   tall where the screen has room and gives way on a short one, so "Let's begin" stays above the fold:
+   --d-home-rest is everything else from the top of the page to 16 px under the button (header,
+   wordmark, dashes, two lines of headline, three of copy, the button). `svh` is the height with the
+   phone browser's toolbars showing, which is what the first screen actually has, and unlike the
+   window's height it does not change during a scroll. */
+.d-home-scene {
+  --d-home-rest: 441px;
+  --d-home-min: 104px;
+  --d-home-max: 216px;
+  --d-home-band: clamp(var(--d-home-min), calc(100vh - var(--d-home-rest)), var(--d-home-max));
+  position: relative;
+  height: var(--d-home-band);
+  pointer-events: none;
+}
+@supports (height: 1svh) {
+  .d-home-scene {
+    --d-home-band: clamp(var(--d-home-min), calc(100svh - var(--d-home-rest)), var(--d-home-max));
+  }
+}
+/* Under 360 px wide the copy takes a fourth line. */
+@media (max-width: 359.98px) {
+  .d-home-scene {
+    --d-home-rest: 469px;
+    --d-home-min: 96px;
+  }
+}
+/* Tablets, and phones held sideways: a taller band, with the larger type under it. */
+@media (min-width: 640px) {
+  .d-home-scene {
+    --d-home-rest: 442px;
+    --d-home-min: 140px;
+    --d-home-max: 256px;
+  }
+}
+
+/* From a laptop up: words on the left, the scene on the right, centred on each other. */
+@media (min-width: 1024px) {
+  .d-home-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 2rem;
+    align-items: center;
+  }
+  .d-home-scene {
+    grid-row: 1;
+    grid-column: 2;
+    height: auto;
+  }
+  .d-home-words {
+    grid-row: 1;
+    grid-column: 1;
+  }
+}
+
+/* ── 2. The scene ────────────────────────────────────────────────────────────────────────── */
+
+/* The stage: a box of fixed proportions. Everything in the picture is placed in it by percentages
+   (and the flight line is drawn in its units), so the arrangement is the same at every size. On a
+   phone it is as tall as the band and keeps to the right; the line's tail runs on past its left edge
+   to the edge of the screen. No transform, filter or containment here or on any box around it: the
+   sun below has to stay in the page's own stacking order. */
+.d-home-stage {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  aspect-ratio: 358 / 216;
+}
+@media (min-width: 1024px) {
+  /* The column's width, or less in a short window, so the scene never pushes the cards off the first screen. */
+  .d-home-stage {
+    position: relative;
+    width: min(100%, 68vh);
+    height: auto;
+    margin-inline: auto;
+    aspect-ratio: 512 / 414;
+  }
+}
+
+/* The sun: the sky's own drawing (.d-sun in d-sky.css), which takes its size from --d-sun, the disc's
+   diameter. Here that is a share of the stage's width, so the sun keeps its place in the picture at
+   every size; the box is 1.44 times the disc and is placed by its centre. z-index -1 puts it with the
+   sky, behind every word and card on the page (the header's links, the setup card below), and after
+   the sky's clouds because it comes later in the page. */
+[data-theme="d"] .d-home-sun {
+  --d-sun: 46.94%;
+  position: absolute;
+  z-index: -1;
+  top: 45.4%;
+  left: 63.7%;
+  height: auto;
+  aspect-ratio: 1;
+  margin: calc(var(--d-sun) * -0.72) 0 0 calc(var(--d-sun) * -0.72);
+}
+@media (min-width: 1024px) {
+  [data-theme="d"] .d-home-sun {
+    --d-sun: 65.43%;
+    left: 58.6%;
+  }
+}
+/* Laptops: a cloud bank at the sun's foot, a flat scenery cloud like the sky's own (no outline, no face),
+   behind the stage cloud and in front of the sun, so the sun rises from behind it. In the sky's layer
+   with the sun. The sky's mid cloud rests in the same place, one layer further back: where the two
+   overlap they read as one bank. */
+.d-home-bank {
+  display: none;
+}
+@media (min-width: 1024px) {
+  [data-theme="d"] .d-home-bank {
+    position: absolute;
+    z-index: -1;
+    top: 65.2%;
+    left: 31.3%;
+    display: block;
+    width: 52.7%;
+  }
+}
+/* A visitor's own contrast colours, and paper: the sky steps aside (d-sky.css), and so do its sun and cloud here. */
+@media (forced-colors: active), print {
+  [data-theme="d"] .d-home-sun,
+  [data-theme="d"] .d-home-bank {
+    display: none;
+  }
+}
+
+/* The stage cloud, in front of the sun's lower left. */
+.d-home-cloud {
+  position: absolute;
+  top: 41.7%;
+  left: 17.9%;
+  width: 42.5%;
+}
+@media (min-width: 1024px) {
+  .d-home-cloud {
+    top: 53.6%;
+    left: 13.7%;
+    width: 43.75%;
+  }
+}
+
+/* The flight line (components/d/brand/FlightPath.tsx): one drawing per arrangement, each in its stage's
+   units, laid over the whole stage. Behind the cloud, in front of the sun. The one that is not in use
+   is hidden with `visibility`, not `display`: an element that comes back from `display: none` starts
+   its animations again, and a window dragged across 1024 px would redraw the line each time. */
+.d-home-line {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.d-home-line-tall {
+  visibility: hidden;
+}
+@media (min-width: 1024px) {
+  .d-home-line-band {
+    visibility: hidden;
+  }
+  .d-home-line-tall {
+    visibility: visible;
+  }
+}
+
+/* The plane rests at the end of its line, nose along the stroke: the last sample of its flight (the
+   keyframes at the foot of the next section). A CSS transform on the group, in the drawing's units. */
+.d-home-plane-band {
+  transform: translate(338px, 50px) rotate(-8.1deg);
+}
+.d-home-plane-tall {
+  transform: translate(492px, 114px) rotate(-9.2deg);
+}
+
+/* ── 3. The title sequence ───────────────────────────────────────────────────────────────── */
+
+/*
+ * About 1.8 s on arrival, scenery only: the sun rises 56 px, the cloud drifts in 48 px from the left,
+ * the line draws itself and the plane flies it, the wordmark's swash draws. Nothing waits for it: the
+ * words are readable and "Let's begin" is tappable from the first frame (the headline and the copy
+ * settle 12 px, position only). Every animation fills backwards, so nothing is left on any element
+ * afterwards. It plays again when the kept-alive page is shown again, which is fine for scenery.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] .d-home-sun {
+    animation: d-home-sunrise 1400ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) backwards;
+  }
+  .d-home-cloud {
+    animation: d-home-drift-in 900ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 150ms backwards;
+  }
+  /* The line and the plane share one glide: a soft start, then a long ease into the end of the line. The line's
+     drawing takes the curve as its timing function; the plane's keyframes below have it baked in. */
+  .d-home-route,
+  .d-home-trail {
+    animation: d-home-draw 1200ms cubic-bezier(0.3, 0.1, 0.25, 1) 250ms backwards;
+  }
+  .d-home-plane-band {
+    animation: d-home-fly-band 1300ms linear 450ms backwards;
+  }
+  .d-home-plane-tall {
+    animation: d-home-fly-tall 1300ms linear 450ms backwards;
+  }
+  .d-home-swash {
+    animation: d-home-draw 400ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 200ms backwards;
+  }
+  /* The words: a 12 px settle, 60 ms apart (--d-home-step), never a fade. The button does not move. */
+  .d-home-rise {
+    animation: d-home-rise 500ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) backwards;
+    animation-delay: calc(var(--d-home-step, 0) * 60ms);
+  }
+
+  /* Arriving by the plane wipe, the scene holds its first frame until the ribbon has crossed, so the
+     sequence is seen whole and not half under the old page. The words are not held. */
+  html[data-d-on]:active-view-transition :is(.d-home-sun, .d-home-cloud, .d-home-route, .d-home-trail, .d-home-plane, .d-home-swash) {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes d-home-sunrise {
+  from {
+    translate: 0 56px;
+  }
+}
+@keyframes d-home-drift-in {
+  from {
+    translate: -48px 0;
+  }
+}
+/* With pathLength="1" on the path and a dash as long as the path, the offset runs from 1 (nothing) to 0 (drawn). */
+@keyframes d-home-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+/*
+ * The plane's flight: its place and heading along the line, sampled from the two paths in
+ * components/d/brand/FlightPath.tsx every 2.5 % of the time, with the glide curve above
+ * (cubic-bezier(0.3, 0.1, 0.25, 1)) already in where each sample falls, so the animation runs linear.
+ * Plain transforms in the drawing's own units, not a CSS motion path: a motion path on a group inside
+ * an SVG is not something every phone's browser applies, and a plane left at the drawing's corner is
+ * worse than a few more lines here. The last frame is the resting place set above. To sample again
+ * after changing a path: for step i of 40, take the point at ease(i / 40) of the path's length
+ * (getPointAtLength) and the stroke's direction there.
+ */
+@keyframes d-home-fly-band {
+  0% { transform: translate(-500px, 199px) rotate(-0.5deg); }
+  2.5% { transform: translate(-490.8px, 198.9px) rotate(-0.5deg); }
+  5% { transform: translate(-477.5px, 198.8px) rotate(-0.5deg); }
+  7.5% { transform: translate(-459.4px, 198.7px) rotate(-0.5deg); }
+  10% { transform: translate(-436px, 198.5px) rotate(-0.5deg); }
+  12.5% { transform: translate(-407px, 198.2px) rotate(-0.5deg); }
+  15% { transform: translate(-372.2px, 197.9px) rotate(-0.6deg); }
+  17.5% { transform: translate(-331.8px, 197.4px) rotate(-0.7deg); }
+  20% { transform: translate(-286.6px, 196.9px) rotate(-0.8deg); }
+  22.5% { transform: translate(-238.1px, 196.1px) rotate(-1deg); }
+  25% { transform: translate(-188.1px, 195.2px) rotate(-1.2deg); }
+  27.5% { transform: translate(-138.3px, 193.9px) rotate(-1.7deg); }
+  30% { transform: translate(-90px, 192.2px) rotate(-2.6deg); }
+  32.5% { transform: translate(-44.4px, 189.4px) rotate(-4.3deg); }
+  35% { transform: translate(-2px, 185.4px) rotate(-6.8deg); }
+  37.5% { transform: translate(36.9px, 179.6px) rotate(-10.5deg); }
+  40% { transform: translate(71.9px, 171.5px) rotate(-16.2deg); }
+  42.5% { transform: translate(102.8px, 160.3px) rotate(-23.1deg); }
+  45% { transform: translate(129.7px, 147.6px) rotate(-27.3deg); }
+  47.5% { transform: translate(153.5px, 134.5px) rotate(-30deg); }
+  50% { transform: translate(174.6px, 121.9px) rotate(-31.7deg); }
+  52.5% { transform: translate(193.5px, 110px) rotate(-32.7deg); }
+  55% { transform: translate(210.4px, 99.1px) rotate(-33deg); }
+  57.5% { transform: translate(225.8px, 89.4px) rotate(-30.2deg); }
+  60% { transform: translate(240.2px, 81.5px) rotate(-27.3deg); }
+  62.5% { transform: translate(253.5px, 75.1px) rotate(-24.6deg); }
+  65% { transform: translate(265.7px, 69.8px) rotate(-22.3deg); }
+  67.5% { transform: translate(276.8px, 65.5px) rotate(-20.2deg); }
+  70% { transform: translate(286.8px, 62px) rotate(-18.2deg); }
+  72.5% { transform: translate(295.8px, 59.2px) rotate(-16.5deg); }
+  75% { transform: translate(303.7px, 57px) rotate(-14.9deg); }
+  77.5% { transform: translate(310.8px, 55.2px) rotate(-13.5deg); }
+  80% { transform: translate(316.9px, 53.8px) rotate(-12.3deg); }
+  82.5% { transform: translate(322.1px, 52.7px) rotate(-11.2deg); }
+  85% { transform: translate(326.5px, 51.8px) rotate(-10.3deg); }
+  87.5% { transform: translate(330.2px, 51.2px) rotate(-9.6deg); }
+  90% { transform: translate(333.1px, 50.7px) rotate(-9deg); }
+  92.5% { transform: translate(335.3px, 50.4px) rotate(-8.5deg); }
+  95% { transform: translate(336.8px, 50.2px) rotate(-8.2deg); }
+  97.5% { transform: translate(337.7px, 50px) rotate(-8.1deg); }
+  100% { transform: translate(338px, 50px) rotate(-8.1deg); }
+}
+@keyframes d-home-fly-tall {
+  0% { transform: translate(0px, 336px) rotate(-0.1deg); }
+  2.5% { transform: translate(5.8px, 335.9px) rotate(-1.2deg); }
+  5% { transform: translate(14.2px, 335.6px) rotate(-2.9deg); }
+  7.5% { transform: translate(25.6px, 334.8px) rotate(-5.5deg); }
+  10% { transform: translate(40.2px, 333px) rotate(-8.9deg); }
+  12.5% { transform: translate(58.2px, 329.5px) rotate(-13.1deg); }
+  15% { transform: translate(79.3px, 323.6px) rotate(-17.7deg); }
+  17.5% { transform: translate(103.4px, 315.2px) rotate(-19.5deg); }
+  20% { transform: translate(130.2px, 305.7px) rotate(-19.8deg); }
+  22.5% { transform: translate(158.9px, 295.1px) rotate(-20.7deg); }
+  25% { transform: translate(188.3px, 283.5px) rotate(-22.4deg); }
+  27.5% { transform: translate(217.1px, 271px) rotate(-24.7deg); }
+  30% { transform: translate(244.5px, 257.6px) rotate(-27.8deg); }
+  32.5% { transform: translate(269.5px, 243.2px) rotate(-32.1deg); }
+  35% { transform: translate(291.5px, 227.9px) rotate(-37.4deg); }
+  37.5% { transform: translate(311px, 212.5px) rotate(-38.6deg); }
+  40% { transform: translate(328.7px, 198.4px) rotate(-38.2deg); }
+  42.5% { transform: translate(345.1px, 185.7px) rotate(-37.1deg); }
+  45% { transform: translate(360.3px, 174.6px) rotate(-35.7deg); }
+  47.5% { transform: translate(374.3px, 164.8px) rotate(-33.9deg); }
+  50% { transform: translate(387.3px, 156.3px) rotate(-32.1deg); }
+  52.5% { transform: translate(399.3px, 149.1px) rotate(-30.2deg); }
+  55% { transform: translate(410.4px, 142.9px) rotate(-28.2deg); }
+  57.5% { transform: translate(420.6px, 137.6px) rotate(-26.3deg); }
+  60% { transform: translate(430px, 133.2px) rotate(-24.4deg); }
+  62.5% { transform: translate(438.6px, 129.5px) rotate(-22.5deg); }
+  65% { transform: translate(446.3px, 126.4px) rotate(-20.8deg); }
+  67.5% { transform: translate(453.4px, 123.8px) rotate(-19.1deg); }
+  70% { transform: translate(459.7px, 121.7px) rotate(-17.6deg); }
+  72.5% { transform: translate(465.4px, 120px) rotate(-16.2deg); }
+  75% { transform: translate(470.4px, 118.6px) rotate(-14.9deg); }
+  77.5% { transform: translate(474.9px, 117.5px) rotate(-13.7deg); }
+  80% { transform: translate(478.7px, 116.6px) rotate(-12.7deg); }
+  82.5% { transform: translate(482px, 115.8px) rotate(-11.8deg); }
+  85% { transform: translate(484.8px, 115.3px) rotate(-11deg); }
+  87.5% { transform: translate(487.1px, 114.8px) rotate(-10.4deg); }
+  90% { transform: translate(488.9px, 114.5px) rotate(-9.9deg); }
+  92.5% { transform: translate(490.3px, 114.3px) rotate(-9.5deg); }
+  95% { transform: translate(491.3px, 114.1px) rotate(-9.3deg); }
+  97.5% { transform: translate(491.8px, 114px) rotate(-9.2deg); }
+  100% { transform: translate(492px, 114px) rotate(-9.2deg); }
+}
+@keyframes d-home-rise {
+  from {
+    translate: 0 12px;
+  }
+}
+
+/* ── 4. The setup card ───────────────────────────────────────────────────────────────────── */
+
+/*
+ * A priority tile. At rest: a sky tint on the paper card, the category's icon on a white badge.
+ * Tapped: royal grows out of the badge until it fills the tile, the label turns white, the badge
+ * becomes a gold coin and the rank pops in on it. Tapped again, the same runs backwards (the royal
+ * draws back into the badge, the icon pops in): ranking and un-ranking get one response. Untapped
+ * tiles never hint.
+ *
+ * Both drawings are the button's own pseudo-elements, so nothing is added inside it: ::before is
+ * the royal fill, ::after the badge's disc. The badge element itself (.d-home-badge) is only the
+ * glyph on that disc, the icon or the number, which is what the kit's .d-pop brings in: the disc
+ * stays where it is and changes colour. Sizes are in rem like the utilities that lay the tile out:
+ * 1rem of padding, a 2.25rem badge.
+ */
+[data-theme="d"] .d-home-tile {
+  position: relative;
+  isolation: isolate;
+  background-color: #e1f0fa;
+  background-color: color-mix(in srgb, var(--color-sky) 70%, var(--color-surface));
+  color: var(--color-ink);
+  transition:
+    background-color var(--d-quick, 160ms) var(--d-ease-out, ease-out),
+    color var(--d-quick, 160ms) var(--d-ease-out, ease-out),
+    scale var(--d-quick, 160ms) var(--d-ease-out, ease-out);
+}
+/* The fill: a circle centred on the badge (the padding plus half the badge). At 142 % it reaches the far corners
+   of a tile of any width (the percentage is of the tile's diagonal over the square root of two). Its curve is a
+   plain ease-out, gentler than the kit's, so the eye can follow the blue leaving the badge. */
+[data-theme="d"] .d-home-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-color: var(--color-royal);
+  clip-path: circle(0 at 2.125rem 50%);
+  transition:
+    clip-path 260ms cubic-bezier(0.5, 1, 0.89, 1),
+    background-color var(--d-quick, 160ms) var(--d-ease-out, ease-out);
+}
+[data-theme="d"] .d-home-tile[aria-pressed="true"] {
+  color: #fff;
+}
+[data-theme="d"] .d-home-tile[aria-pressed="true"]::before {
+  clip-path: circle(142% at 2.125rem 50%);
+}
+/* The badge's disc, over the fill (it comes after it) and under the glyph: white with an ink ring. */
+[data-theme="d"] .d-home-tile::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 1rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-top: -1.125rem;
+  border-radius: 50%;
+  background-color: #fff;
+  box-shadow: inset 0 0 0 2px var(--color-ink);
+  transition:
+    background-color var(--d-quick, 160ms) var(--d-ease-out, ease-out),
+    box-shadow var(--d-quick, 160ms) var(--d-ease-out, ease-out),
+    translate var(--d-quick, 160ms) var(--d-ease-out, ease-out);
+}
+/* The coin: gold with a deeper rim and a small catch of light. Sunlight, not a rating colour. Also the coins of
+   the answered summary. */
+[data-theme="d"] .d-home-tile[aria-pressed="true"]::after,
+[data-theme="d"] .d-home-coin {
+  background-color: var(--color-gold);
+  background-image: radial-gradient(circle at 34% 28%, var(--color-butter) 0, rgb(255 224 138 / 0) 52%);
+  box-shadow: inset 0 0 0 2px var(--color-gold-deep);
+}
+/* The glyph on the disc is ink on white and on gold alike. */
+[data-theme="d"] .d-home-badge,
+[data-theme="d"] .d-home-coin {
+  color: var(--color-ink);
+}
+[data-theme="d"] .d-home-badge {
+  transition: translate var(--d-quick, 160ms) var(--d-ease-out, ease-out);
+}
+/* The second line of a tile: quiet ink at rest, white at 80 % on royal (5.5 : 1). */
+[data-theme="d"] .d-home-tile-note {
+  color: var(--color-ink-mute);
+  transition: color var(--d-quick, 160ms) var(--d-ease-out, ease-out);
+}
+[data-theme="d"] .d-home-tile[aria-pressed="true"] .d-home-tile-note {
+  color: rgb(255 255 255 / 0.8);
+}
+
+/* Under a mouse the tint deepens and the badge lifts a pixel; the same for all four, picked or not. */
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="d"] .d-home-tile:hover {
+    background-color: var(--color-sky);
+  }
+  [data-theme="d"] .d-home-tile[aria-pressed="true"]:hover::before {
+    background-color: var(--color-royal-hover);
+  }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] .d-home-tile:hover::after,
+  [data-theme="d"] .d-home-tile:hover .d-home-badge {
+    translate: 0 -1px;
+  }
+}
+/* Pressed: a finger has no hover, so the press shows the deeper tint, and the tile gives a little. */
+[data-theme="d"] .d-home-tile:active {
+  background-color: var(--color-sky);
+  transition-duration: var(--d-press, 100ms);
+}
+[data-theme="d"] .d-home-tile[aria-pressed="true"]:active::before {
+  background-color: var(--color-royal-press);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] .d-home-tile:active {
+    scale: 0.98;
+  }
+}

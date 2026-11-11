@@ -43,6 +43,7 @@ under `[data-theme="d"]`. New token names must not collide with Tailwind default
 | Token | Hex | Role |
 | --- | --- | --- |
 | `ink` / `ink-soft` / `ink-mute` | #14213D / #27344F / #3A4A66 | headlines, outlines / body / secondary text. Navy, not black |
+| `ink-faint` | #507295 | placeholders only: 4.94 : 1 on paper, visibly lighter than typed text |
 | `slate` | #9BB8D3 | rules, inactive dashes. Never text |
 | `sky` / `sky-deep` / `sky-ink` | #D4EBFB / #A5D5F8 / #1F5A85 | flat tints (tiles, chips, the fallback page colour) / info tint / text on sky tints |
 | `surface` (re-pointed) | #FFFDF8 | cards: "paper" |
@@ -93,8 +94,20 @@ Surfaces and controls:
 
 Contrast is checked by script, not by eye: `frontend/scripts/d-contrast.mjs` (created by the theme work) computes
 every text / background pair this look relies on, including the darkest point of each sky, and fails under 4.5 : 1
-(3 : 1 for 24 px+ or 19 px+ bold text and for non-text marks). Expected minimum: `ink-mute` on the deepest sky
-(#7EC3F4) at 4.68 : 1.
+(3 : 1 for 24 px+ or 19 px+ bold text and for non-text marks). It also fails on any token whose hue is red, pink or
+orange. Run it after any colour change: `node frontend/scripts/d-contrast.mjs`. Lowest text pairs today: white at 70 %
+on `royal` (the chosen day's small print) at 4.60 : 1, then `ink-mute` on the deepest sky (#7EC3F4) at 4.68 : 1.
+
+Rulings from the foundation review:
+
+- **Airline tiles are all the same:** `ink` with a white code. The shared tile picks one of seven tones from the
+  airline's code, and under this theme three of those are tier colours; one scoped rule makes every tile ink.
+- **Chips that are not ratings are never leaf, sun or amber.** "Cheapest", the days-until-the-flight chip and the like
+  use `sky` with `ink` text (or `royal-100` when they mark a selection). Leaf, sun and amber stay on rating words,
+  rating tints and the "Smoothest" marks that compare ratings.
+- **Shared "in compare" states are royal**, like D's own (`royal-100` fill, `royal` ring and label), by scoped CSS.
+- **Placeholders are lighter than entered text** (a mid slate-blue that still passes 4.5 : 1 on paper), so an example
+  never reads as an answer.
 
 ## 3. Scoping and layers
 
@@ -140,7 +153,16 @@ File ownership for the foundations:
 | The cloud | `frontend/app/d/d-cloud.css`, `frontend/components/d/cloud/**`, `frontend/components/d/brand/CloudMascot.tsx` |
 | Motion kit and control feedback | `frontend/app/d/d-motion.css`, `frontend/components/d/motion/**`, `frontend/components/d/brand/buttons.ts` |
 
-The three `d-*.css` partials are plain CSS imported by `frontend/app/d/layout.tsx` (no Tailwind directives; use
+File ownership for the screen pass (each screen also owns one stylesheet, loaded after the kit):
+
+| Screen | Files |
+| --- | --- |
+| Home | `frontend/app/d/d-home.css`, `frontend/components/d/home/**`, `frontend/components/d/setup/**`, `frontend/components/d/brand/{FlightPath,ProgressDashes,Wordmark}.tsx` |
+| Results | `frontend/app/d/d-results.css`, `frontend/components/d/search/**` |
+| Flight | `frontend/app/d/d-flight.css`, `frontend/components/d/flight/**`, `frontend/components/d/ratings/**`, `frontend/components/d/brand/CategoryIcon.tsx` |
+| Compare and the small states | `frontend/app/d/d-compare.css`, `frontend/components/d/compare/**`, `frontend/components/d/brand/Loading.tsx`, `frontend/app/d/not-found.tsx`, `frontend/app/d/error.tsx` |
+
+The `d-*.css` partials are plain CSS imported by `frontend/app/d/layout.tsx` (no Tailwind directives; use
 `var(--color-…)`, real class names prefixed `d-`, keyframes prefixed `d-`). Every selector in them starts with
 `[data-theme="d"]`, `html[data-d-on]` or a `.d-…` class that only D renders.
 
@@ -162,6 +184,15 @@ climbs. Phones under 640 px use three clouds.
 Depth: scroll parallax with `animation-timeline: scroll(root)` over the first 1200 px (progressive enhancement, no
 scroll listener); pointer parallax of a few pixels for fine pointers only (first thing to cut). Reduced motion:
 scenes switch with no transition, nothing drifts, no parallax; the still frame is the design.
+
+As built (accepted departures from the director's positions, all in `d-sky.css`): the sun stays on the right all day
+(a corner on results, beside the boarding pass on wide flight pages, setting behind the deck on compare), so nothing
+crosses the frame between scenes; the far cloud keeps to the left gutter on laptops and looks in from the right edge
+on phone results, so no bright sprite sits under a caption; the home's sky sun is parked outside the frame (the hero
+has its own, `.d-sun`); the corner sun is sized by its distance to the header's last link; the deck is never narrower
+than 820 px. Hooks for screens: `.d-sky[data-scene]` precedes header, main and footer (a sibling selector can read
+it), `.d-sun` with `--d-sun` (disc diameter) draws the sun in flow, `<DSkyCloud shape="wide" | "round" />` draws a
+flat scenery cloud.
 
 ## 5. The cloud
 
@@ -210,10 +241,21 @@ height changes.
 
 - **Mouse:** after a 140 ms dwell the seat is the one under the pointer, and the cloud slides along its top edge
   following the pointer's x (kept 40 px inside the card). Outside any seat it stays where it is and keeps looking at
-  the pointer. This is "the cloud moves with the cursor and looks at the flight you look at".
+  the pointer. This is "the cloud moves with the cursor and looks at the flight you look at". As on touch, when that
+  seat's top edge is off the top of the screen the cloud sits on the next seat whose top edge is on screen, so it
+  stays in view while a long card is under the pointer.
 - **Touch:** the seat is the one crossing a line 40 % down the screen (one IntersectionObserver, no scroll handler),
-  or a seat the visitor tapped in the last 4 s. It sits right of centre (about 72 % along the edge) and watches the
-  thumb. During a fast fling it waits and settles where the scrolling slows.
+  or a seat the visitor tapped in the last 4 s. When that seat's top edge has scrolled off the top of the screen, the
+  cloud moves to the next seat whose top edge is on screen, so on a list of cards it is always in view: it sits in the
+  gap just above or just below the card being read. It sits right of centre (about 72 % along the edge) and watches
+  the thumb. During a fast fling it waits and settles where the scrolling slows.
+- **Clearance:** the cloud's ink rises about 24 px above a seat's top edge (26 px from 640 px wide). Leave 24 px
+  between seats, and at least 30 px (32 px from 640 px) between a seat and a control or a line of text above it.
+- **As built:** a top edge counts as gone once more than 2 px of the cloud's outline would be cut, and has to come
+  40 px back down before the cloud returns to it (a nudged page does not bounce it). The cloud glides only between
+  two places that are both in view; otherwise it appears at the seat (a 10 px rise and a fade) and is simply home when
+  an unseen home scrolls back. While hidden it is parked at the layout root's corner, so it never adds to the page's
+  height. After about 6 s without input the stage and home clouds glance up once; the companion never does.
 - **Keyboard:** the seat that contains focus.
 - **It never arrives first.** On a fresh page it is at home, on no flight, and it reaches a flight only after the
   visitor's own hover, scroll, tap or focus. Every seat gets the same pose, look and timing.
@@ -247,10 +289,13 @@ the root's old snapshot held by CSS; the artwork painted as backgrounds on the s
 The picture is a **wipe**, not a white-out. One clock, `--d-vt: 760ms`, everything linear (a plane that neither
 speeds up nor slows down is the calmest plane there is):
 
-- The **seam** travels from -40vw to 140vw. Old page right of it, live new page left of it.
-- The **old page**: `::view-transition-group(root)` gets `overflow: clip` and moves right (`translate` 0 until
-  22.2 %, then to 100vw at 77.8 %), while `::view-transition-old(root)` counter-moves left by the same amount, so the
-  image stands still and its clip edge travels. Transform only: it stays on time when the main thread is busy.
+- The **seam** travels left to right, from `--d-vt-from` to `--d-vt-to`. Old page right of it, live new page left of
+  it.
+- The **old page**: `::view-transition-group(root)` gets `overflow: clip` and travels with the seam on the same
+  clock, while `::view-transition-old(root)` counter-moves by the same amount, so the image stands still and its clip
+  edge travels. The group is padded 100vw to the right (and its image-pair gives that width back), so the clip box
+  and the ribbon share one start, one end and one linear clock and cannot fall out of step: there are no keyframe
+  percentages to keep in sync. Transform only: it stays on time when the main thread is busy.
 - The **ribbon**: a tall, soft column of cumulus centred on the seam (white core, cream lee side, scalloped on both
   edges, a few loose puffs trailing): 30vw wide on phones (120 px at most), 176 px from 1024 px. It hides the join.
 - The **plane**: the outlined paper plane (white fill, `ink` outline, a short `gold` contrail), 52 px on phones,
@@ -262,6 +307,19 @@ speeds up nor slows down is the calmest plane there is):
 - If the wipe cannot be made solid in Chrome (seam visible, mistimed, wrong hit-testing), fall back to the proof's
   verified full-cover bank and say so.
 - Reduced motion: no plane, no ribbon; the old page fades into the new one in 150 ms.
+- **No dead time at either end.** The travel is fitted to the artwork in six width bands (from 0, 400, 530, 750,
+  1024 and 1640 px), so on every width the plane's nose is on screen within 45 ms of the first frame and the last
+  puff leaves within 30 ms of the end (at 1440 px: 35 ms and 23 ms). The travel is published per band as plain custom
+  properties on `html[data-d-on]`: `--d-vt-from` and `--d-vt-to` (the seam's start and end, in vw) and `--d-vt-lead`
+  (how far the plane's middle flies ahead of the seam); the cloud's eyes read them to follow the plane.
+- **The artwork and the travel table are generated.** `frontend/scripts/d-transition-art.mjs` writes the two marked
+  blocks of `d-transition.css` (the drawings as data URIs, the bands); `--check` exits 1 when the stylesheet is
+  stale. Change a size or a drawing there, not in the CSS.
+- A route seen for the first time shows its loader through the wipe and its content when the wipe ends (React holds
+  the reveal). Once a route's code is loaded, the content is there in the first frame.
+- Testing note: do not take a screenshot between the tap and the transition's first frame. A capture in flight while
+  the browser pictures the old page makes that picture blank (a white field for the whole wipe), which no visitor
+  ever sees. Use a screencast, or slow the clock (`html[data-d-on]:root{--d-vt:4000ms}`) and wait a moment.
 
 ## 7. Motion kit
 
@@ -278,6 +336,16 @@ speeds up nor slows down is the calmest plane there is):
 
 Hover styles sit inside `@media (hover: hover) and (pointer: fine)`. Press feedback starts on pointer-down and the
 action is never deferred. Nothing overshoots in position, nothing loops beside text, nothing shakes.
+
+Also in the kit: `ringFrom(el)` (the one soft royal ring that leaves a control, for pick and withdraw alike),
+`flyToTray(control)` / `flyFromTray(index, control)` in `motion/tray.ts`, the classes `.d-chip`, `.d-row`,
+`.d-settle`, and the custom properties `--d-ease-out`, `--d-ease-in-out`, `--d-press`, `--d-quick`, `--d-move`.
+The kit's rules are unlayered: on an element wearing a `.d-btn-*` class, `bg-*`, `ring-*`, `shadow-*`,
+`transition-*` and `active:scale-*` utilities lose, so never put two looks on one element.
+
+**Entrances.** `animate-d-rise` (the entrance D already uses) moves 12 px and never fades: the keyframes change
+position only, so a card is readable in its first frame and nothing shows through it. Entrance animations replay
+when a kept-alive page is shown again; with position only that is a small settle, which is fine.
 
 ## 8. Small interactions
 
@@ -299,6 +367,30 @@ Art direction for each screen: the director's treatment, section 7, read with th
 the home hero carries its own in-flow sun behind the stage cloud (two columns from 1024 px: words left, scene right;
 on phones the scene band comes first and "Let's begin" stays above the fold at 390 x 844 and 375 x 667); the
 companion uses seats at every width (there is no gutter cloud and no peeking cloud); selected states are royal.
+
+What each screen must end up with:
+
+- **Home.** The old blobs go. The scene: the sun (`.d-sun`), the stage cloud in front of its lower left, the flight
+  line sweeping up from the left to the paper plane. A short title sequence on arrival (about 1.8 s, nothing blocks,
+  nothing starts invisible except the line that draws itself): the sun rises, the cloud drifts in, the line draws and
+  the plane flies it, the wordmark's gold swash draws. "Let's begin" is the royal pill, visible and tappable in the
+  first frame. Setup card: a tapped tile fills royal and its badge becomes a gold coin with the rank number popping
+  in; the cloud nods on every rank and un-rank and is glad when the setup is answered; "Next" is the royal pill
+  (disabled: `sky-deep`). The setup card and the search card are seats.
+- **Results.** At least 24 px between cards and 30 px (32 px from 640 px) between the first card and the row above it.
+  Cards lift on hover and rise their last 16 px as they scroll in; the small plane on each time line travels with
+  the scroll. Compare: the pill swaps outline for selected, the plus becomes a check, a small plane flies to the tray
+  chip (and back from it on remove), the cloud nods both ways. "Why?" makes the cloud curious. "Details" and
+  "Choose what matters" are `D_LINK`. The date strip is filled in the first frame of an arrival.
+- **Flight.** The header is a boarding pass: two panels meeting at the dashed rule, with a notch at each end of it.
+  The route line draws on arrival and the plane flies from the origin's code to the destination's, over a gold
+  under-stroke. 30 px (32 px from 640 px) between the back link and the pass. "I'd pick this flight" is the royal
+  pill; picked, it is the selected look (`royal-100`, royal ring and label), with one soft ring and a nod for pick
+  and withdraw alike and no filled heart. Rating rows lift and their badges stamp as they scroll in; the rating
+  sheet's tier block settles and its reasons rise in turn. The page has a home cloud in the pass.
+- **Compare and the small states.** The table rises as one piece. The label column's top corner holds the home cloud;
+  no flight column is ever a seat. Loading: the stage cloud looks up above "Checking the skies…". Not found and
+  error: the same paper card with the stage cloud in place of the icon tile.
 
 ## 10. Research integrity for this pass
 

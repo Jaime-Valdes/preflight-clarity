@@ -1,24 +1,31 @@
 /*
  * Version D — d-transition (docs/ui-d-cinematic.md, "The page transition"). Plain CSS, loaded by
  * app/d/layout.tsx. Every selector starts with html[data-d-on] or a .d-… class only D renders.
+ * The two blocks marked "generated" (the travel table and the drawings) are written by
+ * frontend/scripts/d-transition-art.mjs: to change them, edit that script and run it.
  *
  * Goes with components/d/brand/DPageTransition.tsx (the 1×1 px stage each /d page renders) and
  * components/d/brand/DScope.tsx (sets html[data-d-on] while /d is mounted: the ::view-transition-*
  * pseudo-elements hang off <html>, where [data-theme="d"] cannot reach them).
  *
  * The picture is a wipe on one clock (--d-vt), everything linear:
- *   - a seam travels from -40vw to 140vw; the old page shows right of it, the live new page left;
- *   - the old page is the browser's snapshot of the viewport. Its group is clipped and slides
- *     right while the image inside slides left by the same amount, so the picture stands still
- *     and only its left edge travels (0 at 2/9 of the clock, 100vw at 7/9: where the seam is);
+ *   - a seam travels from --d-vt-from to --d-vt-to, both just off screen; the old page shows
+ *     right of it, the live new page left;
+ *   - the old page is the browser's snapshot of the viewport. Its group is a clip box whose left
+ *     edge is the seam: the box slides right with the seam while the image inside slides left by
+ *     the same amount, so the picture stands still and only its left edge travels;
  *   - a ribbon of cloud rides on the seam and hides the join; a paper plane flies ahead of it.
- * Only `translate` animates, so it stays on time when the page is busy. No script drives it:
- * React names the stage just before the first frame and clears that a few milliseconds after
- * it, and from then on nothing in the DOM changes for the transition's sake.
+ * The clip box and the ribbon move by the same two numbers over the same clock, so the join is
+ * under the ribbon at every moment on every screen, with nothing to keep in step by hand. Only
+ * `translate` animates, so it stays on time when the page is busy. No script drives it: React
+ * names the stage just before the first frame and clears that a few milliseconds after it, and
+ * from then on nothing in the DOM changes for the transition's sake.
  *
  * Three things to keep true:
- *   - If the ribbon's travel, the box width or an easing changes, re-check the two keyframe
- *     percentages: the clip edge has to stay under the ribbon's solid core at every moment.
+ *   - The travel fits the art: the plane's nose is just left of the screen when the clock starts
+ *     and the last puff just right of it when it stops, so nobody waits on an empty screen. The
+ *     art is sized in px and the travel in vw, which is why there is a band of numbers per range
+ *     of widths. After changing a size, run the script; it works the bands out again.
  *   - The stage is D's only <ViewTransition>. The rules for the root below apply to every view
  *     transition started under /d, so another boundary would get the wipe without the ribbon.
  *   - It leans on React taking the root out of the new state (19.3 does). After a React or Next
@@ -28,6 +35,58 @@
 html[data-d-on] {
   --d-vt: 760ms;
 }
+
+/* The travel, per screen width, on <html> so that script can read it (the cloud's eyes follow
+   the plane: components/d/cloud/gaze.ts). All plain values:
+     --d-vt-from, --d-vt-to   where the seam starts and ends, in vw from the screen's left edge;
+     --d-vt-lead              how far the middle of the plane flies ahead of the seam;
+     --d-vt-ribbon            the ribbon's width;
+     --d-vt-plane             the plane's length, nose to tail, without its contrail. */
+/* generated:travel — by frontend/scripts/d-transition-art.mjs; change the sizes there and run it */
+html[data-d-on] {
+  --d-vt-ribbon: 30vw;
+  --d-vt-plane: 52px;
+  --d-vt-lead: 30vw;
+  --d-vt-from: -39.3vw;
+  --d-vt-to: 123.8vw;
+}
+@media (min-width: 400px) {
+  html[data-d-on] {
+    --d-vt-ribbon: 120px;
+    --d-vt-plane: 52px;
+    --d-vt-lead: 120px;
+    --d-vt-from: -37.4vw;
+    --d-vt-to: 123.7vw;
+  }
+}
+@media (min-width: 530px) {
+  html[data-d-on] {
+    --d-vt-from: -28.3vw;
+    --d-vt-to: 117.9vw;
+  }
+}
+@media (min-width: 750px) {
+  html[data-d-on] {
+    --d-vt-from: -20vw;
+    --d-vt-to: 112.7vw;
+  }
+}
+@media (min-width: 1024px) {
+  html[data-d-on] {
+    --d-vt-ribbon: 176px;
+    --d-vt-plane: 72px;
+    --d-vt-lead: 171px;
+    --d-vt-from: -20.7vw;
+    --d-vt-to: 113.5vw;
+  }
+}
+@media (min-width: 1640px) {
+  html[data-d-on] {
+    --d-vt-from: -12.9vw;
+    --d-vt-to: 108.5vw;
+  }
+}
+/* generated:travel end */
 
 /* The stage element itself: 1×1 px, pinned to the screen's top-left corner, paints nothing,
    takes no input. The browser lays the ribbon out from where this element is, so nothing may
@@ -51,13 +110,21 @@ html[data-d-on]::view-transition {
 
 /* 2. The old page. React takes the root out of the new state (the new page is never captured:
       it stays live underneath) and hides the root's group with a script animation; !important
-      outranks that animation, so the old snapshot stays up. While a part of the old page is on
-      screen it swallows taps, which would otherwise land on the new page hidden under it; the
-      clipped-away part cannot be hit, so everything the ribbon has passed is live at once. */
+      outranks that animation, so the old snapshot stays up. The group clips, and its left edge
+      is the seam. It is padded a screen's width to the right, so that while the seam is still
+      left of the screen the box reaches past the right edge and the whole page shows; the
+      image-pair gives that width back, so the picture keeps its size. While a part of the old
+      page is on screen it swallows taps, which would otherwise land on the new page hidden under
+      it; the clipped-away part cannot be hit, so everything the ribbon has passed is live at once. */
 html[data-d-on]::view-transition-group(root) {
+  box-sizing: content-box;
+  padding-right: 100vw;
   opacity: 1 !important;
   overflow: clip;
   animation: d-vt-clip var(--d-vt) linear both;
+}
+html[data-d-on]::view-transition-image-pair(root) {
+  right: 100vw;
 }
 html[data-d-on]::view-transition-old(root) {
   animation: d-vt-hold var(--d-vt) linear both;
@@ -65,75 +132,68 @@ html[data-d-on]::view-transition-old(root) {
   pointer-events: auto;
 }
 @keyframes d-vt-clip {
-  0%,
-  22.222% {
-    translate: 0 0;
+  from {
+    translate: var(--d-vt-from) 0;
   }
-  77.778%,
-  100% {
-    translate: 100vw 0;
+  to {
+    translate: var(--d-vt-to) 0;
   }
 }
 @keyframes d-vt-hold {
-  0%,
-  22.222% {
-    translate: 0 0;
+  from {
+    translate: calc(-1 * var(--d-vt-from)) 0;
   }
-  77.778%,
-  100% {
-    translate: -100vw 0;
+  to {
+    translate: calc(-1 * var(--d-vt-to)) 0;
   }
 }
 
-/* 3. The ribbon: the stage's group, an 80vw box centred on the seam, so it starts and ends just
-      off screen. It reaches 10lvh past the top and the bottom on purpose (a phone's snapshot
-      area can be taller than what its toolbars leave visible). Three paint layers, front to
-      back: the scalloped column (white lobes, a cream lee side behind, a pale sky rim in front
-      so it keeps an edge over paper cards), a solid white band that hides the join whatever
-      the tiling does, and a few loose cloudlets trailing behind. Inline SVG, tiled downwards;
-      no image files. The box itself takes no taps: see 5. */
+/* 3. The ribbon: the stage's group, a box centred on the seam and just wide enough for the plane
+      ahead of it (--d-vt-reach is half the box). It moves exactly as the clip box does. It
+      reaches 10lvh past the top and the bottom on purpose (a phone's snapshot area can be taller
+      than what its toolbars leave visible). Three paint layers, front to back, each tile as wide
+      as the ribbon: the scalloped column (white lobes, a cream lee side behind, a pale sky rim
+      in front so it keeps an edge over paper cards), a solid white band that hides the join
+      whatever the tiling does, and a few loose cloudlets trailing behind (their tile ends on the
+      seam). Inline SVG, tiled downwards; no image files. The box itself takes no taps: see 5. */
 html[data-d-on]::view-transition-group(.d-plane) {
-  --d-vt-ribbon: min(30vw, 120px);
-  --d-vt-plane: 52px;
+  --d-vt-reach: calc(var(--d-vt-lead) + var(--d-vt-plane));
+  /* generated:art — by frontend/scripts/d-transition-art.mjs; redraw there and run it */
   --d-vt-art-ribbon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 176 528'%3E%3Cg fill='%23E3F1FC'%3E%3Ccircle cx='125.3' cy='24.8' r='38'/%3E%3Ccircle cx='125.3' cy='552.8' r='38'/%3E%3Ccircle cx='126.7' cy='92.6' r='48'/%3E%3Ccircle cx='123.9' cy='155' r='28'/%3E%3Ccircle cx='127.6' cy='207.2' r='40'/%3E%3Ccircle cx='124.8' cy='274.1' r='34'/%3E%3Ccircle cx='126.7' cy='338.6' r='48'/%3E%3Ccircle cx='124.2' cy='407.4' r='30'/%3E%3Ccircle cx='127.9' cy='463.6' r='42'/%3E%3Ccircle cx='125.9' cy='513' r='28'/%3E%3Ccircle cx='125.9' cy='-15' r='28'/%3E%3C/g%3E%3Cg fill='%23FFEFC8'%3E%3Ccircle cx='47.2' cy='47.5' r='44'/%3E%3Ccircle cx='52' cy='113.1' r='30'/%3E%3Ccircle cx='48' cy='168.8' r='40'/%3E%3Ccircle cx='48.4' cy='240.2' r='48'/%3E%3Ccircle cx='52.4' cy='306.8' r='28'/%3E%3Ccircle cx='48.4' cy='358.5' r='38'/%3E%3Ccircle cx='48.8' cy='427.8' r='46'/%3E%3Ccircle cx='53.2' cy='499.8' r='34'/%3E%3Ccircle cx='53.2' cy='-28.2' r='34'/%3E%3C/g%3E%3Cg fill='%23fff'%3E%3Crect x='58' y='-1' width='60' height='530'/%3E%3Ccircle cx='120' cy='18' r='38'/%3E%3Ccircle cx='120' cy='546' r='38'/%3E%3Ccircle cx='120' cy='84' r='48'/%3E%3Ccircle cx='120' cy='150' r='28'/%3E%3Ccircle cx='122' cy='200' r='40'/%3E%3Ccircle cx='120' cy='268' r='34'/%3E%3Ccircle cx='120' cy='330' r='48'/%3E%3Ccircle cx='120' cy='402' r='30'/%3E%3Ccircle cx='122' cy='456' r='42'/%3E%3Ccircle cx='122' cy='508' r='28'/%3E%3Ccircle cx='122' cy='-20' r='28'/%3E%3Ccircle cx='56' cy='40' r='44'/%3E%3Ccircle cx='56' cy='568' r='44'/%3E%3Ccircle cx='58' cy='108' r='30'/%3E%3Ccircle cx='56' cy='162' r='40'/%3E%3Ccircle cx='58' cy='232' r='48'/%3E%3Ccircle cx='58' cy='302' r='28'/%3E%3Ccircle cx='56' cy='352' r='38'/%3E%3Ccircle cx='58' cy='420' r='46'/%3E%3Ccircle cx='60' cy='494' r='34'/%3E%3C/g%3E%3C/svg%3E");
-  --d-vt-art-puffs: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 704'%3E%3Cg fill='%23FFEFC8'%3E%3Ccircle cx='41.6' cy='72.2' r='11'/%3E%3Ccircle cx='30.7' cy='75.1' r='7.3'/%3E%3Ccircle cx='16.5' cy='251.4' r='7'/%3E%3Ccircle cx='9.5' cy='253.2' r='4.6'/%3E%3Ccircle cx='35.9' cy='541.9' r='9.5'/%3E%3Ccircle cx='26.5' cy='544.4' r='6.3'/%3E%3C/g%3E%3Cg fill='%23fff'%3E%3Ccircle cx='44' cy='70' r='11'/%3E%3Ccircle cx='32.5' cy='73.3' r='7.3'/%3E%3Ccircle cx='18' cy='250' r='7'/%3E%3Ccircle cx='10.6' cy='252.1' r='4.6'/%3E%3Ccircle cx='38' cy='540' r='9.5'/%3E%3Ccircle cx='28' cy='542.9' r='6.3'/%3E%3C/g%3E%3C/svg%3E");
-  --d-vt-art-plane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-33 -10.5 47 21'%3E%3Cg transform='rotate(-5)'%3E%3Cpath d='M-12.5 0H-21M-25 0H-28.5' fill='none' stroke='%23FFC53D' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M11 0L-9-7L-5 0L-9 7Z' fill='%23fff' stroke='%2314213D' stroke-width='1.3' stroke-linejoin='round'/%3E%3Cpath d='M-5 0H3.5' fill='none' stroke='%2314213D' stroke-width='1.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --d-vt-art-puffs: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 176 704'%3E%3Cg fill='%23FFEFC8'%3E%3Ccircle cx='76.8' cy='72.2' r='11'/%3E%3Ccircle cx='65.9' cy='75.1' r='7.3'/%3E%3Ccircle cx='51.7' cy='251.4' r='7'/%3E%3Ccircle cx='44.7' cy='253.2' r='4.6'/%3E%3Ccircle cx='71.1' cy='541.9' r='9.5'/%3E%3Ccircle cx='61.7' cy='544.4' r='6.3'/%3E%3C/g%3E%3Cg fill='%23fff'%3E%3Ccircle cx='79.2' cy='70' r='11'/%3E%3Ccircle cx='67.7' cy='73.3' r='7.3'/%3E%3Ccircle cx='53.2' cy='250' r='7'/%3E%3Ccircle cx='45.9' cy='252.1' r='4.6'/%3E%3Ccircle cx='73.2' cy='540' r='9.5'/%3E%3Ccircle cx='63.2' cy='542.9' r='6.3'/%3E%3C/g%3E%3C/svg%3E");
+  --d-vt-art-plane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-34 -10 50 20'%3E%3Cg transform='rotate(-5 1 0)'%3E%3Cpath d='M-12.5 0L-21 0M-25 0L-28.5 0' fill='none' stroke='%23FFC53D' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M11 0L-9 -7L-5 0L-9 7Z' fill='%23fff' stroke='%2314213D' stroke-width='1.3' stroke-linejoin='round'/%3E%3Cpath d='M-5 0L3.5 0' fill='none' stroke='%2314213D' stroke-width='1.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  /* generated:art end */
   z-index: 100;
   top: -10lvh;
-  width: 80vw;
+  left: calc(-1 * var(--d-vt-reach));
+  width: calc(2 * var(--d-vt-reach));
   height: 120lvh;
   background:
     var(--d-vt-art-ribbon) repeat-y 50% 0 / var(--d-vt-ribbon) auto,
     linear-gradient(#fff, #fff) no-repeat 50% 0 / calc(var(--d-vt-ribbon) * 0.34) 100%,
-    var(--d-vt-art-puffs) repeat-y calc(40vw - var(--d-vt-ribbon) * 0.8) 0 / calc(var(--d-vt-ribbon) * 0.3636) auto;
+    var(--d-vt-art-puffs) repeat-y calc(var(--d-vt-reach) - var(--d-vt-ribbon)) 0 / var(--d-vt-ribbon) auto;
   animation: d-vt-ribbon var(--d-vt) linear both;
   pointer-events: none;
 }
-@media (min-width: 1024px) {
-  html[data-d-on]::view-transition-group(.d-plane) {
-    --d-vt-ribbon: 176px;
-    --d-vt-plane: 72px;
-  }
-}
 @keyframes d-vt-ribbon {
   from {
-    translate: -80vw 0;
+    translate: var(--d-vt-from) 0;
   }
   to {
-    translate: 100vw 0;
+    translate: var(--d-vt-to) 0;
   }
 }
 
 /* 4. The plane: the image-pair, a child of the group, so it rides along; its own animation is the
       gentle climb. D's paper plane (white, ink outline, nose up 5°) with a short gold contrail,
-      --d-vt-plane long, ahead of the ribbon in clear air but never past the box's leading edge
-      (it must be off screen when the clock starts). It flies at the height of the tap that
-      caused the move: --d-tap-y on <html>, a length, written by the motion layer on pointer-down. */
+      its middle --d-vt-lead ahead of the seam, in clear air. The drawing is 2.5 plane lengths
+      wide and 1 tall, with the middle of the plane 1.75 lengths from its left edge and half a
+      length from its top. It flies at the height of the tap that caused the move: --d-tap-y on
+      <html>, a length, written by the motion layer on pointer-down. */
 html[data-d-on]::view-transition-image-pair(.d-plane) {
-  --d-vt-art-w: calc(var(--d-vt-plane) * 2.35);
   background: var(--d-vt-art-plane) no-repeat
-    calc(40vw + min(40vw - 4px, var(--d-vt-ribbon) / 2 + var(--d-vt-plane) * 1.8) - var(--d-vt-art-w))
-    calc(10lvh + clamp(18vh, var(--d-tap-y, 42vh), 72vh) - var(--d-vt-art-w) * 0.2234) / var(--d-vt-art-w) auto;
+    calc(var(--d-vt-reach) + var(--d-vt-lead) - var(--d-vt-plane) * 1.75)
+    calc(10lvh + clamp(18vh, var(--d-tap-y, 42vh), 72vh) - var(--d-vt-plane) * 0.5) / calc(var(--d-vt-plane) * 2.5) auto;
   animation: d-vt-climb var(--d-vt) linear both;
 }
 @keyframes d-vt-climb {
@@ -169,8 +229,12 @@ html[data-d-on]::view-transition-old(.d-plane) {
     display: none;
   }
   html[data-d-on]::view-transition-group(root) {
+    padding-right: 0;
     overflow: visible;
     animation: none;
+  }
+  html[data-d-on]::view-transition-image-pair(root) {
+    right: 0;
   }
   html[data-d-on]::view-transition-old(root) {
     animation: d-vt-fade-out 150ms linear both;

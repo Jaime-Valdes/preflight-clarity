@@ -1,0 +1,63 @@
+/*
+ * Version D — d-results (docs/ui-d-cinematic.md, "Screen by screen"): the results page: the summary, the strip, the cards and their gaps, the empty states.
+ * Plain CSS, loaded by app/d/layout.tsx after the kit (d-motion.css), so a rule here wins a tie with it.
+ * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders;
+ * keyframes and custom properties are prefixed d-results- / --d-results-.
+ *
+ * Most of the page is utilities in components/d/search and the kit's classes (.d-lift, .d-reveal,
+ * .d-route-plane, .d-btn-*, .d-link, .d-chip, .d-pop). What is here is what those cannot say.
+ * Nothing in this file reads what a card shows: every rule is the same for every flight.
+ */
+
+/* ── The time line ───────────────────────────────────────────────────────────────────────── */
+
+/*
+ * The small plane crosses its line with the scroll (the kit's .d-route-plane, inside this wrapper).
+ * Under a mouse it also glides 10 px further along while the pointer is on its card, and back when
+ * the pointer leaves: the wrapper moves, so the two motions add up instead of fighting over one
+ * property. 10 px keeps it inside the 11 px the wrapper is inset from each stop.
+ */
+.d-results-plane {
+  transition: translate 600ms var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .d-lift:hover .d-results-plane {
+    translate: 10px 0;
+  }
+}
+
+/* ── "Why?" and the reasons it opens ─────────────────────────────────────────────────────── */
+
+/*
+ * "Why?" is one of D's text links, but it sits on a rating tint, and the kit's butter highlighter
+ * would show strongly on leaf, weakly on sun and hardly at all on amber. The three tints share one
+ * lightness, so a white band reads the same on each of them: the link answers a pointer, a finger
+ * or the keyboard identically on every card. (Two classes, so it outranks the kit wherever the two
+ * stylesheets land.)
+ */
+.d-link.d-results-why {
+  background-image: linear-gradient(rgb(255 255 255 / 0.9), rgb(255 255 255 / 0.9));
+}
+
+/* Its chevron turns over as the reasons open and back as they close; the kit only glides an arrow's lean. */
+.d-link.d-results-why > svg {
+  transition: rotate var(--d-move) var(--d-ease-out);
+}
+
+/* ── The filters that are on (phones) ────────────────────────────────────────────────────── */
+
+/* A filter that is on is a selection: royal on its palest tint, deepening under a pointer and a press exactly as
+   the kit's selected pill does. (The kit already gives every ring-drawn pill in the page its cross-fade and its
+   3 % give under a finger.) */
+@media (hover: hover) and (pointer: fine) {
+  .d-results-chip:hover {
+    background-color: #d0ddfa;
+    background-color: color-mix(in srgb, var(--color-royal) 8%, var(--color-royal-100));
+  }
+}
+
+.d-results-chip:active {
+  background-color: #c4d3f5;
+  background-color: color-mix(in srgb, var(--color-royal) 14%, var(--color-royal-100));
+}

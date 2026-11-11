@@ -1,0 +1,609 @@
+/*
+ * Version D — d-compare (docs/ui-d-cinematic.md, "Screen by screen"): the compare page and the small states: compare table and empty state, loading, not found, error.
+ * Plain CSS, loaded by app/d/layout.tsx after the kit (d-motion.css), so a rule here wins a tie with it.
+ * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders;
+ * keyframes and custom properties are prefixed d-compare- / --d-compare-.
+ *
+ * How it is laid out:
+ *   1. Arriving: the two entrances this file's screens use.
+ *   2. The compare table (components/d/compare/DCompareTable.tsx): the card, the label column,
+ *      the group bands, the hairlines, the ratings group, the small pieces.
+ *   3. Around the table: the shared page's from-a-link banner, the note and the sign-up card,
+ *      which end the page on the golden afternoon.
+ *   4. Loading (components/d/brand/Loading.tsx): the cloud's upward look and the three dashes.
+ *
+ * One rule holds for the whole table: a flight column is never styled by what it shows. Every
+ * selector below is keyed on a row, on the label column or on all flight cells alike; none
+ * reads a flight's rating, price, airline or place in the list.
+ */
+
+/* ── 1. Arriving ─────────────────────────────────────────────────────────────────────────── */
+
+/*
+ * A card settles its last 12 px into place: the same distance, time and easing as D's other
+ * cards (animate-d-rise in app/globals.css). Position only, never opacity: its words are
+ * readable in the first frame. `backwards`, so nothing is left on the card when it has landed.
+ * Declared here, inside the motion query, so that with less motion asked for there is no
+ * animation at all on these screens, not a very short one.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .d-compare-rise {
+    animation: d-compare-rise 0.4s var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) backwards;
+  }
+  /* The table holds a sticky label column, and nothing sticky may sit under a transformed
+     ancestor: the table rises with `top` on its positioned wrapper instead. One piece, every
+     column in the same frame. */
+  .d-compare-arrive {
+    animation: d-compare-arrive 0.4s var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) backwards;
+  }
+}
+
+@keyframes d-compare-rise {
+  from {
+    transform: translateY(12px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes d-compare-arrive {
+  from {
+    top: 12px;
+  }
+  to {
+    top: 0;
+  }
+}
+
+/* ── 2. The compare table ────────────────────────────────────────────────────────────────── */
+
+/*
+ * The card is the sideways scroller. Its measures: the label column and the least a flight
+ * column may be (the table's min-width is built from them, so a third flight scrolls inside
+ * the card on phones), where the labels start, half the gutter between two flights, and how
+ * far a band stops short of the card's edges. Every flight column gets the same width and the
+ * same padding on both sides, the last one included.
+ */
+[data-theme="d"] .d-compare-card {
+  --d-compare-label: 92px;
+  --d-compare-col: 108px;
+  --d-compare-pad: 14px;
+  --d-compare-gut: 10px;
+  --d-compare-inset: 6px;
+  --d-compare-band-gap: 6px;
+  /* A focused control scrolled into view stops clear of the row labels. */
+  scroll-padding-inline-start: var(--d-compare-label);
+  /* After a sideways swipe the table comes to rest with a flight's column against the labels
+     (or at its end), not somewhere in between with a column cut on both sides. */
+  scroll-snap-type: x proximity;
+}
+
+@media (min-width: 360px) {
+  [data-theme="d"] .d-compare-card {
+    --d-compare-label: 96px;
+  }
+}
+
+@media (min-width: 400px) {
+  [data-theme="d"] .d-compare-card {
+    --d-compare-label: 104px;
+    --d-compare-col: 124px;
+    --d-compare-pad: 16px;
+  }
+}
+
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-card {
+    --d-compare-label: 11.5rem;
+    --d-compare-col: 11rem;
+    --d-compare-pad: 20px;
+    --d-compare-gut: 14px;
+    --d-compare-inset: 8px;
+    --d-compare-band-gap: 8px;
+  }
+}
+
+@media (min-width: 1024px) {
+  [data-theme="d"] .d-compare-card {
+    --d-compare-label: 12.5rem;
+    --d-compare-col: 13rem;
+    --d-compare-pad: 24px;
+    --d-compare-gut: 16px;
+    --d-compare-inset: 10px;
+  }
+}
+
+/* Sideways padding lives here, so every row agrees; rows set their own height with utilities. */
+[data-theme="d"] .d-compare-sticky {
+  padding-left: var(--d-compare-pad);
+  padding-right: 4px;
+  transition: box-shadow var(--d-quick) var(--d-ease-out);
+}
+
+[data-theme="d"] .d-compare-cell {
+  padding-left: var(--d-compare-gut);
+  padding-right: var(--d-compare-gut);
+}
+
+/* Where a swipe may rest: each flight's header cell, the same for every flight. */
+[data-theme="d"] .d-compare-card thead > tr > th {
+  scroll-snap-align: start;
+}
+
+/* The label column shows its edge only while flight columns are scrolled under it. */
+[data-theme="d"] .d-compare-card[data-under] .d-compare-sticky {
+  box-shadow:
+    1px 0 0 var(--color-line),
+    10px 0 14px -12px rgb(20 33 61 / 0.45);
+}
+
+/* On phones a band's title reaches over the columns, and an edge would cut it in two: a band
+   has none there. The keys pass under the labels on the band's own sky, which needs no edge. */
+@media (max-width: 639.98px) {
+  [data-theme="d"] .d-compare-card[data-under] .d-compare-band > .d-compare-sticky {
+    box-shadow: none;
+  }
+}
+
+/* Hairlines run from the labels' left edge to the last column's right edge, not to the card's. */
+[data-theme="d"] .d-compare-ruled > :is(th, td) {
+  background-image: linear-gradient(var(--color-line), var(--color-line));
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 100% 1px;
+}
+
+[data-theme="d"] .d-compare-ruled > .d-compare-sticky {
+  background-position: var(--d-compare-pad) 0;
+}
+
+[data-theme="d"] .d-compare-ruled > td:last-child {
+  background-size: calc(100% - var(--d-compare-gut)) 1px;
+}
+
+/* A band is rule enough for the row under it. */
+[data-theme="d"] .d-compare-band + .d-compare-ruled > :is(th, td) {
+  background-image: none;
+}
+
+/* Under a mouse the row being read takes a breath of sky across every column at once, so the
+   eye can travel along it. A solid mix, not a see-through one: the label cell stays opaque. */
+[data-theme="d"] .d-compare-group > .d-compare-row > :is(th, td) {
+  transition: background-color var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="d"] .d-compare-group > .d-compare-row:hover > :is(th, td) {
+    background-color: #f0f7f9;
+    background-color: color-mix(in srgb, var(--color-sky) 34%, var(--color-surface));
+  }
+}
+
+/*
+ * A group's band: one rounded sky bar from the label column to the last flight. It is painted
+ * by a layer in each cell (under the cell's words, over its paper), so the sticky label cell
+ * stays opaque where columns pass under it and the bar keeps its round ends.
+ */
+[data-theme="d"] .d-compare-band > td {
+  position: relative;
+  z-index: 0;
+}
+
+[data-theme="d"] .d-compare-band > :is(th, td)::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: var(--d-compare-band-gap);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background-color: var(--color-sky);
+}
+
+/* One pixel over the next cell: no seam shows while the columns move under the labels. */
+[data-theme="d"] .d-compare-band > th::before {
+  right: -1px;
+  left: var(--d-compare-inset);
+  border-radius: 14px 0 0 14px;
+}
+
+[data-theme="d"] .d-compare-band > td:last-child::before {
+  right: var(--d-compare-inset);
+  border-radius: 0 14px 14px 0;
+}
+
+/* Phones: the title takes the band's first line, reaching over the flight columns, and each
+   flight's key sits on the second line in its own column. */
+[data-theme="d"] .d-compare-band > th {
+  padding-top: calc(var(--d-compare-band-gap) + 8px);
+  padding-bottom: 8px;
+  vertical-align: top;
+}
+
+[data-theme="d"] .d-compare-band > td {
+  padding-top: calc(var(--d-compare-band-gap) + 37px);
+  padding-bottom: 9px;
+  vertical-align: top;
+}
+
+/* As wide as its words, up to the card's own width (below 640 px the card is the screen less the
+   page's two 16 px gutters), so with very large text the title wraps instead of running off the card. */
+[data-theme="d"] .d-compare-band-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px - 2 * var(--d-compare-pad));
+}
+
+[data-theme="d"] .d-compare-band-name {
+  color: var(--color-ink);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+[data-theme="d"] .d-compare-band-sub {
+  color: var(--color-ink-mute);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+/* From 640 px the label column is wide enough: the title stays in it, its second line under
+   its name, and the keys line up with it. */
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-band > th {
+    padding-top: calc(var(--d-compare-band-gap) + 9px);
+    padding-bottom: 9px;
+    vertical-align: middle;
+  }
+
+  [data-theme="d"] .d-compare-band > td {
+    padding-top: calc(var(--d-compare-band-gap) + 9px);
+    padding-bottom: 9px;
+    vertical-align: middle;
+  }
+
+  [data-theme="d"] .d-compare-band-title {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0 10px;
+    width: auto;
+    max-width: none;
+  }
+
+  /* The badge sits beside both lines; a name with no second line is centred on it. */
+  [data-theme="d"] .d-compare-band-title > .d-compare-badge,
+  [data-theme="d"] .d-compare-band-name:last-child {
+    grid-row: 1 / span 2;
+  }
+
+  [data-theme="d"] .d-compare-band-name,
+  [data-theme="d"] .d-compare-band-sub {
+    grid-column: 2;
+  }
+
+  [data-theme="d"] .d-compare-band-name {
+    font-size: 14px;
+  }
+
+  [data-theme="d"] .d-compare-band-sub {
+    margin-top: 1px;
+  }
+}
+
+/* The outlined badge of D's icons: white, a 2 px ink ring, the icon in ink. */
+[data-theme="d"] .d-compare-badge {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background-color: #fff;
+  box-shadow: inset 0 0 0 2px var(--color-ink);
+  color: var(--color-ink);
+}
+
+[data-theme="d"] .d-compare-badge svg {
+  width: 13px;
+  height: 13px;
+}
+
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-badge {
+    width: 30px;
+    height: 30px;
+  }
+
+  [data-theme="d"] .d-compare-badge svg {
+    width: 15px;
+    height: 15px;
+  }
+}
+
+/* The ratings are the table's focal group: their band's badge is sunlit and its name a size up. */
+[data-theme="d"] .d-compare-band-focal .d-compare-badge {
+  background-color: var(--color-gold);
+}
+
+[data-theme="d"] .d-compare-band-focal .d-compare-band-name {
+  font-size: 14px;
+}
+
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-band-focal .d-compare-band-name {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 1024px) {
+  [data-theme="d"] .d-compare-band-focal .d-compare-band-name {
+    font-size: 16px;
+  }
+}
+
+/* The ratings rows: a badge per category in the label column, and a tile per flight. The label
+   lines up with the tile: under its badge on phones, level with the tile's middle from 640 px. */
+[data-theme="d"] .d-compare-rating > :is(th, td) {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-rating > th {
+    padding-top: 19px;
+  }
+}
+
+/*
+ * The tier tile (the RatingPill button, restyled through its className): as wide as its
+ * column and 44 px tall whatever it says, so "Smooth" and "Roomy and quiet" weigh the same
+ * and so do the three tier colours, which stay the pill's own.
+ */
+[data-theme="d"] .d-compare-tier {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: left;
+  transition:
+    box-shadow var(--d-quick) var(--d-ease-out),
+    filter var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+/* The pill stretched its hit area with a layer; at 44 px the tile is the hit area. */
+[data-theme="d"] .d-compare-tier::before {
+  content: none;
+}
+
+/* Words wrap between themselves in a narrow column; nothing is cut off with an ellipsis. */
+[data-theme="d"] .d-compare-tier > span {
+  overflow: visible;
+  overflow-wrap: break-word;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+[data-theme="d"] .d-compare-tier > svg {
+  transition: translate var(--d-quick) var(--d-ease-out);
+}
+
+@media (min-width: 400px) {
+  [data-theme="d"] .d-compare-tier {
+    padding-right: 12px;
+    padding-left: 12px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-tier {
+    max-width: 15rem;
+    padding-right: 12px;
+    padding-left: 14px;
+    font-size: 14px;
+  }
+}
+
+/* Under a mouse the tile's outline firms up in its own words' colour (the three tier inks share
+   one lightness, so the three tiers answer alike) instead of the pill's dimming. */
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="d"] .d-compare-tier:hover {
+    box-shadow: inset 0 0 0 2px currentcolor;
+    filter: none;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] .d-compare-tier:hover > svg {
+    translate: 2px 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] .d-compare-tier:active {
+    scale: 0.97;
+    transition-duration: var(--d-press);
+  }
+}
+
+/* A flight that cannot be rated shows its dash where a tile's words would be. */
+[data-theme="d"] .d-compare-none {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+}
+
+/* The pick tile and the tier tiles share a width from 640 px, so a column reads as one stack. */
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-choose {
+    max-width: 15rem;
+  }
+}
+
+/* Every airline's tile is the same ink tile (the shared one picks a tone from the airline's code).
+   The theme says so for all of D by the tile's shape; here it is said by name as well, because on
+   this page a tile that differed would be one flight's column looking unlike the next. */
+[data-theme="d"] .d-compare-tile {
+  background-color: var(--color-ink);
+  color: #fff;
+}
+
+[data-theme="d"] .d-compare-card .d-compare-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-card .d-compare-tile {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    font-size: 12px;
+  }
+}
+
+/* The on-time line against the industry average (the shared BenchmarkLine) keeps the colours the
+   theme leaves it everywhere in D; from 640 px it takes the size of the lines above it. */
+@media (min-width: 640px) {
+  [data-theme="d"] .d-compare-bench > span {
+    font-size: 13px;
+  }
+}
+
+/* ── 3. Around the table (components/c/compare/ComparePage.tsx is shared: styled from here) ─ */
+
+/*
+ * "These flights came from a link": a strip of paper with a little sky through it, not a
+ * second card. Found by its place (a child of the compare page's root) and its link icon.
+ * Its one action reads as D's text link: ink, underlined, a butter highlighter under the
+ * words on hover, press and keyboard focus.
+ */
+[data-theme="d"] main > div > div.bg-breeze-50:has(> p > .lucide-link-2) {
+  --tw-ring-color: transparent;
+  border-radius: 18px;
+  background-color: rgb(255 253 248 / 0.9);
+  color: var(--color-ink-soft);
+}
+
+[data-theme="d"] main > div > div.bg-breeze-50:has(> p > .lucide-link-2) > button {
+  background-image: linear-gradient(var(--color-butter), var(--color-butter));
+  background-repeat: no-repeat;
+  background-position: 0 calc(50% + 0.46em);
+  background-size: 0% 0.42em;
+  /* The highlighter is as wide as the words, not as the button's padding. */
+  background-origin: content-box;
+  color: var(--color-ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  transition:
+    background-size 220ms var(--d-ease-out),
+    background-color var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="d"] main > div > div.bg-breeze-50:has(> p > .lucide-link-2) > button:hover {
+    background-size: 100% 0.42em;
+  }
+}
+
+[data-theme="d"] main > div > div.bg-breeze-50:has(> p > .lucide-link-2) > button:is(:active, :focus-visible) {
+  background-size: 100% 0.42em;
+}
+
+/*
+ * The note under the table is small print on the sky, and at the page's end the sun sets
+ * behind it: it gets a strip of paper of its own, light enough that the sky still shows.
+ */
+[data-theme="d"] main > div > div:has(> .d-compare-arrive) + p {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background-color: rgb(255 253 248 / 0.7);
+  color: var(--color-ink-mute);
+}
+
+/* The sign-up card is paper like the table: no cool outline against the butter sky. */
+[data-theme="d"] section[aria-labelledby="c-interest-d_compare"] {
+  --tw-ring-color: transparent;
+}
+
+/* ── 4. Loading ──────────────────────────────────────────────────────────────────────────── */
+
+/* The cloud watches the sky it is checking. The drawing reads --gy; when the visitor points
+   somewhere the cloud's own look takes over, and this one returns when it lets go. At 120 px
+   a look up needs the longer travel the rig gives its small clouds to read as one. */
+.d-loading-look {
+  --gy: -1;
+}
+
+.d-loading-look .d-cloud-pose {
+  --d-cloud-face-y: 3cqw;
+  --d-cloud-eye-y: 1.6cqw;
+}
+
+/* Three small dashes under the line; light passes along them, one cycle every 1.2 s. */
+.d-loading-dashes {
+  display: flex;
+  gap: 6px;
+}
+
+.d-loading-dashes > span {
+  position: relative;
+  width: 18px;
+  height: 5px;
+  border-radius: 999px;
+  background-color: rgb(20 33 61 / 0.2);
+}
+
+.d-loading-dashes > span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: var(--color-gold);
+  opacity: 0;
+}
+
+/* Under reduced motion the dashes are three still marks. */
+@media (prefers-reduced-motion: no-preference) {
+  .d-loading-dashes > span::after {
+    animation: d-compare-dash 1.2s linear infinite;
+  }
+
+  .d-loading-dashes > span:nth-child(2)::after {
+    animation-delay: 0.2s;
+  }
+
+  .d-loading-dashes > span:nth-child(3)::after {
+    animation-delay: 0.4s;
+  }
+}
+
+@keyframes d-compare-dash {
+  0%,
+  55%,
+  100% {
+    opacity: 0;
+  }
+  14%,
+  30% {
+    opacity: 1;
+  }
+}

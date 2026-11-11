@@ -1,0 +1,213 @@
+/*
+ * Version D — d-flight (docs/ui-d-cinematic.md, "Screen by screen"): the flight page: the boarding pass, the pick card, the rating rows and sheet, more detail.
+ * Plain CSS, loaded by app/d/layout.tsx after the kit (d-motion.css), so a rule here wins a tie with it.
+ * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders;
+ * keyframes and custom properties are prefixed d-flight- / --d-flight-.
+ *
+ *   1. The boarding pass (components/d/flight/DFlightHeader.tsx): the route line, its plane, the home cloud.
+ *   2. The page's own pieces (DFlightDetail.tsx): reassurance cards, rating rows, "More detail".
+ *   3. The rating sheet (components/d/ratings/RatingSheet.tsx), which portals to <body>.
+ *   4. Shared pieces the flight page shows (fare card, other flights): a scroll reveal, by CSS only.
+ *
+ * Whatever moves here is scenery or a settle of a few pixels, sits inside
+ * (prefers-reduced-motion: no-preference), fills backwards and leaves nothing behind: at rest every
+ * element is exactly where its own styles put it.
+ */
+
+/* ── 1. The boarding pass ────────────────────────────────────────────────────────────────── */
+
+/*
+ * Two paper panels with 24 px corners meet at the tear line, which leaves a notch at each end
+ * of it. Each panel casts the card shadow from a layer under BOTH panels (the pass is its own
+ * stacking context, the shadows sit at z -1 inside it), so neither panel's shadow falls across
+ * the other's paper, and what shows through a notch is the same lightly shaded sky as beside
+ * the pass.
+ */
+[data-theme="d"] .d-pass-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow: var(--d-shadow-card);
+  pointer-events: none;
+}
+
+/*
+ * The route between the two codes. Both strokes (gold under ink) carry pathLength 1 and a dash
+ * of 1 followed by a gap of 2, so a dash offset of 1 hides the line and 0 shows all of it; the
+ * gap is longer than the line so no second dash can start at its far end. At rest the line is
+ * drawn. On arrival it draws itself, and the plane flies it at the same pace, so the plane is
+ * always at the tip of the ink it leaves behind.
+ */
+[data-theme="d"] .d-pass-line {
+  stroke-dashoffset: 0;
+}
+
+/* The drawing scales with the space between the codes. On narrow phones that space is small,
+   so the two strokes are drawn wider there and the line never thins to a hair. */
+@container (max-width: 150px) {
+  [data-theme="d"] .d-pass-ink {
+    stroke-width: 3.8;
+  }
+  [data-theme="d"] .d-pass-gold {
+    stroke-width: 8.6;
+  }
+}
+
+@container (max-width: 110px) {
+  [data-theme="d"] .d-pass-ink {
+    stroke-width: 4.8;
+  }
+  [data-theme="d"] .d-pass-gold {
+    stroke-width: 10.6;
+  }
+}
+
+/* The route's box is a size container, so the home cloud can keep in scale with the drawing. */
+[data-theme="d"] .d-pass-route {
+  container-type: inline-size;
+}
+
+/* The home cloud sits on the line's level stretch (49 % across, 43.2 % down the drawing; its
+   drawn base is 63.3 % of its width below its box's top). 40 px on a phone, growing with the
+   drawing to 54 px on a laptop, where the line itself is drawn bolder. Sized here, so the place
+   follows the size. */
+[data-theme="d"] .d-pass-cloud {
+  --d-flight-cloud: 40px;
+  position: absolute;
+  top: calc(43.2% - var(--d-flight-cloud) * 0.633 + 1.5px);
+  left: calc(49% - var(--d-flight-cloud) / 2);
+  width: var(--d-flight-cloud);
+  pointer-events: none;
+}
+
+@supports (width: 1cqi) {
+  [data-theme="d"] .d-pass-cloud {
+    --d-flight-cloud: clamp(40px, 12.8cqi, 54px);
+  }
+}
+
+/*
+ * The plane. Its markup places it at the end of the path with a transform attribute, which is
+ * what browsers without CSS motion paths show. Where motion paths exist the attribute is set
+ * aside and the plane rests at the end of the path itself (the path comes from the component,
+ * as an inline offset-path), which lets it fly the route on arrival.
+ */
+@supports (offset-path: path("M0 0h1")) {
+  [data-theme="d"] .d-pass-plane {
+    /* The path is in the drawing's own units, measured from the drawing's corner; the plane is drawn around (0, 0). */
+    transform-box: view-box;
+    transform-origin: 0 0;
+    transform: none;
+    offset-distance: 100%;
+    offset-rotate: auto;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] .d-pass-line {
+    animation: d-flight-draw 1100ms var(--d-ease-in-out) 120ms backwards;
+  }
+
+  @supports (offset-path: path("M0 0h1")) {
+    [data-theme="d"] .d-pass-plane {
+      animation: d-flight-fly 1100ms var(--d-ease-in-out) 120ms backwards;
+    }
+  }
+}
+
+/* While the page-transition plane is still crossing, the little one waits at the origin: it
+   takes off when the wipe has passed, so the flight is seen from its start. A browser that does
+   not know the selector drops this rule and the flight simply starts with the page. */
+html[data-d-on]:active-view-transition .d-pass-line,
+html[data-d-on]:active-view-transition .d-pass-plane {
+  animation-play-state: paused;
+}
+
+@keyframes d-flight-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes d-flight-fly {
+  from {
+    offset-distance: 0%;
+  }
+}
+
+/* ── 2. The page's own pieces ────────────────────────────────────────────────────────────── */
+
+/* A rating row, and "More detail", under a mouse: the kit (.d-row) moves them up 2 px; lifting also deepens the
+   shadow. The kit's transition on these rows already covers box-shadow, so the two shadows cross-fade. */
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="d"] .d-rating-row:hover,
+  [data-theme="d"] .d-flight-more:hover {
+    --tw-shadow: var(--d-shadow-lift);
+  }
+}
+
+/* "More detail": the chevron turns over when the block opens. (.d-row gives a row's icon a transition for its
+   sideways lean only; this one turns instead.) */
+[data-theme="d"] .d-flight-more > svg {
+  transition: rotate var(--d-move) var(--d-ease-out);
+}
+
+/* ── 3. The rating sheet (portals to <body>: nothing under [data-theme="d"] reaches it) ──── */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The tier block settles (the kit's .d-settle, which this class rides on) once the sheet has all but risen. */
+  html[data-d-on] [role="dialog"][aria-modal="true"] .d-rating-tier {
+    animation-delay: 140ms;
+  }
+
+  /* Then the reasons rise 6 px into place, one after another, 50 ms apart. --d-flight-i is the row's place in the
+     list. Position only: each row is readable from the first frame. */
+  html[data-d-on] [role="dialog"][aria-modal="true"] .d-rating-reason {
+    animation: d-flight-reason 260ms var(--d-ease-out) calc(200ms + var(--d-flight-i, 0) * 50ms) backwards;
+  }
+}
+
+@keyframes d-flight-reason {
+  from {
+    transform: translateY(6px);
+  }
+}
+
+/* ── 4. Shared pieces on the flight page, by CSS only ────────────────────────────────────── */
+
+/* (Their colours are the theme's business: app/globals.css, "Shared pieces that asked for a rating colour",
+   puts the fare card's "In compare" row, the "Compare" toggles and the small leaf marks on royal and ink.) */
+
+/*
+ * Scroll reveals for the shared cards, the same 16 px rise the kit's .d-reveal gives D's own: each of the day's
+ * other flights, and on phones the fare card (on laptops it stands in the sticky column, in view from the start,
+ * and keeps its entrance). Position only, driven by the scroll itself; nothing where scroll timelines are missing.
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    [data-theme="d"] #other-flights > ul > li > div {
+      animation: d-flight-reveal 1ms linear backwards;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) and (max-width: 1023.98px) {
+    [data-theme="d"] .d-flight-fare {
+      animation: d-flight-reveal 1ms linear backwards;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+    }
+  }
+}
+
+@keyframes d-flight-reveal {
+  from {
+    transform: translateY(16px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

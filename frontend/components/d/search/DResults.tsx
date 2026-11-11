@@ -3,7 +3,17 @@
 import { ArrowRight, Info, MapPin, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useDeferredValue, useEffect, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { CATEGORY_LABELS, orderByPriorities, type Rating, type RatingCategory } from "@preflight/shared/ratings";
 import { searchFlights, type FlightOption, type SearchResults as DayResults } from "@preflight/shared/search";
@@ -20,9 +30,12 @@ import { SortTabs } from "@/components/c/search/SortTabs";
 import { airlineName, buildFacets, campaignParams, type Facets, type ResultsView } from "@/components/c/search/view";
 import { keepClearOfTray } from "@/components/c/shell/CompareTray";
 import { useHrefs } from "@/components/c/shell/ToolContext";
-import { D_PILL_PRIMARY } from "@/components/d/brand/buttons";
+import { D_LINK, D_PILL_OUTLINE, D_PILL_PRIMARY } from "@/components/d/brand/buttons";
 import { CloudMascot } from "@/components/d/brand/CloudMascot";
 import { DLoading } from "@/components/d/brand/Loading";
+import { cloudReact } from "@/components/d/cloud/react";
+import { animateOnce } from "@/components/d/motion/motion";
+import { flyFromTray, flyToTray } from "@/components/d/motion/tray";
 import { track } from "@/lib/analytics";
 import { useCompareList } from "@/lib/c/compare-store";
 import { formatFare, formatMinutes12 } from "@/lib/c/format";
@@ -46,6 +59,7 @@ import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { DResultCard } from "./DResultCard";
 import { carryFor, signupContext, smoothestForYou } from "./marks";
+import { usePopOnChange } from "./usePopOnChange";
 
 type Params = ReturnType<typeof useSearchParams>;
 
@@ -127,8 +141,11 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   const campaign = useMemo(() => campaignParams(params), [params]);
 
   const search = useMemo(() => runSearch(origin, destination, date), [origin, destination, date]);
-  // The date strip is computed after the day's own results (first paint first).
-  const stripDay = parseDayKey(useDeferredValue(dayKey(day), ""));
+  // The date strip arrives with the page: the deferred value starts as the day itself, so the seven days are
+  // links in the first frame. (Started empty, the first fill was a deferred commit, and React holds those until
+  // the page transition has played: a second of grey tiles on every arrival.) After that it is deferred as
+  // before: on an urgent change of day the strip keeps the previous days until the new ones are worked out.
+  const stripDay = parseDayKey(useDeferredValue(dayKey(day)));
 
   const dayOptions = search.ok ? search.results.options : NO_OPTIONS;
   // Flights that have already left (today, in their origin's time) aren't offered: no fare, no
@@ -163,6 +180,26 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   );
   const swapNote = airportSwapNote(day, dayOptions);
   const carry = carryFor(view);
+  // The compare tray shows the visitor's flights in this order (flights whose day has passed are not in it).
+  const trayIds = compare.items.filter((i) => i.date >= today).map(itemId);
+
+  // What the list is showing: the day, the sort and the filters, as one string. When the list arrives its cards
+  // rise one after another (60 ms apart, as before). Once any of the three has changed, the cards are re-dealt
+  // instead: no card has an entrance of its own any more (a re-ordered card would replay it, and only the cards
+  // that happened to move would), and the whole list settles once, as one piece, so no flight goes first.
+  const deal = dResultsHref(day, view, campaign);
+  const [dealShown, setDealShown] = useState(deal);
+  const [redeals, setRedeals] = useState(0);
+  if (dealShown !== deal) {
+    setDealShown(deal);
+    setRedeals(redeals + 1);
+  }
+  const listRef = useRef<HTMLOListElement>(null);
+  useLayoutEffect(() => {
+    if (redeals > 0) animateOnce(listRef.current, "settle");
+  }, [redeals]);
+  // The number on the Filters button pops when it changes, never when it merely arrives with the page.
+  const [countPop, countPopped] = usePopOnChange(filterCount);
 
   useEffect(() => {
     if (!search.ok) console.error(search.error);
@@ -243,7 +280,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
               <button
                 type="button"
                 onClick={() => clearFilters(FILTERS_TITLE_ID)}
-                className="-mr-2 h-11 rounded-full px-3 text-sm font-bold text-ink underline decoration-2 underline-offset-4 transition-colors hover:bg-ink/5"
+                className={cn(D_LINK, "-mr-2 h-11 rounded-full px-3 text-sm")}
               >
                 Clear all
               </button>
@@ -259,7 +296,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 
           <SortTabs keys={D_SORT_KEYS} labels={D_SORT_LABELS} value={view.sort} onChange={changeSort} />
 
-          <div className="mt-2 flex min-h-11 items-center justify-between gap-3">
+          <div className="mt-2 flex min-h-11 items-center justify-between gap-3 lg:min-h-0">
             <div className="min-w-0">
               <p id={COUNT_ID} role="status" tabIndex={-1} className="rounded-md text-sm leading-snug text-ink-500">
                 {countText}
@@ -276,15 +313,21 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
               type="button"
               onClick={() => setFiltersOpen(true)}
               aria-haspopup="dialog"
-              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-bold text-ink ring-2 ring-inset ring-ink transition-[background-color,transform] duration-[120ms] hover:bg-ink/5 active:scale-[0.98] lg:hidden"
+              className={cn(D_PILL_OUTLINE, "h-11 shrink-0 px-4 text-sm lg:hidden")}
             >
               <SlidersHorizontal aria-hidden className="size-4" strokeWidth={2.25} />
               Filters
               {filterCount > 0 ? (
                 <>
+                  {/* How many filters are on is the state of a control, so it is royal (like the header's compare count). */}
                   <span
+                    key={filterCount}
                     aria-hidden
-                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1.5 text-[11px] font-bold text-white tabular-nums"
+                    onAnimationEnd={countPopped}
+                    className={cn(
+                      "inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-royal px-1.5 text-[11px] font-bold text-white tabular-nums",
+                      countPop && "d-pop",
+                    )}
                   >
                     {filterCount}
                   </span>
@@ -312,7 +355,10 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
             />
           ) : null}
 
-          <div className="mt-3">
+          {/* Room for the companion cloud, which perches on a card's top edge: 30 px (32 px from 640 px) clear above the
+              first card, whatever sits there (the count line, the Filters button, a note, the filter chips), and 24 px
+              between cards. */}
+          <div className="mt-[30px] sm:mt-8">
             {!search.ok ? (
               <Notice
                 title="These flights couldn’t be put together"
@@ -344,7 +390,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
               />
             ) : (
               <>
-                <ol aria-label="Flights" aria-describedby={ORDER_ID} className="flex flex-col gap-3">
+                <ol ref={listRef} aria-label="Flights" aria-describedby={ORDER_ID} className="flex flex-col gap-6">
                   {shown.map((option, index) => {
                     // The flight's own airports: a long flight "from LGA" leaves from JFK, and is one flight either way.
                     const item: CompareItem = {
@@ -356,7 +402,11 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                     const id = itemId(item);
                     const inCompare = compare.has(id);
                     return (
-                      <li key={option.key} className="animate-d-rise" style={{ animationDelay: `${Math.min(index, 8) * 60}ms` }}>
+                      <li
+                        key={option.key}
+                        className={redeals === 0 ? "animate-d-rise" : undefined}
+                        style={{ animationDelay: `${Math.min(index, 8) * 60}ms` }}
+                      >
                         <DResultCard
                           option={option}
                           item={item}
@@ -372,15 +422,23 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                           compareLocked={compare.isFull && !inCompare}
                           onToggleCompare={(control) => {
                             track("d_compare_toggle", { from: "results", added: !inCompare, key: item.key, has_scores: scores });
-                            compare.toggle(item);
+                            // Removing: the small plane leaves the flight's chip in the tray for this button, so it is
+                            // sent off while the chip is still there to be measured.
+                            if (inCompare) flyFromTray(trayIds.indexOf(id), control);
+                            const changed = compare.toggle(item);
                             keepClearOfTray(control);
+                            if (!changed) return;
+                            // Adding: the mirror image, from this button to the chip the tray has just gained.
+                            if (!inCompare) flyToTray(control);
+                            // "Noted": the same nod for adding and for removing, and for every flight.
+                            cloudReact("nod");
                           }}
                         />
                       </li>
                     );
                   })}
                 </ol>
-                <p id={ORDER_ID} className="mt-3 text-xs leading-snug text-ink-500">
+                <p id={ORDER_ID} className="mt-4 text-xs leading-snug text-ink-500">
                   {D_SORT_ORDER_TEXT[view.sort]}
                 </p>
               </>
@@ -479,7 +537,7 @@ function PrioritiesStrip({ priorities }: { priorities: Priorities }) {
         </span>
         <Link
           href={hrefs.home}
-          className="relative inline-block whitespace-nowrap font-bold text-ink underline decoration-2 underline-offset-4 before:absolute before:inset-x-0 before:-inset-y-3.5 before:content-['']"
+          className={cn(D_LINK, "relative inline-block whitespace-nowrap before:absolute before:inset-x-0 before:-inset-y-3.5 before:content-['']")}
         >
           {chosen ? "Change what matters" : "Choose what matters"}
         </Link>
@@ -491,10 +549,10 @@ function PrioritiesStrip({ priorities }: { priorities: Priorities }) {
 /** An empty state: the mascot, one bold line, one quiet line, and (sometimes) one way on. */
 function Notice({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
   return (
-    <div className="animate-d-rise rounded-[24px] bg-surface px-5 py-8 text-center shadow-soft">
-      <CloudMascot data-cloud-stage className="mx-auto w-24" />
-      <p className="mt-4 text-balance text-[20px] font-extrabold leading-snug tracking-tight text-ink">{title}</p>
-      <p className="mx-auto mt-1.5 max-w-[42ch] text-[15px] leading-relaxed text-ink-soft">{text}</p>
+    <div className="animate-d-rise flex flex-col items-center rounded-[24px] bg-surface px-5 pb-8 pt-7 text-center shadow-soft">
+      <CloudMascot data-cloud-stage className="w-24" />
+      <p className="mt-2 text-balance text-[20px] font-extrabold leading-snug tracking-tight text-ink">{title}</p>
+      <p className="mt-1.5 max-w-[42ch] text-[15px] leading-relaxed text-ink-soft">{text}</p>
       {action}
     </div>
   );
@@ -516,13 +574,13 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
   return (
     <section
       aria-labelledby="d-no-nonstops"
-      className="animate-d-rise rounded-[24px] bg-surface px-5 py-8 text-center shadow-soft sm:px-8"
+      className="animate-d-rise flex flex-col items-center rounded-[24px] bg-surface px-5 pb-8 pt-7 text-center shadow-soft sm:px-8"
     >
-      <CloudMascot data-cloud-stage className="mx-auto w-24" />
-      <h2 id="d-no-nonstops" className="mt-4 text-balance text-[20px] font-extrabold leading-snug tracking-tight text-ink">
+      <CloudMascot data-cloud-stage className="w-24" />
+      <h2 id="d-no-nonstops" className="mt-2 text-balance text-[20px] font-extrabold leading-snug tracking-tight text-ink">
         {area ? "No flights between these airports" : "No nonstop flights on this route"}
       </h2>
-      <p className="mx-auto mt-1.5 max-w-[48ch] text-[15px] leading-relaxed text-ink-soft">
+      <p className="mt-1.5 max-w-[48ch] text-[15px] leading-relaxed text-ink-soft">
         {area ? (
           <>
             {day.origin} and {day.destination} are{" "}
@@ -538,12 +596,12 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
         )}
       </p>
       {suggestions.length ? (
-        <ul className="mx-auto mt-4 grid max-w-xl gap-2 text-left sm:grid-cols-2">
+        <ul className="mt-4 grid w-full max-w-xl gap-2 text-left sm:grid-cols-2">
           {suggestions.map((route) => (
             <li key={`${route.origin}-${route.destination}`} className="min-w-0">
               <Link
                 href={hrefs.search(route, carry)}
-                className="flex min-h-14 items-center justify-between gap-3 rounded-2xl bg-canvas/70 px-4 py-2 transition-colors hover:bg-canvas"
+                className="d-chip flex min-h-14 items-center justify-between gap-3 rounded-2xl bg-canvas/70 px-4 py-2 hover:bg-canvas"
               >
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-ink">
@@ -562,7 +620,7 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
           ))}
         </ul>
       ) : null}
-      <p className="mx-auto mt-4 flex max-w-[48ch] items-start justify-center gap-1.5 text-xs leading-relaxed text-ink-mute">
+      <p className="mt-4 flex max-w-[48ch] items-start justify-center gap-1.5 text-xs leading-relaxed text-ink-mute">
         <Info aria-hidden className="mt-0.5 size-3.5 shrink-0" />
         <span>{suggestions.length ? "Or use “Change” above to pick another route." : "Use “Change” above to pick another route."}</span>
       </p>
@@ -574,7 +632,10 @@ function chipId(key: string): string {
   return `d-filter-chip-${key}`;
 }
 
-/** The filters that are on, as chips a tap removes (phones — the sidebar shows them in place). */
+/**
+ * The filters that are on, as chips a tap removes (phones — the sidebar shows them in place). A filter that is on is
+ * a selection, so the chips wear the selected look's colours: royal on its palest tint.
+ */
 function ActiveFilters({
   view,
   facets,
@@ -616,7 +677,7 @@ function ActiveFilters({
               onChange(chip.next, next ? chipId(next.key) : lastFocusId);
             }}
             aria-label={`Remove filter: ${chip.label}`}
-            className="relative inline-flex h-9 items-center gap-1 rounded-full bg-breeze-50 pl-3 pr-2 text-[13px] font-semibold text-breeze-700 ring-1 ring-inset ring-breeze-100 transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-breeze-100"
+            className="d-results-chip relative inline-flex h-9 items-center gap-1 rounded-full bg-royal-100 pl-3 pr-2 text-[13px] font-bold text-royal ring-1 ring-inset ring-royal/35 before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']"
           >
             {chip.label}
             <X aria-hidden className="size-3.5" />
@@ -627,7 +688,7 @@ function ActiveFilters({
         <button
           type="button"
           onClick={onClear}
-          className="relative h-9 rounded-full px-2.5 text-[13px] font-semibold text-ink-500 transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:text-ink-900"
+          className={cn(D_LINK, "relative h-9 rounded-full px-2.5 text-[13px] before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']")}
         >
           Clear all
         </button>

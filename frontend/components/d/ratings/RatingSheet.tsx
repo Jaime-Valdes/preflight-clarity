@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Info, Minus } from "lucide-react";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { CATEGORY_LABELS, type Rating, type RatingFactor } from "@preflight/shared/ratings";
 import { Sheet } from "@/components/c/common/Sheet";
 import { CategoryIcon } from "@/components/d/brand/CategoryIcon";
@@ -15,6 +15,13 @@ import { D_TIER, dTierTone, type RatingFrom } from "./tone";
  * basis, "how this is worked out" (the factors with a calm up / down / neutral
  * marker — leaf, amber, sky; never red) and the numbers — one tap away, never
  * the headline (docs/ITERATION_2.md).
+ *
+ * The sheet portals to <body>, outside the themed root, so what the page's
+ * stylesheet adds to it (app/d/d-flight.css) is written under html[data-d-on].
+ * On open the tier block settles (d-settle) and the reasons rise 6 px one
+ * after another, 50 ms apart (d-rating-reason reads its place from
+ * --d-flight-i). Position only: every word is readable in the first frame,
+ * and closing is immediate.
  */
 
 interface RatingSheetProps {
@@ -27,7 +34,8 @@ interface RatingSheetProps {
 const EFFECT: Record<RatingFactor["effect"], { icon: typeof ArrowUp; className: string; text: string }> = {
   up: { icon: ArrowUp, className: "bg-leaf-100 text-leaf-ink", text: "helps" },
   down: { icon: ArrowDown, className: "bg-amber-100 text-amber-ink", text: "weighs on it" },
-  neutral: { icon: Minus, className: "bg-sky text-sky-ink", text: "neutral" },
+  // White, not sky: the rows these markers sit on are sky, and a sky disc would vanish into them.
+  neutral: { icon: Minus, className: "bg-white text-sky-ink", text: "neutral" },
 };
 
 const EYEBROW = "mt-5 text-[12px] font-bold uppercase tracking-[0.08em] text-ink-mute";
@@ -36,9 +44,9 @@ export function RatingSheet({ rating, flightLabel, onClose }: RatingSheetProps) 
   const tone = D_TIER[dTierTone(rating)];
   return (
     <Sheet title={CATEGORY_LABELS[rating.category]} description={flightLabel} onClose={onClose}>
-      <div className={cn("rounded-2xl p-4", tone.bg)}>
+      <div className={cn("d-settle d-rating-tier rounded-[20px] p-4", tone.bg)}>
         <div className="flex items-start gap-3">
-          <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white ring-2 ring-ink">
+          <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white ring-2 ring-ink">
             <CategoryIcon category={rating.category} />
           </span>
           <div className="min-w-0 flex-1">
@@ -54,11 +62,15 @@ export function RatingSheet({ rating, flightLabel, onClose }: RatingSheetProps) 
 
       <h3 className={EYEBROW}>How this is worked out</h3>
       <ul className="mt-2 flex flex-col gap-2">
-        {rating.factors.map((factor) => {
+        {rating.factors.map((factor, index) => {
           const effect = EFFECT[factor.effect];
           const Icon = effect.icon;
           return (
-            <li key={factor.title} className="flex gap-3 rounded-2xl bg-canvas/60 px-3.5 py-3">
+            <li
+              key={factor.title}
+              className="d-rating-reason flex gap-3 rounded-2xl bg-canvas/60 px-3.5 py-3"
+              style={{ "--d-flight-i": index } as CSSProperties}
+            >
               <span aria-hidden className={cn("mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full", effect.className)}>
                 <Icon className="size-3.5" strokeWidth={2.5} />
               </span>

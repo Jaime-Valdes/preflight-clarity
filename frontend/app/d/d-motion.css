@@ -282,8 +282,13 @@ html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.b
  * keyboard focus; the underline (a utility in D_LINK) stays. The band is placed from the
  * middle of the box, so it sits under the words of a plain inline link and of a link that is
  * a 44 px tall flex row alike.
+ *
+ * The one shared text link D shows, the fare card's "other flights this day", gets the same
+ * highlighter: it is found by the calm colour it asks for, which the theme turns into D's ink
+ * and underline (app/globals.css, "Shared pieces that asked for a rating colour").
  */
-.d-link {
+.d-link,
+[data-theme="d"] a.text-calm-700 {
   background-image: linear-gradient(var(--color-butter), var(--color-butter));
   background-repeat: no-repeat;
   background-position: 0 calc(50% + 0.46em);
@@ -294,13 +299,16 @@ html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.b
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .d-link:hover {
+  .d-link:hover,
+  [data-theme="d"] a.text-calm-700:hover {
     background-size: 100% 0.42em;
   }
 }
 
 .d-link:active,
-.d-link:focus-visible {
+.d-link:focus-visible,
+[data-theme="d"] a.text-calm-700:active,
+[data-theme="d"] a.text-calm-700:focus-visible {
   background-size: 100% 0.42em;
 }
 

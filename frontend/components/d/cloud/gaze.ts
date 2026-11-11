@@ -50,11 +50,14 @@ function milliseconds(text: string): number | null {
   return text.trim().endsWith("ms") ? value : value * 1000;
 }
 
-/** A CSS length in px or vh as pixels of this viewport. */
+/** A plain CSS length in px, vw or vh as pixels of this viewport. */
 function pixels(text: string): number | null {
   const value = Number.parseFloat(text);
   if (!Number.isFinite(value)) return null;
-  return text.trim().endsWith("vh") ? (value / 100) * window.innerHeight : value;
+  const length = text.trim();
+  if (length.endsWith("vw")) return (value / 100) * window.innerWidth;
+  if (length.endsWith("vh")) return (value / 100) * window.innerHeight;
+  return value;
 }
 
 export function startGaze(root: HTMLElement): Gaze {
@@ -127,14 +130,20 @@ export function startGaze(root: HTMLElement): Gaze {
   }
 
   /**
-   * The plane of the page transition crosses left to right on one linear clock, a little ahead of
-   * its ribbon and climbing slightly (app/d/d-transition.css). The eyes travel with it and then
-   * return to the visitor. An estimate of its path is enough for a look.
+   * The plane of the page transition crosses left to right on one linear clock, ahead of its
+   * ribbon and climbing slightly. Its stylesheet (app/d/d-transition.css) publishes the path for
+   * this screen width on <html>: the seam under the ribbon travels from --d-vt-from to --d-vt-to
+   * and the middle of the plane flies --d-vt-lead ahead of it. The eyes travel with the plane and
+   * then return to the visitor. The fallbacks are that stylesheet's first numbers.
    */
   function followPlane() {
     const html = getComputedStyle(document.documentElement);
     const total = milliseconds(html.getPropertyValue("--d-vt")) ?? 760;
+    const width = window.innerWidth;
     const height = window.innerHeight;
+    const from = pixels(html.getPropertyValue("--d-vt-from")) ?? width * -0.4;
+    const to = pixels(html.getPropertyValue("--d-vt-to")) ?? width * 1.4;
+    const lead = pixels(html.getPropertyValue("--d-vt-lead")) ?? width * 0.16;
     const tap = pixels(html.getPropertyValue("--d-tap-y")) ?? height * 0.42;
     const y = Math.min(Math.max(tap, height * 0.18), height * 0.72);
     const began = performance.now();
@@ -147,7 +156,7 @@ export function startGaze(root: HTMLElement): Gaze {
         ahead();
         return;
       }
-      point = { x: window.innerWidth * (-0.24 + 1.8 * done), y: y - height * 0.03 * done };
+      point = { x: from + (to - from) * done + lead, y: y - height * 0.03 * done };
       aim();
     };
     step();

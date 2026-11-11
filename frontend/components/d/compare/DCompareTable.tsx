@@ -25,8 +25,12 @@ import {
 import { BenchmarkLine } from "@/components/c/flight/BenchmarkLine";
 import { dayOffsetMark, dayOffsetWords, daysAwayLabel, flightContext, routeText, shortDate } from "@/components/c/flight/copy";
 import { useHrefs } from "@/components/c/shell/ToolContext";
-import { D_PILL_OUTLINE } from "@/components/d/brand/buttons";
+import { D_LINK, D_PILL_OUTLINE } from "@/components/d/brand/buttons";
+import { CategoryIcon } from "@/components/d/brand/CategoryIcon";
+import { CloudMascot } from "@/components/d/brand/CloudMascot";
+import { cloudReact } from "@/components/d/cloud/react";
 import { ChooseButton } from "@/components/d/flight/ChooseButton";
+import { animateOnce } from "@/components/d/motion/motion";
 import { RatingButton } from "@/components/d/ratings/RatingSheet";
 import { CATEGORY_SHORT } from "@/components/d/ratings/tone";
 import { formatFare } from "@/lib/c/format";
@@ -38,20 +42,28 @@ import { cn } from "@/lib/cn";
 /*
  * Version D's compare table (docs/ITERATION_2.md): 2–3 flights side by side —
  * a header per flight, the fare with its difference to the cheapest of them,
- * the four ratings in the visitor's order (each a pill that opens its detail
+ * the four ratings in the visitor's order (each a tile that opens its detail
  * sheet), schedule, aircraft, airline, who flies it, the best seat, and "I'd
  * pick this flight" per column. No score ring and no timeline chart. On
  * phones two columns fit at 390 px; a third scrolls sideways inside the
  * table, never the page. Same props as version C's table, so ComparePage can
- * show either. Look: docs/ui-d-theme.md.
+ * show either.
+ *
+ * Look (docs/ui-d-cinematic.md, "Compare and the small states"): one paper card.
+ * Each group opens with a rounded sky band; the ratings are the focal group (a
+ * sunlit badge on their band, a badge per category, full-width tier tiles); the
+ * cloud lives in the label column's corner, which belongs to no flight. Every
+ * flight column is built from the same cells with the same classes: nothing here
+ * is styled by a flight's rating, price, airline or place in the list. The cells'
+ * paddings, the bands, the hairlines and the arrival are in app/d/d-compare.css.
  */
 
 /* Row labels stay put while the flight columns scroll sideways on phones (the cell must be opaque). */
-const STICKY =
-  "sticky left-0 z-10 px-2 text-left shadow-[inset_-1px_0_0_var(--color-line)] min-[400px]:px-2.5 sm:px-4";
-const LABEL = `${STICKY} bg-surface align-top`;
-const CELL = "px-2.5 align-top min-[400px]:px-3 sm:px-4";
-const ROW_LINE = "border-t border-line/70";
+const STICKY = "d-compare-sticky sticky left-0 z-10 bg-surface text-left";
+const LABEL = `${STICKY} text-xs font-semibold leading-snug text-ink-mute sm:text-[13px]`;
+const CELL = "d-compare-cell";
+/* A label sits on the first line of its values, whatever their sizes. */
+const BASE = "align-baseline";
 
 /** The quiet marker on the flight that leads a rating row (every tied one; none when they are all equal). */
 const ROW_MARK: Record<RatingCategory, string> = {
@@ -85,19 +97,31 @@ function optionsOn(column: FlightColumn): readonly FlightOption[] {
   }
 }
 
-/** Whether the table is wider than its box, and whether more of it lies to the right of what is on screen. */
+/**
+ * The cloud's "noted" for a removal, the same for every flight. One frame later, so the cloud that
+ * answers is the one the page shows after the change: the corner cloud, or the empty state's.
+ */
+function nodAfterRemoval() {
+  window.requestAnimationFrame(() => cloudReact("nod"));
+}
+
+/**
+ * Where the table stands in its box: wider than it, more of it to the right of what is on screen, and
+ * columns scrolled under the row labels.
+ */
 interface Edge {
   wider: boolean;
   more: boolean;
+  under: boolean;
 }
 
-const NO_EDGE: Edge = { wider: false, more: false };
+const NO_EDGE: Edge = { wider: false, more: false, under: false };
 
 /** The state update for a scroller's current edges (the same object back when nothing changed). */
 function edgeUpdate(el: HTMLElement): (prev: Edge) => Edge {
   const hidden = el.scrollWidth - el.clientWidth;
-  const next: Edge = { wider: hidden > 1, more: hidden - el.scrollLeft > 8 };
-  return (prev) => (prev.wider === next.wider && prev.more === next.more ? prev : next);
+  const next: Edge = { wider: hidden > 1, more: hidden - el.scrollLeft > 8, under: el.scrollLeft > 1 };
+  return (prev) => (prev.wider === next.wider && prev.more === next.more && prev.under === next.under ? prev : next);
 }
 
 export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
@@ -119,8 +143,9 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
   );
 
   // On phones a third column sits off-screen: a fade at the right edge says there is more while there is,
-  // and a line above the table says so in words. Measured by a ResizeObserver (its first report comes
-  // right after observing, so nothing is set in the effect itself) and on every scroll.
+  // a line above the table says so in words, and the row labels cast an edge on the columns under them.
+  // Measured by a ResizeObserver (its first report comes right after observing, so nothing is set in the
+  // effect itself) and on every scroll; the state only changes when one of the three answers does.
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState<Edge>(NO_EDGE);
   useEffect(() => {
@@ -129,6 +154,25 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
     const observer = new ResizeObserver(() => setEdge(edgeUpdate(el)));
     observer.observe(el);
     if (el.firstElementChild) observer.observe(el.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+  // A small answer to the scroll: each badge in the label column stamps once as it comes fully into view
+  // (the kit's preset: scale only, never opacity, nothing under reduced motion). The label column belongs to
+  // no flight, so no flight's column moves and every row answers alike.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          observer.unobserve(entry.target);
+          animateOnce(entry.target, "stamp");
+        }
+      },
+      { threshold: 1 },
+    );
+    for (const badge of el.querySelectorAll(".d-compare-badge")) observer.observe(badge);
     return () => observer.disconnect();
   }, []);
   const tags = useMemo(() => flightTags(flights, names), [flights, names]);
@@ -147,38 +191,38 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
 
   /** One row: a label and a cell per column (an unavailable flight shows a dash). */
   const row = (label: string, render: (c: FlightColumn) => ReactNode) => (
-    <tr>
-      <th scope="row" className={cn(LABEL, ROW_LINE, "py-3 text-xs font-semibold leading-snug text-ink-500")}>
+    <tr className="d-compare-row d-compare-ruled">
+      <th scope="row" className={cn(LABEL, BASE, "py-3.5")}>
         {label}
       </th>
       {columns.map((c) => (
-        <td key={c.id} className={cn(CELL, ROW_LINE, "py-3")}>
+        <td key={c.id} className={cn(CELL, BASE, "py-3.5")}>
           {isFlightColumn(c) ? render(c) : <NotAvailable />}
         </td>
       ))}
     </tr>
   );
 
-    /** Group title in the label column (an outlined icon from sm up), and a small key per flight so a column stays recognisable. */
-  const groupHead = (title: string, icon: ReactNode, sub?: string) => (
-    <tr>
-      <th scope="rowgroup" className={cn(STICKY, "border-t border-line bg-canvas pb-2.5 pt-4 align-top")}>
-        <span className="flex items-center gap-2 text-xs font-extrabold leading-tight text-ink sm:text-[13px]">
-          <span
-            aria-hidden
-            className="hidden size-7 shrink-0 items-center justify-center rounded-full bg-white text-ink ring-2 ring-ink sm:flex [&_svg]:size-3.5"
-          >
+  /**
+   * A group's band: its title beside an outlined badge, and a small key per flight so a column stays
+   * recognisable far below the header. `focal` is the ratings group, the table's focal point.
+   */
+  const groupHead = (title: string, icon: ReactNode, sub?: string, focal = false) => (
+    <tr className={cn("d-compare-band", focal && "d-compare-band-focal")}>
+      <th scope="rowgroup" className={STICKY}>
+        <span className="d-compare-band-title">
+          <span aria-hidden className="d-compare-badge">
             {icon}
           </span>
-          {title}
+          <span className="d-compare-band-name">{title}</span>
+          {sub ? <span className="d-compare-band-sub">{sub}</span> : null}
         </span>
-        {sub ? <span className="mt-0.5 block text-[11px] font-normal leading-snug text-ink-mute">{sub}</span> : null}
       </th>
       {columns.map((c) => (
-        <td key={c.id} className={cn(CELL, "border-t border-line bg-canvas pb-2.5 pt-4")}>
+        <td key={c.id} className={CELL}>
           {isFlightColumn(c) ? (
             // Wraps rather than truncating: in a narrow column the date is what tells two of the same flight apart.
-            <span aria-hidden className="block max-w-full text-[11px] font-semibold leading-tight text-ink-500 tabular-nums [overflow-wrap:anywhere]">
+            <span aria-hidden className="block max-w-full text-[11px] font-bold leading-tight text-ink-mute tabular-nums [overflow-wrap:anywhere] sm:text-xs">
               {tags.get(c.id) ?? c.flight.flightNumber}
             </span>
           ) : null}
@@ -195,25 +239,27 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
           {n === 3 ? "Scroll the table sideways for the third flight." : "Scroll the table sideways for the rest."}
         </p>
       ) : null}
-      <div className="relative">
+      {/* The whole table arrives as one piece: every column in the same frame, so no flight is first. */}
+      <div className="d-compare-arrive relative">
         {/* `relative`: the sr-only text in the cells is absolutely positioned; without a positioned scroller its
             containing block lies outside, so it escapes the clip and widens the page by the hidden column. */}
         <div
           ref={scrollerRef}
           onFocus={revealFocused}
           onScroll={(event) => setEdge(edgeUpdate(event.currentTarget))}
-          className="relative overflow-x-auto overscroll-x-contain rounded-[24px] bg-surface shadow-soft [--cmp-col:108px] [--cmp-label:92px] [scroll-padding-inline-start:var(--cmp-label)] [scrollbar-width:thin] min-[400px]:[--cmp-col:124px] min-[400px]:[--cmp-label:100px] sm:[--cmp-col:11rem] sm:[--cmp-label:9.5rem] lg:[--cmp-col:13rem] lg:[--cmp-label:12rem]"
+          data-under={edge.under ? "" : undefined}
+          className="d-compare-card relative overflow-x-auto overscroll-x-contain rounded-[24px] bg-surface shadow-soft [scrollbar-width:thin]"
         >
           <table
             className="w-full table-fixed border-separate border-spacing-0 text-left"
-            style={{ minWidth: `calc(var(--cmp-label) + ${n} * var(--cmp-col))` }}
+            style={{ minWidth: `calc(var(--d-compare-label) + ${n} * var(--d-compare-col))` }}
           >
             <caption className="sr-only">
               {flights.length} flights compared side by side, rated in plain words{" "}
               {priorities.chosen ? "for what matters to you" : "in the usual order"}. Prices are illustrative.
             </caption>
             <colgroup>
-              <col style={{ width: "var(--cmp-label)" }} />
+              <col style={{ width: "var(--d-compare-label)" }} />
               {columns.map((c) => (
                 <col key={c.id} />
               ))}
@@ -221,13 +267,18 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
 
             <thead>
               <tr>
-                <td className={cn(STICKY, "bg-surface pb-3 pt-4 align-bottom")}>
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-500 max-[399px]:tracking-normal">
+                {/* The label column's corner belongs to no flight: the cloud's place on this page. It looks
+                    where the visitor points and nods when a flight is removed or picked; it never sits on a column. */}
+                <td className={cn(STICKY, "pb-3.5 pt-4 align-top sm:pt-5")}>
+                  <span className="block w-10 sm:w-11">
+                    <CloudMascot data-cloud-home float={false} />
+                  </span>
+                  <span className="mt-2 block text-[11px] font-bold uppercase tracking-wide text-ink-mute max-[399px]:tracking-normal">
                     {flights.length} {flights.length === 1 ? "flight" : "flights"}
                   </span>
                 </td>
                 {columns.map((c) => (
-                  <th key={c.id} scope="col" className={cn(CELL, "pb-3 pt-4 font-normal")}>
+                  <th key={c.id} scope="col" className={cn(CELL, "pb-3.5 pt-4 align-top font-normal sm:pt-5")}>
                     <ColumnHead column={c} forYou={forYou.has(c.id)} chosen={priorities.chosen} />
                   </th>
                 ))}
@@ -236,38 +287,38 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
 
             {/* The rest of each flight's header: where and when, the fare and its difference, the actions. */}
             <tbody>
-              <tr>
-                <th scope="row" className={cn(LABEL, ROW_LINE, "py-3 text-xs font-semibold text-ink-500")}>
+              <tr className="d-compare-row d-compare-ruled">
+                <th scope="row" className={cn(LABEL, BASE, "pb-2.5 pt-3.5")}>
                   Route
                 </th>
                 {columns.map((c) => (
-                  <td key={c.id} className={cn(CELL, ROW_LINE, "py-3")}>
+                  <td key={c.id} className={cn(CELL, BASE, "pb-2.5 pt-3.5")}>
                     <Value main={routeText(c.item.origin, c.item.destination)} sub={shortDate(c.item.date)} />
                   </td>
                 ))}
               </tr>
-              <tr>
-                <th scope="row" className={cn(LABEL, "pb-3 text-xs font-semibold text-ink-500")}>
+              <tr className="d-compare-row">
+                <th scope="row" className={cn(LABEL, BASE, "pb-2.5")}>
                   Times
                 </th>
                 {columns.map((c) => (
-                  <td key={c.id} className={cn(CELL, "pb-3")}>
+                  <td key={c.id} className={cn(CELL, BASE, "pb-2.5")}>
                     {isFlightColumn(c) ? (
                       <Value main={<Times column={c} />} />
                     ) : (
-                      <p className="text-xs leading-snug text-ink-500">{unavailableNote(c)}</p>
+                      <p className="text-xs leading-snug text-ink-mute">{unavailableNote(c)}</p>
                     )}
                   </td>
                 ))}
               </tr>
-              <tr>
-                <th scope="row" className={cn(LABEL, "pb-3 text-xs font-semibold text-ink-500")}>
+              <tr className="d-compare-row">
+                <th scope="row" className={cn(LABEL, BASE, "pb-3")}>
                   Fare
                 </th>
                 {columns.map((c) => {
                   if (!isFlightColumn(c)) {
                     return (
-                      <td key={c.id} className={cn(CELL, "pb-3")}>
+                      <td key={c.id} className={cn(CELL, BASE, "pb-3")}>
                         <NotAvailable />
                       </td>
                     );
@@ -275,43 +326,46 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
                   const fare = fareAt(c.option, c.daysUntil);
                   const delta = priceDeltaText(fare, cheapestFare);
                   return (
-                    <td key={c.id} className={cn(CELL, "pb-3")}>
-                      <span className="block text-2xl font-extrabold leading-tight tracking-[-0.01em] text-ink tabular-nums">{formatFare(fare)}</span>
-                      <span className="mt-0.5 block text-[11px] leading-snug text-ink-500">one way · illustrative</span>
+                    <td key={c.id} className={cn(CELL, BASE, "pb-3")}>
+                      <span className="block text-2xl font-extrabold leading-tight tracking-[-0.01em] text-ink tabular-nums sm:text-[28px]">
+                        {formatFare(fare)}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-ink-mute sm:text-xs">one way · illustrative</span>
                       {delta === "Cheapest" ? (
-                        <Marker>Cheapest</Marker>
+                        <Marker tone="fact">Cheapest</Marker>
                       ) : (
-                        <span className="mt-1.5 block text-xs font-semibold leading-snug text-ink-700 tabular-nums">{delta}</span>
+                        <span className="mt-1.5 block text-xs font-semibold leading-snug text-ink-soft tabular-nums">{delta}</span>
                       )}
                     </td>
                   );
                 })}
               </tr>
-              <tr>
-                <th scope="row" className={cn(LABEL, "pb-4")}>
+              <tr className="d-compare-row">
+                <th scope="row" className={cn(LABEL, "pb-4 align-top")}>
                   <span className="sr-only">Actions</span>
                 </th>
                 {columns.map((c) => (
-                  <td key={c.id} className={cn(CELL, "pb-4")}>
-                    <div className="flex flex-col gap-1.5 lg:flex-row lg:flex-wrap">
+                  <td key={c.id} className={cn(CELL, "pb-4 align-top")}>
+                    {/* Stacked on phones; side by side where the column has room, and Remove drops under Details where it has not. */}
+                    <div className="flex flex-col items-center gap-0.5 sm:flex-row sm:flex-wrap sm:gap-x-2 sm:gap-y-0">
                       {isFlightColumn(c) ? (
-                        <Link
-                          href={hrefs.flight(c.item)}
-                          className={cn(D_PILL_OUTLINE, "h-11 px-3 text-sm lg:flex-1")}
-                        >
+                        <Link href={hrefs.flight(c.item)} className={cn(D_PILL_OUTLINE, "h-11 w-full px-3 text-sm sm:w-auto sm:min-w-[7.5rem] sm:px-5")}>
                           Details<span className="sr-only"> for {nameOf(c)}</span>
                         </Link>
                       ) : (
                         // Stacked on phones: keeps this Remove on the same line as the other columns' Remove.
-                        <span aria-hidden className="h-11 lg:hidden" />
+                        <span aria-hidden className="h-11 sm:hidden" />
                       )}
                       <button
                         type="button"
                         data-remove-id={c.id}
-                        onClick={() => onRemove(c.id)}
-                        className="inline-flex h-11 items-center justify-center gap-1 rounded-full px-3 text-sm font-semibold text-ink-500 transition-colors hover:bg-canvas hover:text-ink-900 lg:flex-1"
+                        onClick={() => {
+                          onRemove(c.id);
+                          nodAfterRemoval();
+                        }}
+                        className={cn(D_LINK, "inline-flex h-11 items-center gap-1 rounded-full px-2 text-[13px] sm:text-sm")}
                       >
-                        <X aria-hidden className="size-4 shrink-0" />
+                        <X aria-hidden className="size-4 shrink-0" strokeWidth={2.5} />
                         Remove<span className="sr-only"> {nameOf(c)}</span>
                       </button>
                     </div>
@@ -320,23 +374,29 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
               </tr>
             </tbody>
 
-            {/* The four ratings in the visitor's order; a pill opens the rating's detail (numbers, how it is worked out). */}
-            <tbody>
-              {groupHead(priorities.chosen ? "Rated for you" : "Ratings", <Sparkles />, priorities.chosen ? "In your order" : "In the usual order")}
+            {/* The four ratings in the visitor's order; a tile opens the rating's detail (numbers, how it is worked out).
+                Every tile is the same size whatever its words and its tier, so no tier and no flight weighs more. */}
+            <tbody className="d-compare-group">
+              {groupHead(priorities.chosen ? "Rated for you" : "Ratings", <Sparkles />, priorities.chosen ? "In your order" : "In the usual order", true)}
               {order.map((category) => {
                 const lead = rowLeaders(category);
                 return (
-                  <tr key={category}>
-                    <th scope="row" className={cn(LABEL, ROW_LINE, "py-3 text-xs font-semibold leading-snug text-ink-500")}>
-                      {CATEGORY_SHORT[category]}
+                  <tr key={category} className="d-compare-row d-compare-ruled d-compare-rating">
+                    <th scope="row" className={cn(STICKY, "align-top text-xs font-bold leading-snug text-ink sm:text-sm")}>
+                      <span className="flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-2.5">
+                        <span aria-hidden className="d-compare-badge">
+                          <CategoryIcon category={category} size="sm" />
+                        </span>
+                        {CATEGORY_SHORT[category]}
+                      </span>
                     </th>
                     {columns.map((c) => {
                       const rating = isFlightColumn(c) ? ratingOf(c, category) : undefined;
                       return (
-                        <td key={c.id} className={cn(CELL, ROW_LINE, "py-3")}>
+                        <td key={c.id} className={cn(CELL, "align-top")}>
                           {rating && isFlightColumn(c) ? (
                             <>
-                              {/* The row names the category, so the pill carries the tier alone ("Smooth", "Large jet"). In a
+                              {/* The row names the category, so the tile carries the tier alone ("Smooth", "Large jet"). In a
                                   108 px phone column the words wrap between themselves, never inside one, and the chevron
                                   makes way for them below 400 px. */}
                               <RatingButton
@@ -345,12 +405,14 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
                                 from="compare"
                                 size="sm"
                                 labelOnly
-                                className="max-w-full py-1 text-left [&_span]:whitespace-normal [&_span]:break-words max-[399px]:[&_svg]:hidden"
+                                className="d-compare-tier max-[399px]:[&_svg]:hidden"
                               />
                               {lead.has(c.id) ? <Marker className="mt-2">{ROW_MARK[category]}</Marker> : null}
                             </>
                           ) : (
-                            <NotAvailable />
+                            <span className="d-compare-none">
+                              <NotAvailable />
+                            </span>
                           )}
                         </td>
                       );
@@ -360,7 +422,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
               })}
             </tbody>
 
-            <tbody>
+            <tbody className="d-compare-group">
               {groupHead("Schedule", <CalendarClock />)}
               {row("Departs", (c) => (
                 <Value main={formatTime12(c.flight.departTime)} sub={`${c.flight.origin.code} · ${shortDate(c.item.date)}`} />
@@ -379,7 +441,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
               ))}
             </tbody>
 
-            <tbody>
+            <tbody className="d-compare-group">
               {groupHead("Aircraft", <Plane />)}
               {row("Type", (c) => (
                 <Value main={c.flight.aircraft.fullName} sub={c.avail.airframe ? "Assigned aircraft · can change" : "Scheduled aircraft"} />
@@ -392,7 +454,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
               ))}
             </tbody>
 
-            <tbody>
+            <tbody className="d-compare-group">
               {groupHead("Airline", <ShieldCheck />)}
               {row("On time", (c) => (
                 <Value
@@ -403,7 +465,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
               ))}
             </tbody>
 
-            <tbody>
+            <tbody className="d-compare-group">
               {groupHead("Who flies it", <UserRound />)}
               {row("Pilots", (c) => {
                 const line = crewLine(c.flight.crew, c.flight.aircraft.model);
@@ -411,7 +473,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
               })}
             </tbody>
 
-            <tbody>
+            <tbody className="d-compare-group">
               {groupHead("Best seat", <Armchair />)}
               {row("Smoothest rows", (c) => {
                 const zone = smoothestZone(c.flight);
@@ -424,14 +486,14 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
             </tbody>
 
             {/* The choice signal, per column. Recorded only — nothing is booked. */}
-            <tbody>
+            <tbody className="d-compare-group">
               {groupHead("Your pick", <Heart />, "Nothing is booked")}
-              <tr>
-                <th scope="row" className={cn(LABEL, ROW_LINE, "py-3 text-xs font-semibold leading-snug text-ink-500")}>
+              <tr className="d-compare-row d-compare-ruled">
+                <th scope="row" className={cn(LABEL, BASE, "pb-5 pt-3.5")}>
                   I&rsquo;d pick
                 </th>
                 {columns.map((c) => (
-                  <td key={c.id} className={cn(CELL, ROW_LINE, "py-3 pb-4")}>
+                  <td key={c.id} className={cn(CELL, BASE, "pb-5 pt-3.5")}>
                     {isFlightColumn(c) ? (
                       <ChooseButton
                         item={c.item}
@@ -443,6 +505,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
                         position={null}
                         from="compare"
                         size="sm"
+                        className="d-compare-choose"
                       />
                     ) : (
                       <NotAvailable />
@@ -468,31 +531,34 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
 
+/** A column's header: the airline's tile (the same ink tile for every airline), its name and the flight number. */
 function ColumnHead({ column, forYou, chosen }: { column: Column; forYou: boolean; chosen: boolean }) {
   if (!isFlightColumn(column)) {
     return (
-      <>
-        <span className="flex h-7 items-center">
-          <AirlineMark code={column.item.key.slice(0, 2)} size="sm" className="opacity-50" />
+      <span className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <AirlineMark code={column.item.key.slice(0, 2)} size="sm" className="d-compare-tile opacity-50" />
+        <span className="min-w-0">
+          <span className="block text-[13px] font-bold leading-snug text-ink-soft tabular-nums min-[400px]:text-sm sm:text-base">{column.item.key}</span>
+          <span className="block text-xs leading-snug text-ink-mute sm:text-[13px]">{UNAVAILABLE_LABEL[column.reason]}</span>
         </span>
-        <span className="mt-2 block text-[13px] font-bold leading-snug text-ink-700 tabular-nums">{column.item.key}</span>
-        <span className="block text-xs leading-snug text-ink-500">{UNAVAILABLE_LABEL[column.reason]}</span>
-      </>
+      </span>
     );
   }
   const f = column.flight;
   return (
     <>
-      <span className="flex h-7 items-center">
-        <AirlineMark code={f.airline.code} size="sm" />
-      </span>
-      <span className="mt-2 block text-[13px] font-bold leading-snug text-ink-900 [overflow-wrap:anywhere] sm:text-sm">{f.airline.name}</span>
-      <span className="block text-xs font-semibold text-ink-500 tabular-nums">
-        {f.flightNumber}
-        <span className="sr-only"> on {shortDate(column.item.date)}</span>
+      <span className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <AirlineMark code={f.airline.code} size="sm" className="d-compare-tile" />
+        <span className="min-w-0">
+          <span className="block text-[13px] font-extrabold leading-snug text-ink [overflow-wrap:anywhere] min-[400px]:text-sm sm:text-base">{f.airline.name}</span>
+          <span className="block text-xs font-semibold text-ink-mute tabular-nums sm:text-[13px]">
+            {f.flightNumber}
+            <span className="sr-only"> on {shortDate(column.item.date)}</span>
+          </span>
+        </span>
       </span>
       {/* "For you" only once the visitor has said what matters; before that the lead is in the usual order. */}
-      {forYou ? <Marker className="mt-2">{chosen ? "Smoothest for you" : "Smoothest overall"}</Marker> : null}
+      {forYou ? <Marker className="mt-2.5">{chosen ? "Smoothest for you" : "Smoothest overall"}</Marker> : null}
     </>
   );
 }
@@ -500,19 +566,24 @@ function ColumnHead({ column, forYou, chosen }: { column: Column; forYou: boolea
 function Value({ main, sub, benchmark }: { main: ReactNode; sub?: ReactNode; benchmark?: ReactNode }) {
   return (
     <>
-      <span className="block text-[13px] font-semibold leading-snug text-ink-900 tabular-nums [overflow-wrap:anywhere] sm:text-sm">{main}</span>
-      {sub ? <span className="mt-0.5 block text-xs leading-snug text-ink-500 [overflow-wrap:anywhere]">{sub}</span> : null}
-      {benchmark ? <span className="mt-1 block">{benchmark}</span> : null}
+      <span className="block text-[13px] font-bold leading-snug text-ink tabular-nums [overflow-wrap:anywhere] sm:text-[15px]">{main}</span>
+      {sub ? <span className="mt-0.5 block text-xs leading-snug text-ink-mute [overflow-wrap:anywhere] sm:text-[13px]">{sub}</span> : null}
+      {benchmark ? <span className="d-compare-bench mt-1 block">{benchmark}</span> : null}
     </>
   );
 }
 
-/** Quiet fact marker — "Smoothest for you", "Cheapest", "Smoothest". Never advice. */
-function Marker({ children, className }: { children: ReactNode; className?: string }) {
+/**
+ * Quiet fact marker — "Smoothest for you", "Cheapest", "Smoothest". Never advice. A marker that compares
+ * ratings wears the rating green; any other fact (the fare) is sky with ink: green only ever means a rating.
+ */
+function Marker({ children, tone = "rating", className }: { children: ReactNode; tone?: "rating" | "fact"; className?: string }) {
   return (
     <span
       className={cn(
-        "mt-1.5 flex w-fit items-center rounded-full bg-leaf-100 px-2 py-0.5 text-[11px] font-bold leading-4 text-leaf-ink",
+        // 10 px corners: a one-line marker is a pill, and one that wraps in a narrow column stays a tidy tag.
+        "mt-1.5 flex w-fit items-center rounded-[10px] px-2 py-0.5 text-[11px] font-bold leading-4",
+        tone === "rating" ? "bg-leaf-100 text-leaf-ink" : "bg-sky text-ink",
         className,
       )}
     >
@@ -524,7 +595,7 @@ function Marker({ children, className }: { children: ReactNode; className?: stri
 function NotAvailable() {
   return (
     <>
-      <span aria-hidden className="text-sm text-ink-300">
+      <span aria-hidden className="text-sm text-ink-mute">
         —
       </span>
       <span className="sr-only">Not available</span>

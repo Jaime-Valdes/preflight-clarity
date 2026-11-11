@@ -3,22 +3,22 @@
 import { ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { HomeSearch } from "@/components/c/search/HomeSearch";
-import { Blobs } from "@/components/d/brand/Blobs";
-import { CloudMascot } from "@/components/d/brand/CloudMascot";
-import { FlightPath } from "@/components/d/brand/FlightPath";
+import { D_PILL_PRIMARY } from "@/components/d/brand/buttons";
 import { ProgressDashes } from "@/components/d/brand/ProgressDashes";
 import { DWordmark } from "@/components/d/brand/Wordmark";
+import { DHeroScene } from "@/components/d/home/DHeroScene";
 import { PrioritiesSetup } from "@/components/d/setup/PrioritiesSetup";
+import { cn } from "@/lib/cn";
 
-/** Staggered entrance: 60 ms per element, from the top of the screen down. */
-const rise = (step: number): CSSProperties => ({ animationDelay: `${step * 60}ms` });
+/** The words settle in one after another, 60 ms apart (app/d/d-home.css reads the step). Position only, never a fade. */
+const step = (n: number) => ({ "--d-home-step": n }) as CSSProperties;
 
 /**
- * The /d home (docs/ITERATION_2.md, look: docs/ui-d-theme.md): the intro — the
- * mascot, a flight path drawing itself across the sky, one headline, one line,
- * one button — then the priorities setup and the search form. "Let's begin"
- * moves to the setup; after the setup is answered the search form takes focus,
- * so the next step is always under the thumb.
+ * The /d home (docs/ITERATION_2.md, look: docs/ui-d-cinematic.md): the intro — the
+ * sun, the cloud in front of it and a flight line climbing past them, then one
+ * headline, one line, one button — then the priorities setup and the search form.
+ * "Let's begin" moves to the setup; after the setup is answered the search form
+ * takes focus, so the next step is always under the thumb.
  */
 export function DHome() {
   const setupRef = useRef<HTMLDivElement>(null);
@@ -51,55 +51,44 @@ export function DHome() {
 
   return (
     <>
-      {/* The intro: the page's sky with the blobs behind, the drawing, then the words. */}
-      <section aria-labelledby="d-home-title" className="relative -mx-4 -mt-4 overflow-hidden px-4 pb-10 pt-5 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-8 lg:-mx-8 lg:px-8 lg:pb-14">
-        <Blobs />
-        <div className="relative mx-auto max-w-[1120px]">
-          <div className="animate-d-rise" style={rise(0)}>
+      {/* The intro. Phones: the scene is a band of sky under the header, then the words. Laptops: words left, scene right. */}
+      <section aria-labelledby="d-home-title" className="d-home-hero -mt-3 sm:-mt-4 lg:mt-0 lg:pt-2">
+        <DHeroScene />
+        <div className="d-home-words mt-3 sm:mt-4 lg:mt-0">
+          <div className="d-home-rise">
             <DWordmark />
           </div>
-
-          {/* The scene: the path sweeps across; the mascot sits on it, right of centre. */}
-          <div className="relative mt-2 h-[13.5rem] sm:h-[16rem] lg:mt-0 lg:h-[20rem]">
-            <FlightPath className="absolute inset-x-0 top-1/2 -translate-y-1/2" />
-            <div className="absolute right-[6%] top-[14%] w-[9.5rem] animate-d-rise sm:w-[11rem] lg:right-[12%] lg:top-[10%] lg:w-[14rem]" style={rise(1)}>
-              <CloudMascot data-cloud-stage />
-            </div>
-          </div>
-
-          <div className="max-w-[34rem] lg:max-w-[40rem]">
-            <ProgressDashes total={3} active={0} label="Step 1 of 3: a quick hello" className="animate-d-rise" style={rise(2)} />
-            <h1
-              id="d-home-title"
-              className="mt-5 animate-d-rise text-balance text-[38px] font-extrabold leading-[1.08] tracking-[-0.025em] text-ink sm:text-[48px] lg:text-[56px]"
-              style={rise(3)}
-            >
-              A calmer way to choose a flight
-            </h1>
-            <p className="mt-4 max-w-[32rem] animate-d-rise text-[17px] leading-relaxed text-ink-soft" style={rise(4)}>
-              Tell us what matters to you. We&rsquo;ll show every nonstop flight on your route in plain words &mdash; no scores,
-              no jargon.
-            </p>
-            <div className="mt-7 animate-d-rise sm:max-w-[22rem]" style={rise(5)}>
-              <button
-                type="button"
-                onClick={begin}
-                className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-full bg-ink px-6 text-[17px] font-bold text-white transition-transform duration-[120ms] active:scale-[0.98]"
-              >
-                Let&rsquo;s begin
-                <ArrowRight aria-hidden className="size-5" />
-              </button>
-            </div>
+          <ProgressDashes total={3} active={0} label="Step 1 of 3: a quick hello" className="d-home-rise mt-6" style={step(1)} />
+          <h1
+            id="d-home-title"
+            className="d-home-rise mt-5 max-w-[34rem] text-balance text-[38px] font-extrabold leading-[1.08] tracking-[-0.025em] text-ink sm:text-[48px] lg:text-[56px]"
+            style={step(2)}
+          >
+            A calmer way to choose a flight
+          </h1>
+          <p className="d-home-rise mt-4 max-w-[32rem] text-[17px] leading-relaxed text-ink-soft" style={step(3)}>
+            Tell us what matters to you. We&rsquo;ll show every nonstop flight on your route in plain words &mdash; no scores,
+            no jargon.
+          </p>
+          {/* Still from the first frame: the one thing on the screen to tap never moves under the thumb. */}
+          <div className="mt-7 sm:max-w-[22rem]">
+            <button type="button" onClick={begin} className={cn(D_PILL_PRIMARY, "h-14 w-full px-6 text-[17px]")}>
+              Let&rsquo;s begin
+              <ArrowRight aria-hidden className="size-5" />
+            </button>
           </div>
         </div>
       </section>
 
-      <div ref={setupRef} tabIndex={-1} className="scroll-mt-4 outline-none">
-        <PrioritiesSetup className="mt-2" onDone={() => setAdvanced((n) => n + 1)} />
+      {/* The card inside is a seat for the roaming cloud: 30 px (32 from 640 px) of clear sky above it, so the cloud's
+          head never reaches "Let's begin", and the same margin when "Let's begin" scrolls it to the top of the screen. */}
+      <div ref={setupRef} tabIndex={-1} className="mt-[30px] scroll-mt-[30px] rounded-[24px] outline-none sm:mt-8 sm:scroll-mt-8">
+        <PrioritiesSetup onDone={() => setAdvanced((n) => n + 1)} />
       </div>
 
-      {/* The last step: the search form on a white card, the popular routes in ink. */}
-      <div ref={searchRef} tabIndex={-1} className="mt-4 scroll-mt-4 rounded-[24px] bg-surface p-5 shadow-soft outline-none sm:p-7">
+      {/* The last step: the search form on a paper card, the popular routes on sky chips. A seat too, 24 px under the
+          setup card. It holds the airport suggestion lists, so it is never transformed, lifted or revealed. */}
+      <div ref={searchRef} tabIndex={-1} data-cloud-seat className="mt-6 scroll-mt-6 rounded-[24px] bg-surface p-5 shadow-soft outline-none sm:p-7">
         <ProgressDashes total={3} active={2} label="Step 3 of 3: where and when" />
         <h2 className="mt-4 text-[26px] font-extrabold leading-[1.12] tracking-[-0.02em] text-ink sm:text-[30px]">Where and when?</h2>
         <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">Nonstop flights, one way, one traveller.</p>

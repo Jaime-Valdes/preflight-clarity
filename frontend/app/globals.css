@@ -146,7 +146,7 @@
 
 /*
  * ── Version D theme (docs/ui-d-cinematic.md; scoping: docs/ui-d-theme.md) ────
- * The "Window Seat" look for the smooth-flight finder only. Four parts:
+ * The "Window Seat" look for the smooth-flight finder only. Five parts:
  *   1. New tokens (sky, cream, gold, royal, the three rating families, ink)
  *      used by D-only components. Nothing outside /d references them.
  *   2. Under [data-theme="d"] (set by app/d/layout.tsx) the semantic tokens the
@@ -159,10 +159,15 @@
  *      (html[data-d-on], set by DScope) a sheet's root gets the same re-pointing.
  *   4. The shell (top bar, compare tray, footer) is restyled from here: its
  *      components are shared with version C and are not edited.
+ *   5. Shared pieces that ask for a rating colour for something that is not a
+ *      rating (airline tiles, "in compare", form hints) are put on royal, sky
+ *      or ink, so green, yellow and amber only ever mean a rating.
  * Every text and background pair this palette relies on is checked by
  * `node frontend/scripts/d-contrast.mjs`; run it after changing a colour.
- * Motion: every animation here is short, slow or barely there, and the global
- * reduced-motion rule above ends all of them at their resting frame.
+ * Motion: one entrance lives here (animate-d-rise: 12 px, position only), and
+ * the global reduced-motion rule above ends it at its resting frame. The sky,
+ * the cloud, the page transition, the kit and each screen keep their own
+ * motion in app/d/d-*.css.
  */
 /* `static`: every token below is always emitted as a CSS variable, so D's plain-CSS partials (app/d/d-*.css) and
    inline SVG can read them with var() even when no utility class uses them. Palette: docs/ui-d-cinematic.md. */
@@ -194,81 +199,20 @@
   --color-ink: #14213d;
   --color-ink-soft: #27344f;
   --color-ink-mute: #3a4a66;
+  /* The example in an empty field and nothing else: lighter than a typed answer, still 4.5 : 1 on paper. */
+  --color-ink-faint: #507295;
   --color-slate: #9bb8d3;
 
+  /* The entrance (animate-d-rise): arriving content rises 12 px into place and never fades, so it is readable in
+     its first frame and the sun cannot show through a card that is still on its way. It fills backwards only:
+     once it ends nothing is left on the element (a held transform would trap an open suggestion list under the
+     next card). The screens' own motion lives in their stylesheets (app/d/d-*.css). */
   --animate-d-rise: d-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
-  --animate-d-float: d-float 4.5s ease-in-out infinite;
-  --animate-d-blink: d-blink 4.2s ease-in-out 1.5s infinite;
-  --animate-d-draw: d-draw 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.25s backwards;
-  --animate-d-fly: d-fly 1.3s cubic-bezier(0.22, 1, 0.36, 1) 0.45s both;
-  --animate-d-drift: d-drift 24s ease-in-out infinite;
-  --animate-d-drift-slow: d-drift 32s ease-in-out -11s infinite reverse;
 
+  /* Position only; the end is the element's own place. */
   @keyframes d-rise {
     from {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-
-  @keyframes d-float {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-4px);
-    }
-  }
-
-  /* Eyes open almost all the time; one quick blink per loop. */
-  @keyframes d-blink {
-    0%,
-    91%,
-    97%,
-    100% {
-      transform: scaleY(1);
-    }
-    94% {
-      transform: scaleY(0.08);
-    }
-  }
-
-  /* With pathLength="1" on the path, the dash offset runs from 1 (hidden) to 0 (drawn). */
-  @keyframes d-draw {
-    from {
-      stroke-dashoffset: 1;
-    }
-    to {
-      stroke-dashoffset: 0;
-    }
-  }
-
-  @keyframes d-fly {
-    from {
-      offset-distance: 0%;
-      opacity: 0;
-    }
-    12% {
-      opacity: 1;
-    }
-    to {
-      offset-distance: 100%;
-      opacity: 1;
-    }
-  }
-
-  @keyframes d-drift {
-    0%,
-    100% {
-      transform: translate(0, 0);
-    }
-    50% {
-      transform: translate(6px, -5px);
+      transform: translateY(12px);
     }
   }
 }
@@ -342,6 +286,10 @@ html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) {
   /* A card at rest, and lifted. Tailwind inlines its shadow values, so the two utilities are pointed here below. */
   --d-shadow-card: 0 2px 4px rgb(20 33 61 / 0.05), 0 16px 34px -18px rgb(20 33 61 / 0.3);
   --d-shadow-lift: 0 2px 6px rgb(22 60 120 / 0.07), 0 22px 40px -18px rgb(22 60 120 / 0.3);
+
+  /* A shared piece that arrives with version C's fade-up (the flight page's notices) rises like D's own cards
+     instead: position only, never from invisible. */
+  --animate-fade-up: var(--animate-d-rise);
 }
 
 /* The flat sky is the fallback under the sky layer (components/d/sky), which paints above it at z -1. */
@@ -443,10 +391,10 @@ html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) [cl
 [data-theme="d"] > header a[aria-label^="Cloud9"] > span[aria-hidden]:first-child {
   background-color: var(--color-ink);
 }
-/* The same for an airline's tile (c/common/AirlineMark.tsx): the one that reads night-900 is a label beside a
-   flight, and a royal label would make that airline's flights look selected. */
-[data-theme="d"] span[aria-hidden].inline-grid.place-items-center.bg-night-900 {
-  background-color: var(--color-ink);
+/* Its cheeks are the drawing's only ellipses, teal by a literal in that file: here they are gold, like the
+   mascot's. (A CSS fill outranks the attribute.) */
+[data-theme="d"] > header a[aria-label^="Cloud9"] > span[aria-hidden]:first-child ellipse {
+  fill: var(--color-gold);
 }
 
 /* The compare tray: solid paper, its upward shadow in ink. */
@@ -482,28 +430,113 @@ html[data-d-on] :where(body > div) > [role="dialog"][aria-modal="true"] > [data-
   background-color: var(--color-surface);
 }
 
-/* The flight path's plane rides the path with CSS motion; browsers without it show the resting plane instead. */
-[data-theme="d"] .d-plane-flying {
-  display: none;
+/*
+ * ── Shared pieces that asked for a rating colour ────────────────────────────
+ * Under this theme calm is leaf and sand is amber, and those mean a rating and nothing else. Version C's components
+ * also use calm for "on", for "done" and as an accent, and sand for a form's hint. Each of those takes the colour
+ * its job has in D: royal for a selected control, sky for information, ink for a label. Every rule below is found
+ * by the calm or sand class the shared piece asks for, so it lapses by itself if that piece ever stops asking.
+ * (Not touched: what the sections under "More detail" say inside their bodies. Their notes, check marks, benchmark
+ * lines and starred seats keep calm and sand as those sections were built.)
+ */
+
+/* Airline tiles (c/common/AirlineMark.tsx) are all the same: ink with a white code. The shared tile picks one of
+   seven tones from the airline's code; here three of those are rating colours and one is the action colour, and a
+   tile must never make one airline's flights look better rated, or selected. On cards, in the tray, in sheets. */
+[data-theme="d"] span[aria-hidden].inline-grid.place-items-center.rounded-xl.font-bold.tracking-wide,
+html[data-d-on]
+  :where(body > div:has(> [role="dialog"][aria-modal="true"]))
+  span[aria-hidden].inline-grid.place-items-center.rounded-xl.font-bold.tracking-wide {
+  background-color: var(--color-ink);
+  color: #fff;
 }
-@supports (offset-path: path("M0 0h1")) {
-  [data-theme="d"] .d-plane-flying {
-    display: block;
-    offset-rotate: auto;
-  }
-  [data-theme="d"] .d-plane-resting {
-    display: none;
+
+/* A flight that is in the compare list is royal, like D's own "Compare on": royal-100 fill, a 2 px royal ring, a
+   royal label and check. The ring goes through Tailwind's own ring variable, so it cross-fades with the fill.
+   First the fare card's "In compare" row (c/flight/FareCard.tsx): the pill that holds "Remove". */
+[data-theme="d"] div.rounded-full.bg-calm-50:has(> button[aria-label="Remove from compare"]) {
+  --tw-ring-shadow: inset 0 0 0 2px var(--color-royal);
+  background-color: var(--color-royal-100);
+}
+[data-theme="d"] div.rounded-full.bg-calm-50:has(> button[aria-label="Remove from compare"]) > span {
+  color: var(--color-royal);
+}
+/* Then any shared toggle that is on: "Compare" under Other flights (c/flight/CompareToggle.tsx) and "Selected" in
+   the seat section (ui/Button.tsx, soft). Hover and press deepen the tint as they do on D's own selected pill. */
+[data-theme="d"] button[aria-pressed="true"].bg-calm-50 {
+  --tw-ring-shadow: inset 0 0 0 2px var(--color-royal);
+  background-color: var(--color-royal-100);
+  color: var(--color-royal);
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="d"] button[aria-pressed="true"].bg-calm-50:hover {
+    background-color: #d0ddfa;
+    background-color: color-mix(in srgb, var(--color-royal) 8%, var(--color-royal-100));
   }
 }
+[data-theme="d"] button[aria-pressed="true"].bg-calm-50:active {
+  background-color: #c4d3f5;
+  background-color: color-mix(in srgb, var(--color-royal) 14%, var(--color-royal-100));
+}
+/* The toggle's small box: royal, with its white check. */
+[data-theme="d"] button[aria-pressed="true"] > span[aria-hidden].bg-calm-500 {
+  --tw-ring-color: var(--color-royal);
+  background-color: var(--color-royal);
+}
+
+/* The fare card's link to the other flights is a text link, so it is D's: ink, bold and underlined (the kit adds
+   the highlighter, app/d/d-motion.css). Thinner than D_LINK's rule because the line is 12 px. */
+[data-theme="d"] a.text-calm-700 {
+  color: var(--color-ink);
+  font-weight: 700;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+/* The "+1" beside an arrival time under Other flights: ink-mute, as on D's own cards. */
+[data-theme="d"] sup.text-calm-700 {
+  color: var(--color-ink-mute);
+}
+
+/* A shared expander labelled in calm ("Why over the wing?", "What's an A-check?" under "More detail") is a
+   control, not a rating: its label and chevron are ink, like "Why?" on D's own cards. Unlayered, so the darker
+   calm its hover utility asks for loses too. */
+[data-theme="d"] button[aria-expanded].text-calm-700 {
+  color: var(--color-ink);
+}
+
+/* An icon tile that asked for calm (three section headers under "More detail", the sign-up's "on the list" tile)
+   is a sky tile. In leaf, a tile that is the same on every flight would read as a top rating on each of them. */
+[data-theme="d"] span[aria-hidden].rounded-2xl.bg-calm-50.text-calm-700,
+html[data-d-on]
+  :where(body > div:has(> [role="dialog"][aria-modal="true"]))
+  span[aria-hidden].rounded-2xl.bg-calm-50.text-calm-700 {
+  --tw-ring-color: var(--color-breeze-100);
+  background-color: var(--color-breeze-50);
+  color: var(--color-breeze-700);
+}
+
+/* A form's hint about a field to fix (flow/AirportField.tsx, c/search/SearchForm.tsx, the sign-up sheet): sky-ink,
+   a step heavier than a plain hint. The shared forms ask for sand, which is the lowest rating's amber here. */
+[data-theme="d"] form p.text-sand-700,
+html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) form p.text-sand-700 {
+  color: var(--color-sky-ink);
+  font-weight: 600;
+}
+
+/* The example in an empty field ("City or airport", "Alex") is lighter than a typed answer, so it never reads as
+   one: ink-faint, 4.9 : 1 on the paper every field is filled with (checked by scripts/d-contrast.mjs). */
+[data-theme="d"] ::placeholder,
+html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) ::placeholder {
+  color: var(--color-ink-faint);
+  opacity: 1;
+}
+
+/* Less motion asked for: the staggered entrances start at once. The global rule above already ends every animation
+   in its first hundredth of a millisecond, but with their delays D's cards would still appear one after another.
+   The same inside a sheet. */
 @media (prefers-reduced-motion: reduce) {
-  [data-theme="d"] .d-plane-flying {
-    display: none;
-  }
-  [data-theme="d"] .d-plane-resting {
-    display: block;
-  }
-  /* The staggered entrances start at once: with their delays, D's cards would still appear one after another.
-     The same inside a sheet. */
   [data-theme="d"] *,
   [data-theme="d"] *::before,
   [data-theme="d"] *::after,

@@ -2,7 +2,7 @@
 
 import { Armchair, ChevronDown, ChevronLeft, Layers, Plane, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { compareToBenchmark, type Comparison } from "@preflight/shared/benchmarks";
 import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
 import { orderByPriorities, rateFlight } from "@preflight/shared/ratings";
@@ -20,16 +20,19 @@ import { InterestCard } from "@/components/c/interest/InterestCard";
 import { useHrefs } from "@/components/c/shell/ToolContext";
 import { ExploreContext, type ExploreApi } from "@/components/dashboard/explore/context";
 import { possessive } from "@/components/dashboard/trust/format";
+import { D_LINK } from "@/components/d/brand/buttons";
+import { cloudReact } from "@/components/d/cloud/react";
+import { flyFromTray, flyToTray } from "@/components/d/motion/tray";
 import { RatingPill } from "@/components/d/ratings/RatingPill";
 import { RatingRows } from "@/components/d/ratings/RatingRows";
 import { track } from "@/lib/analytics";
+import { useCompareList } from "@/lib/c/compare-store";
 import { formatFare } from "@/lib/c/format";
-import type { CompareItem } from "@/lib/c/model";
+import { itemId, type CompareItem } from "@/lib/c/model";
 import { usePriorities } from "@/lib/d/priorities";
 import { priceDeltaText, ratingsByKey } from "@/lib/d/view";
 import { useNowMs } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
-import type { Tone } from "@/lib/theme";
 import { ChooseButton, priceStanding, tierProps } from "./ChooseButton";
 import { DFlightHeader } from "./DFlightHeader";
 
@@ -41,7 +44,7 @@ import { DFlightHeader } from "./DFlightHeader";
  * the sign-up ask, "More detail" (the dashboard sections, collapsed) and the
  * day's other flights. No smoothness score and no timeline above the detail
  * layer. Same props as version C's FlightDetail, so FlightPage can show either.
- * Look: docs/ui-d-theme.md.
+ * Look: docs/ui-d-cinematic.md ("Flight"); the page's own CSS is app/d/d-flight.css.
  */
 
 const OTHERS_ID = "other-flights";
@@ -84,13 +87,14 @@ function oversightLabel(regulator: string): string {
   return `regulator oversight (${name})`;
 }
 
-/** The soft tint behind a reassurance card's outlined icon, per tone. */
-const CARD_TINT: Record<Tone, string> = {
-  dusk: "bg-cream",
-  breeze: "bg-sky",
-  calm: "bg-leaf-100",
-  sand: "bg-amber-100",
-  neutral: "bg-white",
+/**
+ * The soft tint behind a reassurance card's outlined icon. Cream or sky, never leaf, sun or amber:
+ * those three only ever mean a rating (docs/ui-d-cinematic.md, house rule 2).
+ */
+type Tint = "cream" | "sky";
+const CARD_TINT: Record<Tint, string> = {
+  cream: "bg-cream",
+  sky: "bg-sky",
 };
 
 /** A white card in the D look. */
@@ -196,6 +200,42 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
   const reassureId = useId();
   const ratedId = useId();
 
+  // The visitor's compare list in the order the tray shows it (the tray leaves out flights whose day has passed).
+  const compare = useCompareList();
+  const trayIds = compare.items.filter((i) => i.date >= today).map(itemId);
+
+  /**
+   * "Add to compare" and "Remove" in the fare card, and "Compare" beside each of the day's other flights, are
+   * shared components: they cannot call D's motion kit. Their clicks pass through this handler on the way up,
+   * after the component has changed the list and before the page is drawn again, and each is acknowledged as
+   * D's own compare buttons are (docs/ui-d-cinematic.md, "Small interactions"): a small plane from the control
+   * to the tray for an add, from the tray's chip back to the control for a removal, and the same nod for both.
+   * It reads which control was pressed and that flight's place in the visitor's own list: nothing about the
+   * flight itself. A control that is switched off (the list is full) changes nothing and gets nothing.
+   */
+  const acknowledgeCompare = (event: MouseEvent<HTMLDivElement>) => {
+    const control = event.target instanceof Element ? event.target.closest("button") : null;
+    if (!control || control.getAttribute("aria-disabled") === "true") return;
+    if (control.closest(".d-flight-fare")) {
+      // The fare card holds one button at a time: "Remove" (it says so in its label), or "Add to compare".
+      if (control.getAttribute("aria-label") === "Remove from compare") flyFromTray(trayIds.indexOf(itemId(item)), control);
+      // The pressed button is about to be replaced by its counterpart; the box around the two stays.
+      else flyToTray(control.parentElement);
+    } else if (control.hasAttribute("aria-pressed") && control.closest(`#${OTHERS_ID}`)) {
+      if (control.getAttribute("aria-pressed") === "true") {
+        // Which flight the row is, from the "Details" link beside the toggle.
+        const query = control.parentElement?.querySelector("a[href]")?.getAttribute("href")?.split("?")[1];
+        const link = new URLSearchParams(query ?? "");
+        flyFromTray(trayIds.indexOf(`${link.get("from")}.${link.get("to")}.${link.get("date")}.${link.get("f")}`), control);
+      } else {
+        flyToTray(control);
+      }
+    } else {
+      return;
+    }
+    cloudReact("nod");
+  };
+
   /** The pick, with everything the event needs (one on phones under the header, one in the sticky column). */
   const chooseButton = (className: string) => (
     <ChooseButton
@@ -219,10 +259,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
 
   return (
     <div className="mx-auto w-full max-w-[640px] lg:max-w-none">
-      <Link
-        href={hrefs.search(day)}
-        className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-sm font-bold text-ink underline-offset-4 transition-colors hover:underline"
-      >
+      <Link href={hrefs.search(day)} className={cn(D_LINK, "-ml-2 inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-sm")}>
         <ChevronLeft aria-hidden className="size-4 shrink-0" />
         <span>
           All flights {routeText(day.origin, day.destination)}, {monthDay(day.date)}
@@ -230,8 +267,10 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
       </Link>
 
       <ExploreContext.Provider value={explore}>
-        {/* Phones: one column in reading order. Laptops: the pick and the fare in a sticky column on the right. */}
-        <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-x-8">
+        {/* Phones: one column in reading order. Laptops: the pick and the fare in a sticky column on the right.
+            The gap above (30 px, 32 px from 640 px) is the companion's: perched on the pass it rises 24 to 26 px
+            over the pass's top edge, and it must not reach the back link or its focus ring. */}
+        <div onClick={acknowledgeCompare} className="mt-[30px] grid grid-cols-1 gap-4 sm:mt-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-x-8">
           {/* Focus lands here when another flight is opened from this page (see FlightPage). */}
           <div data-flight-top tabIndex={-1} className="min-w-0 rounded-[24px] outline-none lg:col-start-1">
             <DFlightHeader flight={flight} daysUntil={daysUntil} className="animate-d-rise" />
@@ -249,7 +288,8 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 <span className="block text-[26px] font-extrabold leading-none tracking-[-0.01em] text-ink tabular-nums">{formatFare(price)}</span>
                 <span className="mt-1 block text-[11px] leading-snug text-ink-mute">one way · illustrative</span>
                 {isCheapest ? (
-                  <span className="mt-1.5 inline-flex rounded-full bg-leaf-100 px-2 py-0.5 text-[11px] font-bold leading-4 text-leaf-ink">Cheapest</span>
+                  // A price fact, not a rating: sky with ink text, never a tier colour.
+                  <span className="mt-1.5 inline-flex rounded-full bg-sky px-2 py-0.5 text-[11px] font-bold leading-4 text-ink">Cheapest</span>
                 ) : (
                   <span className="mt-1 block text-xs font-bold leading-snug text-ink-soft tabular-nums">{delta}</span>
                 )}
@@ -263,10 +303,12 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
             <h2 id={reassureId} className="sr-only">
               Good to know
             </h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* Two columns from 640 px, filled column by column: the two short cards share the top row and the
+                two long ones the bottom row, so no card is stretched far past its own content. */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-flow-col sm:grid-cols-2 sm:grid-rows-[auto_auto]">
               <ReassureCard
                 icon={<UserRound />}
-                tone="dusk"
+                tint="cream"
                 title="Who flies this plane"
                 foot="Airlines don’t publish who will fly a given flight — these are the rules every airline pilot meets."
               >
@@ -277,7 +319,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 </Facts>
               </ReassureCard>
 
-              <ReassureCard icon={<Plane />} tone="breeze" title="Your aircraft in plain words">
+              <ReassureCard icon={<Plane />} tint="sky" title="Your aircraft in plain words">
                 {aircraftRating ? (
                   <>
                     <RatingPill rating={aircraftRating} />
@@ -308,7 +350,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
 
               <ReassureCard
                 icon={<Armchair />}
-                tone="calm"
+                tint="sky"
                 title="Best seat"
                 foot="As of today — seats change until check-in. The seat map is under More detail."
               >
@@ -324,7 +366,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
 
               <ReassureCard
                 icon={<ShieldCheck />}
-                tone="calm"
+                tint="cream"
                 title="Airline record"
                 // The airline's safety basis, worded as the airline section does — a footnote, never a rating or a figure here.
                 foot={`On time means arriving within 15 minutes of schedule. The airline section under More detail also covers the airline’s IOSA safety-audit status, ${oversightLabel(flight.crew.regulator)}, accident record and fleet age.`}
@@ -351,10 +393,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
               <h2 id={ratedId} className="text-[22px] font-extrabold leading-tight tracking-tight text-ink">
                 Rated for you
               </h2>
-              <Link
-                href={hrefs.home}
-                className="-mr-2 inline-flex min-h-11 items-center rounded-full px-2 text-sm font-bold text-ink underline decoration-2 underline-offset-4"
-              >
+              <Link href={hrefs.home} className={cn(D_LINK, "-mr-2 inline-flex min-h-11 items-center rounded-full px-2 text-sm")}>
                 Change what matters
               </Link>
             </div>
@@ -374,7 +413,8 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 {chooseButton("mt-4")}
               </div>
               {/* The on-time and fleet-age facts are left out: the reassurance cards above already state them. The compare
-                  controls take the outline look, so the pick stays the column's one black pill. */}
+                  controls take the outline look, so the pick stays the column's one royal pill. d-flight-fare is the
+                  hook app/d/d-flight.css restyles this shared card by. */}
               <FareCard
                 option={option}
                 item={item}
@@ -382,7 +422,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 othersHref={`#${OTHERS_ID}`}
                 showFacts={false}
                 compareTone="outline"
-                className="animate-d-rise [animation-delay:120ms]"
+                className="d-flight-fare animate-d-rise [animation-delay:120ms]"
               />
             </div>
           </div>
@@ -417,27 +457,31 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
 
-/** One reassurance card: a tinted icon, a title, the facts, a quiet footnote. */
+/**
+ * One reassurance card: a tinted icon, a title, the facts, a quiet footnote. It rises its last 16 px as it
+ * scrolls into view (d-reveal). Where a row-mate is taller, the spare room goes above the footnote, which
+ * stays on the card's bottom edge.
+ */
 function ReassureCard({
   icon,
-  tone,
+  tint,
   title,
   foot,
   children,
 }: {
   icon: ReactNode;
-  tone: Tone;
+  tint: Tint;
   title: string;
   foot?: ReactNode;
   children: ReactNode;
 }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className={cn(CARD, "flex flex-col p-4 sm:p-5")}>
+    <section aria-labelledby={id} className={cn(CARD, "d-reveal flex flex-col p-4 sm:p-5")}>
       <div className="flex items-center gap-3">
         <span
           aria-hidden
-          className={cn("flex size-10 shrink-0 items-center justify-center rounded-full text-ink ring-2 ring-ink [&_svg]:size-5", CARD_TINT[tone])}
+          className={cn("flex size-10 shrink-0 items-center justify-center rounded-full text-ink ring-2 ring-ink [&_svg]:size-5", CARD_TINT[tint])}
         >
           {icon}
         </span>
@@ -446,7 +490,7 @@ function ReassureCard({
         </h3>
       </div>
       <div className="mt-3">{children}</div>
-      {foot ? <p className="mt-3 text-xs leading-snug text-ink-mute">{foot}</p> : null}
+      {foot ? <p className="mt-auto pt-3 text-xs leading-snug text-ink-mute">{foot}</p> : null}
     </section>
   );
 }
@@ -491,7 +535,7 @@ function MoreDetail({ flight, ctx, className }: { flight: Flight; ctx: SectionCo
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={toggle}
-          className={cn(CARD, "flex w-full items-center gap-3.5 px-4 py-4 text-left transition-[background-color,transform] duration-[120ms] hover:bg-canvas/40 active:scale-[0.99]")}
+          className={cn(CARD, "d-row d-reveal d-flight-more flex w-full items-center gap-3.5 px-4 py-4 text-left")}
         >
           <span
             aria-hidden
@@ -505,7 +549,7 @@ function MoreDetail({ flight, ctx, className }: { flight: Flight; ctx: SectionCo
               Turbulence, who flies this plane, aircraft, airline, weather, the seat map, what you&rsquo;ll hear and feel
             </span>
           </span>
-          <ChevronDown aria-hidden className={cn("size-5 shrink-0 text-ink transition-transform duration-300", open && "rotate-180")} />
+          <ChevronDown aria-hidden className={cn("size-5 shrink-0 text-ink", open && "rotate-180")} />
         </button>
       </h2>
       <div id={bodyId} hidden={!open} className="mt-3">
