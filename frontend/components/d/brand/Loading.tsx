@@ -15,7 +15,7 @@ interface DLoadingProps {
 export function DLoading({ text = "Checking the skies…", className }: DLoadingProps) {
   return (
     <div aria-busy="true" className={cn("flex min-h-[50vh] animate-d-rise flex-col items-center justify-center px-4 py-12 text-center", className)}>
-      <CloudMascot className="w-28 sm:w-32" />
+      <CloudMascot data-cloud-stage className="w-28 sm:w-32" />
       <p role="status" className="mt-5 text-[17px] font-bold text-ink">
         {text}
       </p>

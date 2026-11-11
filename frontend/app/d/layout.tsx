@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { CompareTray } from "@/components/c/shell/CompareTray";
 import { Footer } from "@/components/c/shell/Footer";
@@ -23,6 +23,13 @@ export const metadata: Metadata = {
   openGraph: { title: "Cloud9 · Find a smooth flight", description: DESCRIPTION },
   twitter: { title: "Cloud9 · Find a smooth flight", description: DESCRIPTION },
 };
+
+/**
+ * The phone's browser bar takes the blue the sky starts with (docs/ui-d-cinematic.md).
+ * Only the theme colour is set: Next merges viewport exports key by key, so the root
+ * layout's width, scale, viewport-fit and colour scheme still apply to /d.
+ */
+export const viewport: Viewport = { themeColor: "#7EC3F4" };
 
 /**
  * Version D (docs/ITERATION_2.md): the smooth-flight finder under /d. The same

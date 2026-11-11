@@ -1,4 +1,765 @@
 /*
- * Version D — d-motion (docs/ui-d-cinematic.md). Plain CSS, loaded by app/d/layout.tsx.
- * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders.
+ * Version D — the motion kit and control feedback (docs/ui-d-cinematic.md, sections 7 and 8).
+ * Plain CSS, loaded by app/d/layout.tsx. Every selector starts with [data-theme="d"],
+ * html[data-d-on] or a .d-… class that only D renders, so versions A, B and C never match.
+ *
+ * How it is laid out:
+ *   1. Tokens (the same easings and durations as components/d/motion/motion.ts).
+ *   2. The fixed motion layer: the tap ring, the fly-to plane and the soft ring around a control.
+ *   3. D's buttons and links (.d-btn-primary, .d-btn-outline, .d-btn-selected, .d-link) and the
+ *      shared primaries D shows, which take the same look without their files changing.
+ *   4. Fields and the shared small controls: press and hover only, colours stay the theme's.
+ *   5. Utilities for D's own markup (.d-lift, .d-reveal, .d-route-plane, .d-pop, .d-stamp, .d-settle).
+ *      .d-chip and .d-row, for D's own chips and tappable rows, sit with the shared controls they match.
+ *
+ * Three rules hold throughout. Hover styles sit inside (hover: hover) and (pointer: fine), so
+ * nothing sticks after a tap. Everything that moves sits inside (prefers-reduced-motion:
+ * no-preference): with less motion asked for, a control still changes colour and state, it
+ * just stays where it is. And a transform only ever goes on the control itself, never on a
+ * card: a transformed card would trap an open suggestion list and move the box the sign-up
+ * card's view event watches.
+ *
+ * These rules are unlayered, so they beat Tailwind utilities on the same element. Size, shape
+ * and spacing are left to utilities on purpose.
  */
+
+/* ── 1. Tokens ───────────────────────────────────────────────────────────────────────────── */
+
+/* On the themed root for the page, and on <html> for sheets, which portal outside the root. */
+[data-theme="d"],
+html[data-d-on] {
+  --d-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --d-ease-in-out: cubic-bezier(0.45, 0, 0.25, 1);
+  --d-press: 100ms;
+  --d-quick: 160ms;
+  --d-move: 320ms;
+}
+
+/* ── 2. The motion layer (components/d/motion/DMotionLayer.tsx) ──────────────────────────── */
+
+/* A point at the screen's corner, not a sheet over it: there is no box here that could take a tap.
+   The pooled pieces rest invisible; the Web Animations API places and shows them. */
+[data-theme="d"] .d-motion-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.d-tap-ring,
+.d-fly-plane,
+.d-ring-from {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 44 px across: gold inside, white outside, 2 px each, so it reads on paper, on the sky and on a royal button. */
+.d-tap-ring {
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border: 2px solid var(--color-gold);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.d-fly-plane {
+  width: 18.2px;
+  height: 14px;
+  margin: -7px 0 0 -9.1px;
+}
+
+.d-fly-plane > svg {
+  display: block;
+  overflow: visible;
+}
+
+/* The soft ring that leaves a control (ringFrom): the script gives it the control's size and corners. */
+.d-ring-from {
+  box-shadow: 0 0 0 2px var(--color-royal);
+}
+
+/* The script already stays quiet under reduced motion; this makes sure nothing can show. */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="d"] .d-motion-layer {
+    display: none;
+  }
+}
+
+/* ── 3. Buttons and links ────────────────────────────────────────────────────────────────── */
+
+/*
+ * The primary: a royal pill with a lip, so it looks pressable before it is pressed. D's own
+ * components opt in with .d-btn-primary (D_PILL_PRIMARY in components/d/brand/buttons.ts). The
+ * shared primaries D shows ("Search flights", "Notify me when it's live", the tray's
+ * "Compare (n)", sheet footers, not-found's "Back to the search") are matched by the classes
+ * they already carry: a pill-shaped button or link filled with night-900. The selected day in
+ * the date strip is night-900 too, but it is a rounded tile, not a pill, so it never matches.
+ * The fill and the 800 label are stated here as well as in the theme's tokens, so every
+ * primary on a screen is the same pill whichever file it comes from.
+ */
+.d-btn-primary,
+[data-theme="d"] :is(button, a).rounded-full.bg-night-900,
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900 {
+  background-color: var(--color-royal);
+  color: #fff;
+  font-weight: 800;
+  box-shadow:
+    inset 0 -3px 0 var(--color-royal-press),
+    0 8px 18px -10px rgb(29 73 188 / 0.55);
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out),
+    box-shadow var(--d-quick) var(--d-ease-out),
+    translate var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+/* The icon inside any of D's buttons and links glides when it shifts on hover. */
+.d-btn-primary > svg,
+.d-btn-outline > svg,
+.d-btn-selected > svg,
+.d-link > svg,
+[data-theme="d"] :is(button, a).rounded-full.bg-night-900 > svg,
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900 > svg {
+  transition: translate var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .d-btn-primary:hover,
+  [data-theme="d"] :is(button, a).rounded-full.bg-night-900:hover,
+  html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900:hover {
+    background-color: var(--color-royal-hover);
+  }
+}
+
+/* One pixel up, and an arrow that points onward leans 3 px that way. Mark any other trailing icon with .d-trail. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .d-btn-primary:hover,
+  [data-theme="d"] :is(button, a).rounded-full.bg-night-900:hover,
+  html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900:hover {
+    translate: 0 -1px;
+  }
+  .d-btn-primary:hover > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail),
+  [data-theme="d"] :is(button, a).rounded-full.bg-night-900:hover > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail),
+  html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900:hover > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail) {
+    translate: 3px 0;
+  }
+}
+
+/* Pressed: the fill deepens to the lip's own colour and the lip is all but gone, as if pushed flat. */
+.d-btn-primary:active,
+[data-theme="d"] :is(button, a).rounded-full.bg-night-900:active,
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900:active {
+  background-color: var(--color-royal-press);
+  box-shadow:
+    inset 0 -1px 0 var(--color-royal-press),
+    0 3px 8px -6px rgb(29 73 188 / 0.55);
+  transition-duration: var(--d-press);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .d-btn-primary:active,
+  [data-theme="d"] :is(button, a).rounded-full.bg-night-900:active,
+  html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900:active {
+    translate: 0 1px;
+    scale: 0.975;
+  }
+}
+
+/* Not available: flat sky, quiet label, no lip, and it does not answer the pointer. After the rules above so it wins. */
+.d-btn-primary:is(:disabled, [aria-disabled="true"]),
+[data-theme="d"] :is(button, a).rounded-full.bg-night-900:is(:disabled, [aria-disabled="true"]),
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900:is(:disabled, [aria-disabled="true"]) {
+  background-color: var(--color-sky-deep);
+  color: var(--color-ink-mute);
+  box-shadow: none;
+  translate: none;
+  scale: none;
+  cursor: not-allowed;
+}
+
+.d-btn-primary:is(:disabled, [aria-disabled="true"]) > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail),
+[data-theme="d"] :is(button, a).rounded-full.bg-night-900:is(:disabled, [aria-disabled="true"]) > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail),
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-night-900:is(:disabled, [aria-disabled="true"]) > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail) {
+  translate: none;
+}
+
+/* The outline button: a 2 px ink ring on whatever is behind it. The second, empty shadow keeps the list the same
+   length as the primary's, so a control that swaps between the two looks cross-fades instead of snapping. */
+.d-btn-outline {
+  background-color: transparent;
+  color: var(--color-ink);
+  box-shadow:
+    inset 0 0 0 2px var(--color-ink),
+    0 0 0 0 rgb(29 73 188 / 0);
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out),
+    box-shadow var(--d-quick) var(--d-ease-out),
+    translate var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .d-btn-outline:hover {
+    background-color: rgb(20 33 61 / 0.06);
+  }
+}
+
+/* A quieter control leans its arrow a quieter 2 px. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .d-btn-outline:hover > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail),
+  .d-btn-selected:hover > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail) {
+    translate: 2px 0;
+  }
+}
+
+.d-btn-outline:active {
+  background-color: rgb(20 33 61 / 0.1);
+  transition-duration: var(--d-press);
+}
+
+/* Selected (compare on, your pick): royal on its palest tint. Never a tier colour. After the outline rules, so a
+   control carrying both classes is the selected one. */
+.d-btn-selected {
+  background-color: var(--color-royal-100);
+  color: var(--color-royal);
+  box-shadow:
+    inset 0 0 0 2px var(--color-royal),
+    0 0 0 0 rgb(29 73 188 / 0);
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out),
+    box-shadow var(--d-quick) var(--d-ease-out),
+    translate var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .d-btn-selected:hover {
+    background-color: #d0ddfa;
+    background-color: color-mix(in srgb, var(--color-royal) 8%, var(--color-royal-100));
+  }
+}
+
+.d-btn-selected:active {
+  background-color: #c4d3f5;
+  background-color: color-mix(in srgb, var(--color-royal) 14%, var(--color-royal-100));
+  transition-duration: var(--d-press);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .d-btn-outline:active,
+  .d-btn-selected:active {
+    scale: 0.97;
+  }
+}
+
+.d-btn-outline:is(:disabled, [aria-disabled="true"]) {
+  background-color: transparent;
+  color: var(--color-ink-mute);
+  box-shadow:
+    inset 0 0 0 2px var(--color-slate),
+    0 0 0 0 rgb(29 73 188 / 0);
+  scale: none;
+  cursor: not-allowed;
+}
+
+.d-btn-outline:is(:disabled, [aria-disabled="true"]) > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail) {
+  translate: none;
+}
+
+/*
+ * The text link: a butter highlighter grows under the words on hover, while pressed and on
+ * keyboard focus; the underline (a utility in D_LINK) stays. The band is placed from the
+ * middle of the box, so it sits under the words of a plain inline link and of a link that is
+ * a 44 px tall flex row alike.
+ */
+.d-link {
+  background-image: linear-gradient(var(--color-butter), var(--color-butter));
+  background-repeat: no-repeat;
+  background-position: 0 calc(50% + 0.46em);
+  background-size: 0% 0.42em;
+  transition:
+    background-size 220ms var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .d-link:hover {
+    background-size: 100% 0.42em;
+  }
+}
+
+.d-link:active,
+.d-link:focus-visible {
+  background-size: 100% 0.42em;
+}
+
+/* An arrow that points onward leans onward; a back chevron leans back (.d-lead for any other leading icon). */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .d-link:hover > :is(.lucide-arrow-right, .lucide-chevron-right, .d-trail) {
+    translate: 3px 0;
+  }
+  .d-link:hover > :is(.lucide-arrow-left, .lucide-chevron-left, .d-lead) {
+    translate: -3px 0;
+  }
+}
+
+/* ── 4. Fields and the shared small controls ─────────────────────────────────────────────── */
+
+/*
+ * Fields keep their one ring (the shared 2 px breeze-500 inset ring) and gain a 4 px sky halo
+ * around it. The halo goes in the slot Tailwind's own box-shadow list leaves for a ring
+ * offset, so the ring and the field's soft shadow stay exactly as they are. Nothing shakes.
+ */
+[data-theme="d"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea),
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+  transition: box-shadow 140ms var(--d-ease-out);
+}
+
+[data-theme="d"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus,
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus {
+  --tw-ring-offset-shadow: 0 0 0 4px var(--color-sky);
+}
+
+/* The icon inside a field (the date field's calendar) turns sky-ink while its field has focus. */
+[data-theme="d"] div.relative > svg.pointer-events-none,
+html[data-d-on] [role="dialog"][aria-modal="true"] div.relative > svg.pointer-events-none {
+  transition: color 140ms var(--d-ease-out);
+}
+
+[data-theme="d"] div.relative:has(> input:focus) > svg.pointer-events-none,
+html[data-d-on] [role="dialog"][aria-modal="true"] div.relative:has(> input:focus) > svg.pointer-events-none {
+  color: var(--color-sky-ink);
+}
+
+/* The date strip: a tile under the pointer rises 2 px, a pressed tile gives a little, and colours cross-fade
+   (the ring is a box-shadow, which the shared transition leaves out). `relative` is for the gold bar below. */
+[data-theme="d"] nav[aria-label="Nearby dates"] a {
+  position: relative;
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out),
+    box-shadow var(--d-quick) var(--d-ease-out),
+    translate var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] nav[aria-label="Nearby dates"] a:not([aria-current]):hover {
+    translate: 0 -2px;
+  }
+}
+
+/* Pressed, a day that is not the chosen one takes the colours it has under a mouse: a finger has no hover. */
+[data-theme="d"] nav[aria-label="Nearby dates"] a:not([aria-current]):active {
+  --tw-ring-color: var(--color-line-strong);
+  background-color: var(--color-surface);
+  transition-duration: var(--d-press);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] nav[aria-label="Nearby dates"] a:active {
+    scale: 0.97;
+    transition-duration: var(--d-press);
+  }
+}
+
+/* The chosen day: a 20 x 3 px bar of sunlight under its last line. */
+[data-theme="d"] nav[aria-label="Nearby dates"] a[aria-current="date"]::after {
+  content: "";
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  width: 20px;
+  height: 3px;
+  margin-left: -10px;
+  border-radius: 999px;
+  background-color: var(--color-gold);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] nav[aria-label="Nearby dates"] a[aria-current="date"]::after {
+    animation: d-kit-bar 200ms var(--d-ease-out) backwards;
+  }
+}
+
+/* Sort pills, and the filters' segmented choice: the same hidden radio and visible span. The pill gives under
+   a press and its colours, ring included, cross-fade when the choice changes. */
+[data-theme="d"] label > input.peer[type="radio"] + span,
+html[data-d-on] [role="dialog"][aria-modal="true"] label > input.peer[type="radio"] + span {
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out),
+    box-shadow var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+[data-theme="d"] label:active > input.peer[type="radio"]:not(:disabled):not(:checked) + span,
+html[data-d-on] [role="dialog"][aria-modal="true"] label:active > input.peer[type="radio"]:not(:disabled):not(:checked) + span {
+  background-color: var(--color-sky);
+  color: var(--color-ink);
+  transition-duration: var(--d-press);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] label:active > input.peer[type="radio"]:not(:disabled) + span,
+  html[data-d-on] [role="dialog"][aria-modal="true"] label:active > input.peer[type="radio"]:not(:disabled) + span {
+    scale: 0.97;
+    transition-duration: var(--d-press);
+  }
+}
+
+/* Popular-route chips (shared markup, found by shape and destination), and .d-chip for D's own chips. Under a
+   mouse a chip rises 2 px onto the card shadow (the theme's --d-shadow-card; the same values are the fallback). */
+.d-chip,
+[data-theme="d"] ul.grid > li > a.rounded-2xl.min-h-14[href^="/d/search"] {
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out),
+    box-shadow var(--d-quick) var(--d-ease-out),
+    translate var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+.d-chip svg,
+[data-theme="d"] ul.grid > li > a.rounded-2xl.min-h-14[href^="/d/search"] svg {
+  transition: translate var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .d-chip:hover,
+  [data-theme="d"] ul.grid > li > a.rounded-2xl.min-h-14[href^="/d/search"]:hover {
+    box-shadow: var(--d-shadow-card, 0 2px 4px rgb(20 33 61 / 0.05), 0 16px 34px -18px rgb(20 33 61 / 0.3));
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .d-chip:hover,
+  [data-theme="d"] ul.grid > li > a.rounded-2xl.min-h-14[href^="/d/search"]:hover {
+    translate: 0 -2px;
+  }
+  .d-chip:hover :is(.lucide-arrow-right, .d-trail),
+  [data-theme="d"] ul.grid > li > a.rounded-2xl.min-h-14[href^="/d/search"]:hover .lucide-arrow-right {
+    translate: 3px 0;
+  }
+}
+
+.d-chip:active,
+[data-theme="d"] ul.grid > li > a.rounded-2xl.min-h-14[href^="/d/search"]:active {
+  background-color: var(--color-sky);
+  transition-duration: var(--d-press);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .d-chip:active,
+  [data-theme="d"] ul.grid > li > a.rounded-2xl.min-h-14[href^="/d/search"]:active {
+    scale: 0.97;
+  }
+}
+
+/* Filter checkboxes (and the sign-up sheet's): the row tints while it is pressed, as it does under a mouse, and
+   the box gives a little. The tick's royal is the theme's accent colour. The slider keeps its native feedback. */
+[data-theme="d"] label:has(> input[type="checkbox"]),
+html[data-d-on] [role="dialog"][aria-modal="true"] label:has(> input[type="checkbox"]) {
+  transition: background-color var(--d-quick) var(--d-ease-out);
+}
+
+[data-theme="d"] label:has(> input[type="checkbox"]):active,
+html[data-d-on] [role="dialog"][aria-modal="true"] label:has(> input[type="checkbox"]):active {
+  background-color: var(--color-sky);
+  transition-duration: var(--d-press);
+}
+
+[data-theme="d"] label > input[type="checkbox"],
+html[data-d-on] [role="dialog"][aria-modal="true"] label > input[type="checkbox"] {
+  transition: scale var(--d-press) var(--d-ease-out);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] label:active > input[type="checkbox"],
+  html[data-d-on] [role="dialog"][aria-modal="true"] label:active > input[type="checkbox"] {
+    scale: 0.9;
+  }
+}
+
+/* Rating rows (the flight page's four, found by structure), and .d-row for any of D's tappable rows. */
+.d-row,
+[data-theme="d"] ul > li > button[aria-haspopup="dialog"] {
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out),
+    box-shadow var(--d-quick) var(--d-ease-out),
+    translate var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+.d-row > svg,
+[data-theme="d"] ul > li > button[aria-haspopup="dialog"] > svg {
+  transition: translate var(--d-quick) var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .d-row:hover,
+  [data-theme="d"] ul > li > button[aria-haspopup="dialog"]:hover {
+    translate: 0 -2px;
+  }
+  .d-row:hover > :is(.lucide-chevron-right, .lucide-arrow-right, .d-trail),
+  [data-theme="d"] ul > li > button[aria-haspopup="dialog"]:hover > :is(.lucide-chevron-right, .lucide-arrow-right, .d-trail) {
+    translate: 3px 0;
+  }
+}
+
+.d-row:active,
+[data-theme="d"] ul > li > button[aria-haspopup="dialog"]:active {
+  background-color: #eef6f9;
+  background-color: color-mix(in srgb, var(--color-sky) 40%, var(--color-surface));
+  transition-duration: var(--d-press);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .d-row:active,
+  [data-theme="d"] ul > li > button[aria-haspopup="dialog"]:active {
+    scale: 0.99;
+  }
+}
+
+/*
+ * The other pills D shows. Shared outlined pills ("Swap", "Change", "Add a flight", "Details" under other
+ * flights, the fare card's compare controls, the sign-up sheet's "Done") and D's own ring-drawn pills have a
+ * hover colour but nothing for a finger: pressed, they give by 3 %, and a paper pill takes its hover tint.
+ * Scoped to the page's main column and to sheets; the header's links are the theme's.
+ */
+[data-theme="d"] main :is(button, a).rounded-full.ring-inset:is(.ring-1, .ring-2),
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.ring-inset:is(.ring-1, .ring-2) {
+  transition:
+    background-color var(--d-quick) var(--d-ease-out),
+    color var(--d-quick) var(--d-ease-out),
+    box-shadow var(--d-quick) var(--d-ease-out),
+    scale var(--d-quick) var(--d-ease-out);
+}
+
+[data-theme="d"] main :is(button, a).rounded-full.bg-surface.ring-inset:is(.ring-1, .ring-2):not(:disabled):not([aria-disabled="true"]):active,
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.bg-surface.ring-inset:is(.ring-1, .ring-2):not(:disabled):not([aria-disabled="true"]):active {
+  background-color: var(--color-sky);
+  transition-duration: var(--d-press);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] main :is(button, a).rounded-full.ring-inset:is(.ring-1, .ring-2):not(:disabled):not([aria-disabled="true"]):active,
+  html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.ring-inset:is(.ring-1, .ring-2):not(:disabled):not([aria-disabled="true"]):active {
+    scale: 0.97;
+    transition-duration: var(--d-press);
+  }
+}
+
+/* The quiet text buttons (the form's "Swap", the tray's "Clear" and chip removers, a sheet's close button) and
+   the tray's chips show their hover fill while pressed. Found by the hover utility they already carry. */
+[data-theme="d"] :is(button, a):is(.hover\:bg-line\/50, .hover\:bg-line\/40):not(:disabled):not([aria-disabled="true"]):active,
+html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).hover\:bg-line\/50:not(:disabled):not([aria-disabled="true"]):active {
+  background-color: rgb(201 223 241 / 0.5);
+  background-color: color-mix(in srgb, var(--color-line) 50%, transparent);
+  color: var(--color-ink);
+}
+
+/* Swap: the two-arrow icon makes a half turn. It jumps half a turn the moment it is pressed, which shows
+   nothing because the icon looks the same upside down, and glides back on release. */
+[data-theme="d"] button[aria-label="Swap origin and destination"] > svg,
+[data-theme="d"] a[aria-label^="Swap:"] > svg,
+html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origin and destination"] > svg {
+  transition: rotate var(--d-move) var(--d-ease-out);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] button[aria-label="Swap origin and destination"]:active > svg,
+  [data-theme="d"] a[aria-label^="Swap:"]:active > svg,
+  html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origin and destination"]:active > svg {
+    rotate: -180deg;
+    transition-duration: 0s;
+  }
+}
+
+/* The compare tray arrives: its contents rise 10 px into place. The tray's own box is never moved: the shared
+   keepClearOfTray() measures it on the next frame to scroll the pressed control clear of it. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"] #c-compare-tray > div {
+    animation: d-kit-settle var(--d-move) var(--d-ease-out) backwards;
+  }
+}
+
+/* Less motion asked for: a pressed control changes colour and stays its size. The rules above already keep
+   their own movement out; this also stills a press-scale utility a component still carries (active:scale-…). */
+@media (prefers-reduced-motion: reduce) {
+  .d-btn-primary:active,
+  .d-btn-outline:active,
+  .d-btn-selected:active,
+  .d-chip:active,
+  .d-row:active,
+  [data-theme="d"] ul > li > button[aria-haspopup="dialog"]:active,
+  [data-theme="d"] main :is(button, a).rounded-full.ring-inset:is(.ring-1, .ring-2):active,
+  html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.ring-inset:is(.ring-1, .ring-2):active {
+    scale: none;
+  }
+}
+
+/* ── 5. Utilities for D's own markup ─────────────────────────────────────────────────────── */
+
+/*
+ * .d-lift — a card under a mouse rises 3 px and takes the lifted shadow. The same for every
+ * card. It refuses to move a card that holds a combobox (its suggestion list would be trapped
+ * under the next card) and the sign-up card (its view event watches its box); those still get
+ * the shadow. Never put it on an ancestor of something sticky or fixed.
+ */
+.d-lift {
+  transition:
+    translate 200ms var(--d-ease-out),
+    box-shadow 200ms var(--d-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .d-lift:hover {
+    box-shadow: var(--d-shadow-lift, 0 2px 6px rgb(22 60 120 / 0.07), 0 22px 40px -18px rgb(22 60 120 / 0.3));
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .d-lift:not(:has([role="combobox"])):not([aria-labelledby^="c-interest-"]):hover {
+    translate: 0 -3px;
+  }
+}
+
+/*
+ * .d-reveal — as the element scrolls into view it rises its last 16 px into place. Position
+ * only: opacity is never touched, so text is never dimmed, and an element already on screen
+ * is simply there. Driven by the scroll position itself (no listener, nothing to wait for);
+ * browsers without scroll-driven animations show nothing at all. `backwards`, never `both`:
+ * once the element is in, no transform is left on it. The 1 ms duration is for engines that
+ * want one before they attach a scroll timeline.
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .d-reveal:not(:has([role="combobox"])):not([aria-labelledby^="c-interest-"]) {
+      animation: d-kit-reveal 1ms linear backwards;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+    }
+  }
+}
+
+/*
+ * .d-route-plane — a full-width wrapper laid over a card's time line, with one child (the
+ * plane, on a patch of the card's colour) centred in it. Where scroll-driven animations
+ * exist, the child travels from the departure end to the arrival end as the card crosses the
+ * screen; elsewhere, and under reduced motion, it rests mid-line. The same for every card:
+ * the only input is the scroll position. The child moves with `translate`, so a rotated
+ * icon keeps flying level.
+ */
+.d-route-plane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  pointer-events: none;
+}
+
+@supports (animation-timeline: view()) and (width: 1cqi) {
+  @media (prefers-reduced-motion: no-preference) {
+    .d-route-plane {
+      container-type: inline-size;
+    }
+    .d-route-plane > * {
+      animation: d-kit-route 1ms linear;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+  }
+}
+
+/*
+ * .d-pop, .d-stamp, .d-settle — the same three presets as animateOnce() in motion.ts, for an
+ * element that mounts in its arrived state (a check that replaces a plus, a rank number, a
+ * badge, a block of content). Transform only; opacity stays put. They are added to the
+ * element's own transform, and they fill backwards, so a stagger set with animation-delay
+ * holds the first frame and nothing is left behind afterwards.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .d-pop {
+    animation: d-kit-pop 260ms var(--d-ease-out) backwards;
+    animation-composition: add;
+  }
+  .d-stamp {
+    animation: d-kit-stamp 240ms var(--d-ease-out) backwards;
+    animation-composition: add;
+  }
+  .d-settle {
+    animation: d-kit-settle var(--d-move) var(--d-ease-out) backwards;
+    animation-composition: add;
+  }
+}
+
+/* ── Keyframes (d-kit-…: only this file uses them) ───────────────────────────────────────── */
+
+@keyframes d-kit-bar {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes d-kit-reveal {
+  from {
+    transform: translateY(16px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes d-kit-route {
+  from {
+    translate: calc(-50cqi + 50%) 0;
+  }
+  to {
+    translate: calc(50cqi - 50%) 0;
+  }
+}
+
+/* A glyph of 28 px or less: from 60 % to full size, 8 % past on the way and no further. */
+@keyframes d-kit-pop {
+  from {
+    transform: scale(0.6);
+  }
+  55% {
+    transform: scale(1.08);
+    animation-timing-function: ease-in-out;
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes d-kit-stamp {
+  from {
+    transform: scale(0.8);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes d-kit-settle {
+  from {
+    transform: translateY(10px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

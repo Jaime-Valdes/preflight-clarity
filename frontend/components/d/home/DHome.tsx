@@ -63,7 +63,7 @@ export function DHome() {
           <div className="relative mt-2 h-[13.5rem] sm:h-[16rem] lg:mt-0 lg:h-[20rem]">
             <FlightPath className="absolute inset-x-0 top-1/2 -translate-y-1/2" />
             <div className="absolute right-[6%] top-[14%] w-[9.5rem] animate-d-rise sm:w-[11rem] lg:right-[12%] lg:top-[10%] lg:w-[14rem]" style={rise(1)}>
-              <CloudMascot />
+              <CloudMascot data-cloud-stage />
             </div>
           </div>
 

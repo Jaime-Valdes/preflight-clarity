@@ -145,16 +145,22 @@
 }
 
 /*
- * ── Version D theme (docs/ui-d-theme.md) ─────────────────────────────────────
- * The "calmer way to begin" look for the smooth-flight finder only. Two layers:
- *   1. New tokens (sky, cream, sun, leaf, amber, ink, slate) used by D-only
- *      components. Nothing outside /d references them.
+ * ── Version D theme (docs/ui-d-cinematic.md; scoping: docs/ui-d-theme.md) ────
+ * The "Window Seat" look for the smooth-flight finder only. Four parts:
+ *   1. New tokens (sky, cream, gold, royal, the three rating families, ink)
+ *      used by D-only components. Nothing outside /d references them.
  *   2. Under [data-theme="d"] (set by app/d/layout.tsx) the semantic tokens the
  *      shared components already use — canvas, surface, line, ink-*, night-*,
- *      calm-*, breeze-*, dusk-*, sand-* and the shadows — are remapped to the
- *      same palette, so a header or a search form rendered inside /d takes the
- *      look without a line of its own changing. Versions A, B and C never set
- *      the attribute and keep every value above exactly.
+ *      calm-*, breeze-*, dusk-*, sand-* — are re-pointed to the same palette,
+ *      so a header or a search form rendered inside /d takes the look without
+ *      a line of its own changing. Versions A, B and C never set the attribute
+ *      and keep every value above exactly.
+ *   3. Sheets portal to <body>, outside that <div>. While /d is on screen
+ *      (html[data-d-on], set by DScope) a sheet's root gets the same re-pointing.
+ *   4. The shell (top bar, compare tray, footer) is restyled from here: its
+ *      components are shared with version C and are not edited.
+ * Every text and background pair this palette relies on is checked by
+ * `node frontend/scripts/d-contrast.mjs`; run it after changing a colour.
  * Motion: every animation here is short, slow or barely there, and the global
  * reduced-motion rule above ends all of them at their resting frame.
  */
@@ -267,11 +273,19 @@
   }
 }
 
-[data-theme="d"] {
+/*
+ * The shared scales, re-pointed to D's palette. Written once for two roots: the themed <div>, and the root of a
+ * sheet, which portals to <body> and would otherwise wear version C's tokens. The second selector only matches
+ * while /d is on screen, and :where() keeps it as light as the first. Variables only: what each root paints
+ * comes after. Steps the contract does not name sit on their family's hue; 500 and 600 are darker than a straight
+ * hue swap because white text and small icons use them.
+ */
+[data-theme="d"],
+html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) {
   --color-canvas: var(--color-sky);
-  --color-surface: #ffffff;
-  --color-line: #c6dae6;
-  --color-line-strong: #a9c3d2;
+  --color-surface: #fffdf8;
+  --color-line: #c9dff1;
+  --color-line-strong: #6890b8;
 
   --color-ink-900: var(--color-ink);
   --color-ink-700: var(--color-ink-soft);
@@ -279,73 +293,193 @@
   --color-ink-400: var(--color-ink-mute);
   --color-ink-300: var(--color-slate);
 
-  --color-night-950: #141414;
-  --color-night-900: var(--color-ink);
-  --color-night-800: #2e2e2e;
-  --color-night-700: #3d3d3d;
+  /* Shared primaries and selected states read night-*: they turn royal. */
+  --color-night-950: var(--color-royal-press);
+  --color-night-900: var(--color-royal);
+  --color-night-800: var(--color-royal-hover);
+  --color-night-700: #3c6be0;
 
-  --color-calm-50: #eef8ee;
+  /* calm = the leaf scale. */
+  --color-calm-50: #eefbf0;
   --color-calm-100: var(--color-leaf-100);
   --color-calm-200: var(--color-leaf);
-  --color-calm-300: #9ad39c;
-  --color-calm-400: #7cc27f;
-  --color-calm-500: #357a3b;
-  --color-calm-600: #46924b;
+  --color-calm-300: #91d49a;
+  --color-calm-400: #6aba77;
+  --color-calm-500: #27763b;
+  --color-calm-600: #2e8043;
   --color-calm-700: var(--color-leaf-ink);
-  --color-calm-800: #26532b;
+  --color-calm-800: #1d4825;
 
-  --color-breeze-50: #eef5fa;
+  /* breeze = the sky scale. */
+  --color-breeze-50: #eef7fe;
   --color-breeze-100: var(--color-sky);
   --color-breeze-200: var(--color-sky-deep);
-  --color-breeze-300: #9cc4db;
-  --color-breeze-400: #7fafc9;
-  --color-breeze-500: #4a7a97;
-  --color-breeze-600: #4a7893;
+  --color-breeze-300: #7ec3f4;
+  --color-breeze-400: #49a0df;
+  --color-breeze-500: #1d6ca6;
+  --color-breeze-600: #23608f;
   --color-breeze-700: var(--color-sky-ink);
 
-  --color-dusk-50: #faf5ea;
+  /* dusk = the cream scale. */
+  --color-dusk-50: #fff9ea;
   --color-dusk-100: var(--color-cream);
   --color-dusk-200: var(--color-cream-deep);
-  --color-dusk-400: #d2b98a;
-  --color-dusk-500: #b89a62;
-  --color-dusk-600: #6f5118;
-  --color-dusk-700: var(--color-sun-ink);
+  --color-dusk-400: #e8c365;
+  --color-dusk-500: #a38122;
+  --color-dusk-600: #6f5210;
+  --color-dusk-700: #6b4e0a;
 
-  --color-sand-50: #fbf4e6;
+  /* sand = the amber scale; every step keeps amber's own hue, none is redder. */
+  --color-sand-50: #fff8ea;
   --color-sand-100: var(--color-amber-100);
   --color-sand-200: var(--color-amber);
-  --color-sand-300: #dfb570;
-  --color-sand-400: #cf9d52;
-  --color-sand-500: #b4833b;
-  --color-sand-600: #8f672a;
+  --color-sand-300: #e3ba6f;
+  --color-sand-400: #d0a348;
+  --color-sand-500: #ac8128;
+  --color-sand-600: #8a6419;
   --color-sand-700: var(--color-amber-ink);
 
-  --shadow-soft: 0 2px 4px rgb(31 31 31 / 0.04), 0 14px 34px -18px rgb(31 31 31 / 0.22);
-  --shadow-lift: 0 2px 6px rgb(31 31 31 / 0.05), 0 24px 48px -22px rgb(31 31 31 / 0.32);
+  /* A card at rest, and lifted. Tailwind inlines its shadow values, so the two utilities are pointed here below. */
+  --d-shadow-card: 0 2px 4px rgb(20 33 61 / 0.05), 0 16px 34px -18px rgb(20 33 61 / 0.3);
+  --d-shadow-lift: 0 2px 6px rgb(22 60 120 / 0.07), 0 22px 40px -18px rgb(22 60 120 / 0.3);
+}
 
+/* The flat sky is the fallback under the sky layer (components/d/sky), which paints above it at z -1. */
+[data-theme="d"] {
   background-color: var(--color-sky);
   color: var(--color-ink);
+}
+
+/* The body is outside the theme: without this, pulling a phone's page past its ends shows version C's grey.
+   The sky layer may set --d-overscroll (on <html>) to its current scene's top colour. */
+html[data-d-on],
+html[data-d-on] body {
+  background-color: var(--d-overscroll, #7ec3f4);
 }
 
 /* In the base layer like the shared rules they replace, so a component's own outline-none utility still wins (fields,
    the containers that take focus programmatically). */
 @layer base {
-  [data-theme="d"] :focus-visible {
+  [data-theme="d"] :focus-visible,
+  html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) :focus-visible {
     outline: 2px solid var(--color-ink);
     outline-offset: 3px;
   }
   /* Text fields and selects draw the shared form ring on focus; one ring, not two. Checkboxes and sliders keep the ink outline. */
-  [data-theme="d"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus-visible {
+  [data-theme="d"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus-visible,
+  html[data-d-on]
+    :where(body > div:has(> [role="dialog"][aria-modal="true"]))
+    :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus-visible {
     outline: none;
   }
-  [data-theme="d"] ::selection {
-    background: var(--color-sun);
+  /* Ink on butter, whatever the text's own colour: white labels stay readable while selected. */
+  [data-theme="d"] ::selection,
+  html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) ::selection {
+    background: var(--color-butter);
+    color: var(--color-ink);
   }
 }
 
 /* Every page heading inside D is set in the headline weight; the shared pages keep their own sizes. */
 [data-theme="d"] h1 {
   font-weight: 800;
+}
+
+/* shadow-soft and shadow-lift compile with version C's values inlined, so --shadow-* cannot re-point them: the
+   variable the utility sets is replaced on the element itself. A disabled shared button drops its shadow, as in C. */
+[data-theme="d"] .shadow-soft,
+html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) .shadow-soft {
+  --tw-shadow: var(--d-shadow-card);
+}
+[data-theme="d"] .shadow-lift:not(.disabled\:shadow-none:disabled),
+html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) .shadow-lift:not(.disabled\:shadow-none:disabled) {
+  --tw-shadow: var(--d-shadow-lift);
+}
+
+/* Checkboxes, radios and sliders are controls, so they are royal: not the rating green some shared classes ask for. */
+[data-theme="d"] :is(input[type="checkbox"], input[type="radio"], input[type="range"]),
+html[data-d-on]
+  :where(body > div:has(> [role="dialog"][aria-modal="true"]))
+  :is(input[type="checkbox"], input[type="radio"], input[type="range"]) {
+  accent-color: var(--color-royal);
+}
+
+/* No backdrop-filter anywhere in D: with a sky moving behind it, a blur is redone every frame. The shared top bar,
+   compare tray, sheet backdrop and the seat map's row of letters each ask for one. */
+[data-theme="d"] [class*="backdrop-blur"],
+html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* Without its blur, the seat map's sticky row of letters needs a solid fill over the seats that scroll under it. */
+[data-theme="d"] [aria-label="Seat map"] .sticky[class*="backdrop-blur"] {
+  background-color: var(--color-canvas);
+}
+
+/*
+ * ── The shell, by CSS only (components/c/shell is shared with version C) ──────
+ */
+
+/* The top bar is part of the sky: no bar and no hairline (its width stays, so nothing shifts). */
+[data-theme="d"] > header {
+  border-bottom-color: transparent;
+  background-color: transparent;
+}
+[data-theme="d"] > header nav a {
+  color: var(--color-ink);
+}
+/* The current page's link sits on a paper pill with a white edge. (Tailwind writes the fallback for browsers
+   without color-mix.) */
+[data-theme="d"] > header nav a[aria-current] {
+  --tw-ring-color: rgb(255 255 255 / 0.9);
+  background-color: color-mix(in srgb, var(--color-surface) 86%, transparent);
+}
+/* The compare count is the state of a control, so it is royal: green only ever means a rating. */
+[data-theme="d"] > header nav a > span[aria-hidden] {
+  background-color: var(--color-royal);
+}
+/* The brand tile's drawing is fixed navy and off-white (ui/BrandMark.tsx), and the tile is a logo, not a control:
+   it stays on ink instead of taking the action colour from night-900. */
+[data-theme="d"] > header a[aria-label^="Cloud9"] > span[aria-hidden]:first-child {
+  background-color: var(--color-ink);
+}
+/* The same for an airline's tile (c/common/AirlineMark.tsx): the one that reads night-900 is a label beside a
+   flight, and a royal label would make that airline's flights look selected. */
+[data-theme="d"] span[aria-hidden].inline-grid.place-items-center.bg-night-900 {
+  background-color: var(--color-ink);
+}
+
+/* The compare tray: solid paper, its upward shadow in ink. */
+[data-theme="d"] #c-compare-tray {
+  background-color: var(--color-surface);
+  --tw-shadow: 0 -12px 30px -20px rgb(20 33 61 / 0.35);
+}
+/* "Compare (n)" before two flights are picked: the disabled primary, a sky-deep pill with a muted label. */
+[data-theme="d"] #c-compare-tray span[aria-disabled="true"] {
+  background-color: var(--color-sky-deep);
+  color: var(--color-ink-mute);
+}
+
+/* The footer is small print on the sky: no rule above it. */
+[data-theme="d"] > footer {
+  border-top-color: transparent;
+}
+
+/*
+ * ── Sheets (c/common/Sheet.tsx renders into <body>) ─────────────────────────
+ * The root has the tokens (above). Here: its text colour, a blue scrim in place of the dark backdrop (its blur is
+ * already off), and a paper panel and footer in place of the canvas ones (canvas is sky under D).
+ */
+html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) {
+  color: var(--color-ink);
+}
+/* royal-press at 38 %. */
+html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) > [aria-hidden]:first-child {
+  background-color: rgb(22 58 154 / 0.38);
+}
+html[data-d-on] :where(body > div) > [role="dialog"][aria-modal="true"],
+html[data-d-on] :where(body > div) > [role="dialog"][aria-modal="true"] > [data-sheet-scroll] + div {
+  background-color: var(--color-surface);
 }
 
 /* The flight path's plane rides the path with CSS motion; browsers without it show the resting plane instead. */
@@ -368,10 +502,14 @@
   [data-theme="d"] .d-plane-resting {
     display: block;
   }
-  /* The staggered entrances start at once: with their delays, D's cards would still appear one after another. */
+  /* The staggered entrances start at once: with their delays, D's cards would still appear one after another.
+     The same inside a sheet. */
   [data-theme="d"] *,
   [data-theme="d"] *::before,
-  [data-theme="d"] *::after {
+  [data-theme="d"] *::after,
+  html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) *,
+  html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) *::before,
+  html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"])) *::after {
     animation-delay: 0s !important;
   }
 }

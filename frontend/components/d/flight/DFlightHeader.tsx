@@ -59,7 +59,7 @@ export function DFlightHeader({ flight, daysUntil, className }: DFlightHeaderPro
   const known = availabilityFor(daysUntil);
 
   return (
-    <section aria-label="Flight details" className={cn("rounded-[24px] bg-surface p-5 shadow-soft sm:p-6", className)}>
+    <section data-cloud-seat aria-label="Flight details" className={cn("rounded-[24px] bg-surface p-5 shadow-soft sm:p-6", className)}>
       {/* Airline + flight number */}
       <div className="flex items-start justify-between gap-3">
         <h1 className="min-w-0">

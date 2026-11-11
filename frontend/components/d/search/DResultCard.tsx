@@ -99,7 +99,7 @@ export function DResultCard({
   }
 
   return (
-    <article aria-labelledby={titleId} className="rounded-[24px] bg-surface p-5 shadow-soft">
+    <article data-cloud-seat aria-labelledby={titleId} className="rounded-[24px] bg-surface p-5 shadow-soft">
       {/* Who and how much. */}
       <div className="flex items-start gap-3">
         <AirlineMark code={flight.airline.code} />

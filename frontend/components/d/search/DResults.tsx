@@ -464,7 +464,7 @@ function PrioritiesStrip({ priorities }: { priorities: Priorities }) {
   const heading = chosen ? "Rated for you" : "Rated in the usual order";
   return (
     <div className="flex items-center gap-3 rounded-[20px] bg-surface py-2.5 pl-3.5 pr-4 shadow-soft">
-      <CloudMascot className="w-10 shrink-0 sm:w-11" />
+      <CloudMascot data-cloud-home className="w-10 shrink-0 sm:w-11" />
       <p className="min-w-0 text-[13px] leading-snug text-ink-soft sm:text-[14px]">
         {/* Screen readers get the whole order, numbered; the sentence is the same thing at a glance. */}
         <span className="sr-only">
@@ -492,7 +492,7 @@ function PrioritiesStrip({ priorities }: { priorities: Priorities }) {
 function Notice({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
   return (
     <div className="animate-d-rise rounded-[24px] bg-surface px-5 py-8 text-center shadow-soft">
-      <CloudMascot className="mx-auto w-24" />
+      <CloudMascot data-cloud-stage className="mx-auto w-24" />
       <p className="mt-4 text-balance text-[20px] font-extrabold leading-snug tracking-tight text-ink">{title}</p>
       <p className="mx-auto mt-1.5 max-w-[42ch] text-[15px] leading-relaxed text-ink-soft">{text}</p>
       {action}
@@ -518,7 +518,7 @@ function NoNonstops({ day, carry }: { day: RouteDay; carry: Record<string, strin
       aria-labelledby="d-no-nonstops"
       className="animate-d-rise rounded-[24px] bg-surface px-5 py-8 text-center shadow-soft sm:px-8"
     >
-      <CloudMascot className="mx-auto w-24" />
+      <CloudMascot data-cloud-stage className="mx-auto w-24" />
       <h2 id="d-no-nonstops" className="mt-4 text-balance text-[20px] font-extrabold leading-snug tracking-tight text-ink">
         {area ? "No flights between these airports" : "No nonstop flights on this route"}
       </h2>
@@ -649,7 +649,7 @@ function InvalidSearch({ check, today, params }: { check: QueryCheck; today: str
         className="animate-d-rise rounded-[24px] bg-surface p-5 shadow-soft sm:p-7"
       >
         <div className="flex items-start gap-4">
-          <CloudMascot className="w-16 shrink-0 sm:w-20" />
+          <CloudMascot data-cloud-stage className="w-16 shrink-0 sm:w-20" />
           <div className="min-w-0">
             <h1 id="d-search-title" className="text-balance text-[22px] font-extrabold leading-snug tracking-tight text-ink sm:text-[26px]">
               {message.title}

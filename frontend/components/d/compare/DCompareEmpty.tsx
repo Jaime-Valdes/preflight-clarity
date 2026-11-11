@@ -32,7 +32,7 @@ export function DCompareEmpty({ columns, badLink, addHref, onRemove }: CompareEm
 
   return (
     <section className="mx-auto max-w-[640px] animate-d-rise rounded-[24px] bg-surface p-5 shadow-soft sm:p-7">
-      <CloudMascot className="w-24" />
+      <CloudMascot data-cloud-stage className="w-24" />
       <h2 className="mt-4 text-balance text-[24px] font-extrabold leading-tight tracking-tight text-ink">
         {flight ? "Add one more flight" : "Nothing to compare yet"}
       </h2>

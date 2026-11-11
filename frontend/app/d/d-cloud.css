@@ -1,4 +1,254 @@
 /*
- * Version D — d-cloud (docs/ui-d-cinematic.md). Plain CSS, loaded by app/d/layout.tsx.
+ * Version D — d-cloud (docs/ui-d-cinematic.md, "The cloud"). Plain CSS, loaded by app/d/layout.tsx.
  * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders.
+ *
+ * Two parts. The rig: how components/d/brand/CloudMascot.tsx looks, floats, blinks, looks around
+ * and wears a mood. The companion: the one roaming cloud components/d/cloud/DCompanion.tsx places
+ * on the top edge of a card. The scripts under components/d/cloud write only --gx / --gy and
+ * data-mood on a cloud, data-cloud-away on a home cloud, and translate / scale / data-on on the
+ * companion; everything that moves is a transition or an animation declared here.
  */
+
+/* ── The rig ─────────────────────────────────────────────────────────────── */
+
+/* In the base layer so a caller's width utility (w-10, w-24 …) wins; without one the cloud fills
+   its parent. The explicit width is also what lets the cloud be a size container below. */
+@layer base {
+  .d-cloud {
+    width: 100%;
+  }
+}
+
+.d-cloud {
+  /* The face reads the cloud's own width: a look has to travel further to read on a small cloud. */
+  container-type: inline-size;
+  /* How far a full look (--gx or --gy at 1) carries the face and, on top of that, the eyes. In the
+     drawing's own units: 120 of them span the cloud. */
+  --d-cloud-face-x: 3px;
+  --d-cloud-face-y: 2.4px;
+  --d-cloud-eye-x: 1.4px;
+  --d-cloud-eye-y: 1.2px;
+  /* How far a nod dips. */
+  --d-cloud-dip: 2.5px;
+}
+@container (max-width: 111.9px) {
+  .d-cloud-pose {
+    --d-cloud-face-x: 4.5px;
+    --d-cloud-face-y: 3.6px;
+    --d-cloud-eye-x: 2.1px;
+    --d-cloud-eye-y: 1.8px;
+  }
+}
+@container (min-width: 126px) {
+  .d-cloud-pose {
+    --d-cloud-dip: 2cqw;
+  }
+}
+
+/* The pose: a slow float for clouds in open sky, and the lean of a curious cloud. The pivot is the
+   middle of the cloud's base, so it leans and squashes from where it rests. */
+.d-cloud-pose {
+  display: block;
+  transform-origin: 50% 79%;
+  transition: rotate 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.d-cloud-floats > .d-cloud-pose {
+  animation: d-cloud-float 4.5s ease-in-out infinite;
+}
+/* A home cloud sits beside text and swaps places with the companion: it keeps still. */
+.d-cloud[data-cloud-home] > .d-cloud-pose,
+[data-theme="d"] [data-cloud-home] .d-cloud > .d-cloud-pose {
+  animation: none;
+}
+@keyframes d-cloud-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -4px;
+  }
+}
+
+.d-cloud-art {
+  transform-origin: 50% 79%;
+}
+
+/* The look. The whole face slides toward it and the eyes go a little further, sooner: eyes lead,
+   face follows. Lengths on SVG groups are the drawing's units. */
+.d-cloud-face {
+  transform: translate(calc(var(--gx, 0) * var(--d-cloud-face-x)), calc(var(--gy, 0) * var(--d-cloud-face-y)));
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.d-cloud-eyes {
+  transform: translate(calc(var(--gx, 0) * var(--d-cloud-eye-x)), calc(var(--gy, 0) * var(--d-cloud-eye-y)));
+  transition: transform 90ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Eye and mouth states swap by opacity; nothing morphs. */
+.d-cloud-eyes-open,
+.d-cloud-eyes-happy,
+.d-cloud-eyes-closed,
+.d-cloud-glints,
+.d-cloud-smile,
+.d-cloud-wide {
+  transition: opacity 80ms linear;
+}
+.d-cloud-eyes-happy,
+.d-cloud-eyes-closed,
+.d-cloud-wide {
+  opacity: 0;
+}
+.d-cloud:is([data-mood="glad"], [data-eyes="happy"]) .d-cloud-eyes-happy,
+.d-cloud[data-eyes="closed"] .d-cloud-eyes-closed,
+.d-cloud:is([data-mood="glad"], [data-mouth="wide"]) .d-cloud-wide {
+  opacity: 1;
+}
+.d-cloud:is([data-mood="glad"], [data-eyes="happy"], [data-eyes="closed"]) :is(.d-cloud-eyes-open, .d-cloud-glints),
+.d-cloud:is([data-mood="glad"], [data-mouth="wide"]) .d-cloud-smile {
+  opacity: 0;
+}
+
+/* The blink: 70 ms closing, 20 ms shut, 110 ms opening, around the eye line. Three in a 9.6 s
+   round, the last two close together, so it does not tick like a clock. */
+.d-cloud-blinks {
+  transform-box: view-box;
+  transform-origin: 58px 52px;
+  animation: d-cloud-blink 9.6s linear 1.4s infinite;
+}
+@keyframes d-cloud-blink {
+  0%,
+  30.208%,
+  32.292%,
+  76.042%,
+  78.125%,
+  78.75%,
+  80.833%,
+  100% {
+    transform: scaleY(1);
+  }
+  30.938%,
+  31.146%,
+  76.771%,
+  76.979%,
+  79.479%,
+  79.688% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes d-cloud-blink-once {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  35%,
+  45% {
+    transform: scaleY(0.1);
+  }
+}
+
+/* Moods. Calm is the drawing as it is. */
+
+/* Curious: leans up to 3 degrees toward what it looks at. */
+.d-cloud[data-mood="curious"] > .d-cloud-pose {
+  rotate: calc(var(--gx, 0) * 3deg);
+}
+
+/* Nod, "noted": down with a small squash in 120 ms, back in 180 ms, one blink. */
+.d-cloud[data-mood="nod"] .d-cloud-art {
+  animation: d-cloud-nod 300ms linear;
+}
+.d-cloud[data-mood="nod"] .d-cloud-blinks {
+  animation: d-cloud-blink-once 200ms linear 70ms;
+}
+@keyframes d-cloud-nod {
+  0% {
+    transform: none;
+    animation-timing-function: cubic-bezier(0.3, 0, 0.5, 1);
+  }
+  40% {
+    transform: translateY(var(--d-cloud-dip)) scale(1.03, 0.96);
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* Glad: happy eyes and the wide smile (above), and the cheeks swell a little. */
+.d-cloud-cheek {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.d-cloud[data-mood="glad"] .d-cloud-cheek {
+  transform: scale(1.15);
+}
+
+/* The contact shadow belongs to a cloud resting on a card. */
+.d-cloud-shadow {
+  opacity: 0;
+}
+
+/* A home cloud whose place the companion has taken: it left its box to sit with the visitor. */
+.d-cloud[data-cloud-away] {
+  opacity: 0;
+}
+
+/* ── The companion ───────────────────────────────────────────────────────── */
+
+/* One element in the layout root, placed in page coordinates with `translate` (and `scale`, while
+   it leaves or rejoins a smaller home cloud), so it scrolls with its card for free. Above the
+   content, below the compare tray (30) and sheets (50). It takes no pointer events, ever. */
+[data-theme="d"] .d-companion {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  width: 60px;
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: 0 0;
+  transition:
+    translate 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms linear;
+}
+@media (min-width: 640px) {
+  [data-theme="d"] .d-companion {
+    width: 64px;
+  }
+}
+[data-theme="d"] .d-companion[data-on] {
+  opacity: 1;
+}
+/* As a block the drawing is the whole box, with no line of text under it. */
+[data-theme="d"] .d-companion > .d-cloud {
+  display: block;
+}
+[data-theme="d"] .d-companion .d-cloud-shadow {
+  opacity: 0.12;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+
+/* No companion at all; every other cloud is a still drawing with its eyes forward. The scripts do
+   not run either (they check the same setting), so nothing writes a look or a mood. */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="d"] .d-companion {
+    display: none;
+  }
+  .d-cloud-pose,
+  .d-cloud-art,
+  .d-cloud-art * {
+    animation: none !important;
+    transition: none !important;
+  }
+  .d-cloud-pose {
+    rotate: none !important;
+  }
+  .d-cloud-face,
+  .d-cloud-eyes {
+    transform: none;
+  }
+}

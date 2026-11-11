@@ -1,4 +1,623 @@
 /*
- * Version D — d-sky (docs/ui-d-cinematic.md). Plain CSS, loaded by app/d/layout.tsx.
- * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders.
+ * Version D — d-sky (docs/ui-d-cinematic.md, "The sky"). Plain CSS, loaded by app/d/layout.tsx.
+ * Every selector starts with a .d-sky… or .d-sun class that only D renders (components/d/sky/).
+ *
+ * One fixed sky behind every /d page. A page is a camera position in it: DSky sets
+ * data-scene="home | results | flight | compare" and every sprite reads its place for that
+ * scene from custom properties, so a page change is a glide, never a swap.
+ *
+ * Each sprite is nested wrappers, one job each, so no two effects fight over one property:
+ *   .d-sky-at     where the scene puts it (translate, scale, opacity; a transition)
+ *   .d-sky-par    scroll parallax (a scroll-driven animation of translate)
+ *   .d-sky-ptr    pointer parallax (translate from --d-sky-px / --d-sky-py; a transition)
+ *   .d-sky-drift  the slow drift (a keyframe loop of translate), on a box around the drawing:
+ *                 Chrome animates an <svg> element itself on the main thread, every frame
+ * Only opacity, translate and scale ever animate. No filters, no blur, no shadows.
+ *
+ * The first half of this file is the still frame of each scene, which is the whole design for
+ * anyone who asked for less motion: every transition and animation lives further down, inside
+ * `prefers-reduced-motion: no-preference`.
+ *
+ * Where things may sit. Text that is not on a card (page headings, captions, the header, the
+ * footer) scrolls over this layer, so nothing here is darker than the top of the home gradient
+ * (#7ec3f4, 4.68 : 1 under ink-mute): clouds and the sun only ever raise contrast. Clutter is
+ * the other half: sprites keep to the gutters beside the content column on laptops, and on
+ * phones to the right-hand strip and the bottom of the frame, clear of where small captions rest.
  */
+
+/* ── The frame ───────────────────────────────────────────────────────────────── */
+
+.d-sky {
+  /* One hundredth of the sky's height. The sky is as tall as the largest viewport (browser toolbars
+     hidden), so nothing in it moves or resizes when a phone's toolbar collapses during a scroll. */
+  --d-sky-vh: 1vh;
+  /* From the window's right edge to the end of the header's last link, at the least: the page gutter and
+     the link's own padding (28 px on a phone, more above), plus the margin beside the 1120 px column. */
+  --d-sky-nav: calc(28px + max(0px, 50vw - 560px));
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  overflow: clip;
+  pointer-events: none;
+}
+@supports (height: 100lvh) {
+  .d-sky {
+    --d-sky-vh: 1lvh;
+    height: 100lvh;
+  }
+}
+
+/* A visitor's own contrast colours win: the sky is decoration, so it steps aside. On paper too,
+   where a fixed layer would repeat on every sheet. */
+@media (forced-colors: active), print {
+  .d-sky {
+    display: none;
+  }
+}
+
+/* ── Air: one gradient per scene ─────────────────────────────────────────────── */
+
+/* Each passes through a near-white stop, so blue never turns green on its way to butter. */
+.d-sky-air {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+.d-sky-air-home {
+  background: linear-gradient(180deg, #7ec3f4 0%, #aedaf9 34%, #e3f1fc 60%, #fbf7ec 74%, #fff1cc 87%, #ffe3a0 100%);
+}
+.d-sky-air-results {
+  background: linear-gradient(180deg, #8ccbf5 0%, #c3e4fa 45%, #edf6fd 80%, #fff9ea 100%);
+}
+.d-sky-air-flight {
+  background: linear-gradient(180deg, #86c8f6 0%, #b7def9 40%, #e7f3fd 75%, #fcfdfe 100%);
+}
+.d-sky-air-compare {
+  background: linear-gradient(180deg, #93cdf5 0%, #cbe7f9 36%, #fbf7ec 60%, #ffefc4 80%, #ffdf96 100%);
+}
+/* The four are stacked in page order. The ones under the current scene stay opaque (and, at rest,
+   not drawn), so a cross-fade always has a solid sky beneath it and never dips to the flat page colour. */
+.d-sky[data-scene="results"] .d-sky-air-home,
+.d-sky[data-scene="flight"] :is(.d-sky-air-home, .d-sky-air-results),
+.d-sky[data-scene="compare"] :is(.d-sky-air-home, .d-sky-air-results, .d-sky-air-flight) {
+  opacity: 1;
+}
+.d-sky[data-scene="home"] .d-sky-air-home,
+.d-sky[data-scene="results"] .d-sky-air-results,
+.d-sky[data-scene="flight"] .d-sky-air-flight,
+.d-sky[data-scene="compare"] .d-sky-air-compare {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ── Sprites ─────────────────────────────────────────────────────────────────── */
+
+/* A scene places a sprite with --d-sky-x / --d-sky-y: its left and top edge in hundredths of the
+   sky's width and height (for the sun: its centre). Where a place has to follow the layout instead
+   (a gutter, a fixed distance from an edge), --d-sky-tx / --d-sky-ty take a whole length.
+   --d-sky-s: size against its largest. --d-sky-o: opacity. */
+.d-sky-at {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  translate: var(--d-sky-tx, calc(var(--d-sky-x, 0) * 1vw)) var(--d-sky-ty, calc(var(--d-sky-y, 0) * var(--d-sky-vh)));
+  scale: var(--d-sky-s, 1);
+  opacity: var(--d-sky-o, 1);
+}
+
+/* The sun: the gradient is the whole drawing (a hot core, the disc's edge at 69.5 %, then a warm-white
+   halo; yellow over blue would go grey-green). --d-sun is the disc's diameter; the box is 1.44 times it.
+   Also the class the home hero uses for its own in-flow sun. */
+.d-sun {
+  --d-sun: 31vmin;
+  width: calc(var(--d-sun) * 1.44);
+  height: calc(var(--d-sun) * 1.44);
+  background: radial-gradient(
+    circle closest-side,
+    #ffe9a8 0,
+    #ffd45f 50%,
+    #ffc53d 69.5%,
+    rgb(255 246 222 / 0.62) 71%,
+    rgb(255 250 236 / 0.3) 86%,
+    rgb(255 252 244 / 0) 100%
+  );
+}
+/* In the sky the sun is placed by its centre and drawn at its largest (compare); other scenes scale it down. */
+.d-sky-sun {
+  width: 0;
+  height: 0;
+}
+.d-sky-sun .d-sun {
+  --d-sun: 41vmin;
+  position: absolute;
+  top: calc(var(--d-sun) * -0.72);
+  left: calc(var(--d-sun) * -0.72);
+}
+
+/* Clouds: each is drawn at the largest size any scene asks of it, so a scale never blurs it.
+   A shape fills the width of the box it is put in (DSkyCloud, also used outside the sky). */
+.d-sky-cloud {
+  width: var(--d-sky-w);
+}
+.d-sky-shape {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.d-sky-a {
+  --d-sky-w: min(34vw, 320px);
+}
+.d-sky-b {
+  --d-sky-w: min(40vw, 300px);
+}
+.d-sky-c {
+  --d-sky-w: min(62vw, 520px);
+}
+.d-sky-d {
+  --d-sky-w: min(44vw, 420px);
+}
+.d-sky-c .d-sky-shape,
+.d-sky-d .d-sky-shape {
+  fill: #fffdf6;
+}
+/* Phones show three clouds. */
+@media (max-width: 639.98px) {
+  .d-sky-d {
+    display: none;
+  }
+}
+
+/* The deck: two bands of cloud tops along the bottom edge. Wider than the frame, so their slow drift
+   never shows an end, and never narrower than 820 px, so a phone sees a few broad tops instead of a
+   row of teeth. Each band holds a daylight copy and a butter copy of the same shape; the golden
+   afternoon fades the butter one in on top. */
+.d-sky-deck {
+  position: absolute;
+  bottom: -1px;
+  left: min(-5%, 50% - 410px);
+  width: max(110%, 820px);
+  transform-origin: 50% 100%;
+  translate: 0 var(--d-sky-ty, 45%);
+  scale: 1 var(--d-sky-s, 1);
+  opacity: var(--d-sky-o, 0);
+}
+.d-sky-deck-back {
+  height: calc(22 * var(--d-sky-vh));
+}
+.d-sky-deck-front {
+  height: calc(17 * var(--d-sky-vh));
+}
+.d-sky-deck .d-sky-ptr,
+.d-sky-band,
+.d-sky-band > div,
+.d-sky-band svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.d-sky-deck-back .d-sky-band-day {
+  fill: #f3f9fe;
+}
+.d-sky-deck-back .d-sky-band-gold {
+  fill: #fff6de;
+}
+.d-sky-deck-front .d-sky-band-day {
+  fill: #ffffff;
+}
+.d-sky-deck-front .d-sky-band-gold {
+  fill: #fffbf0;
+}
+.d-sky-band-gold {
+  opacity: 0;
+}
+
+/* ── The four scenes ─────────────────────────────────────────────────────────── */
+
+/* Read down a sprite's rules to follow the camera. As it climbs, clouds sink and leave by an edge,
+   the far cloud moving least and the near ones most; the sun keeps to the right-hand side all day,
+   sliding into its corner, coming down beside the boarding pass and setting toward the horizon.
+   Two things cross the frame, each once and behind the cards, between the home and the results: on
+   a laptop the mid cloud, from the foot of the hero's sun to the left gutter; on a phone the small
+   far cloud, from the top left to its place beside the caption.
+   Phones and tablets first; the laptop rules after each scene move things into the gutters. */
+
+/* Home, first light: the richest frame. The sun here is the hero's own (in the page, so it scrolls
+   away with it); the sky's waits just outside the corner it slides into, at the size it has there.
+   It is never faded: half-transparent gold over blue is olive. The deck is below the frame. */
+.d-sky[data-scene="home"] .d-sky-sun {
+  --d-sky-x: 116;
+  --d-sky-y: -20;
+  --d-sky-s: 0.756;
+}
+.d-sky[data-scene="home"] .d-sky-a {
+  --d-sky-x: -8;
+  --d-sky-y: 9;
+  --d-sky-s: 0.85;
+  --d-sky-o: 0.5;
+}
+/* On a phone the hero's words fill the width from the scene band down to the button, so the two lower
+   clouds wait below them, a fixed distance down: on a short phone they would otherwise sit behind the copy. */
+.d-sky[data-scene="home"] .d-sky-b {
+  --d-sky-x: 62;
+  --d-sky-ty: max(76 * var(--d-sky-vh), 640px);
+  --d-sky-s: 0.6;
+  --d-sky-o: 0.9;
+}
+.d-sky[data-scene="home"] .d-sky-c {
+  --d-sky-x: -14;
+  --d-sky-ty: max(66 * var(--d-sky-vh), 560px);
+}
+.d-sky[data-scene="home"] .d-sky-d {
+  --d-sky-x: 70;
+  --d-sky-y: 76;
+  --d-sky-o: 0.95;
+}
+/* From a laptop up the words keep to the left column: the mid cloud goes to the foot of the hero's sun. */
+@media (min-width: 1024px) {
+  .d-sky[data-scene="home"] .d-sky-b {
+    --d-sky-x: 58;
+    --d-sky-ty: calc(46 * var(--d-sky-vh));
+    --d-sky-s: 0.87;
+  }
+  .d-sky[data-scene="home"] .d-sky-c {
+    --d-sky-ty: calc(66 * var(--d-sky-vh));
+  }
+}
+
+/* Results, the climb: the quietest frame, so cards read. The sun is a warm corner. On a phone the
+   far cloud looks in from the right edge, beyond the end of the two captions that rest on the sky (the
+   date strip's and the flight count), and the other two stay below them: captions only ever travel up. */
+.d-sky[data-scene="results"] .d-sky-sun {
+  --d-sky-x: 103;
+  --d-sky-y: -5;
+  --d-sky-s: 0.756;
+}
+.d-sky[data-scene="results"] .d-sky-a {
+  --d-sky-tx: calc(100vw - 62px);
+  --d-sky-y: 47;
+  --d-sky-s: 0.9;
+  --d-sky-o: 0.5;
+}
+.d-sky[data-scene="results"] .d-sky-b {
+  --d-sky-x: 62;
+  --d-sky-ty: max(78 * var(--d-sky-vh), 600px);
+  --d-sky-o: 0.85;
+}
+.d-sky[data-scene="results"] .d-sky-c {
+  --d-sky-x: -12;
+  --d-sky-ty: max(66 * var(--d-sky-vh), 590px);
+}
+.d-sky[data-scene="results"] .d-sky-d {
+  --d-sky-x: 104;
+  --d-sky-y: 84;
+  --d-sky-o: 0;
+}
+/* The corner sun must stop short of the header's last link, whatever the window's shape: its radius is
+   the distance from its centre to the link's corner, less 12 px, and never more than the 31vmin it is
+   on a phone (the sprite is 41vmin, so sizes are ratios of that; tan(atan2(a, b)) is a / b for two
+   lengths). Browsers without that maths get a plainly small sun wherever the window could be the wrong shape. */
+@media (min-width: 640px) and (max-width: 1399.98px) {
+  .d-sky[data-scene="home"] .d-sky-sun,
+  .d-sky[data-scene="results"] .d-sky-sun {
+    --d-sky-s: 0.46;
+  }
+}
+@supports (scale: tan(atan2(1px, 1px))) and (width: hypot(1px, 1px)) {
+  .d-sky[data-scene="home"] .d-sky-sun,
+  .d-sky[data-scene="results"] .d-sky-sun {
+    --d-sky-s: min(0.756, tan(atan2(2 * (hypot(3vw + var(--d-sky-nav), 5 * var(--d-sky-vh) + 20px) - 12px), 41vmin)));
+  }
+}
+/* From a laptop up there are gutters beside the content column (1056 px wide, centred). The far and
+   the mid cloud live in the left one, their inner ends a fixed distance short of the column, so they
+   slide off as the gutter narrows instead of creeping under the captions. Of the near pair, one has
+   sunk out at the bottom left and the other rests at the bottom right. */
+@media (min-width: 1024px) {
+  .d-sky[data-scene="results"] .d-sky-a {
+    --d-sky-tx: calc(50vw - 810px);
+    --d-sky-y: 12;
+  }
+  .d-sky[data-scene="results"] .d-sky-b {
+    --d-sky-tx: calc(50vw - 893px);
+    --d-sky-ty: calc(38 * var(--d-sky-vh));
+  }
+  .d-sky[data-scene="results"] .d-sky-c {
+    --d-sky-x: -20;
+    --d-sky-ty: calc(92 * var(--d-sky-vh));
+    --d-sky-o: 0;
+  }
+  .d-sky[data-scene="results"] .d-sky-d {
+    --d-sky-x: 62;
+    --d-sky-y: 78;
+    --d-sky-o: 1;
+  }
+}
+
+/* Flight, above the clouds: the last low clouds have sunk into a deck that surfaced from below. */
+.d-sky[data-scene="flight"] .d-sky-sun {
+  --d-sky-x: 106;
+  --d-sky-y: -3;
+  --d-sky-s: 0.683;
+}
+/* The far cloud looks over the top of the boarding pass, right of where the back link ends and never
+   higher than it: on a short phone a share of the height would lift it behind the link. */
+.d-sky[data-scene="flight"] .d-sky-a {
+  --d-sky-x: 58;
+  --d-sky-ty: max(10.5 * var(--d-sky-vh), 86px);
+  --d-sky-o: 0.5;
+}
+.d-sky[data-scene="flight"] .d-sky-b,
+.d-sky[data-scene="compare"] .d-sky-b {
+  --d-sky-x: 62;
+  --d-sky-y: 96;
+  --d-sky-o: 0;
+}
+.d-sky[data-scene="flight"] .d-sky-c,
+.d-sky[data-scene="compare"] .d-sky-c {
+  --d-sky-x: -12;
+  --d-sky-y: 96;
+  --d-sky-o: 0;
+}
+.d-sky[data-scene="flight"] .d-sky-d,
+.d-sky[data-scene="compare"] .d-sky-d {
+  --d-sky-x: 104;
+  --d-sky-y: 90;
+  --d-sky-o: 0;
+}
+.d-sky[data-scene="flight"] .d-sky-deck-back {
+  --d-sky-ty: calc(-4 * var(--d-sky-vh));
+  --d-sky-o: 0.75;
+}
+.d-sky[data-scene="flight"] .d-sky-deck-front {
+  --d-sky-ty: 0px;
+  --d-sky-o: 1;
+}
+@media (min-width: 640px) and (max-width: 1399.98px) {
+  .d-sky[data-scene="flight"] .d-sky-sun {
+    --d-sky-s: 0.42;
+  }
+}
+@supports (scale: tan(atan2(1px, 1px))) and (width: hypot(1px, 1px)) {
+  .d-sky[data-scene="flight"] .d-sky-sun {
+    --d-sky-s: min(0.683, tan(atan2(2 * (hypot(6vw + var(--d-sky-nav), 3 * var(--d-sky-vh) + 20px) - 12px), 41vmin)));
+  }
+}
+/* From a laptop up the far cloud has sunk a little further down the left gutter, the mid cloud has left
+   by the left edge and the last near cloud has gone under at the bottom right. */
+@media (min-width: 1024px) {
+  .d-sky[data-scene="flight"] .d-sky-a {
+    --d-sky-tx: calc(50vw - 840px);
+    --d-sky-ty: calc(24 * var(--d-sky-vh));
+  }
+  .d-sky[data-scene="flight"] .d-sky-b,
+  .d-sky[data-scene="compare"] .d-sky-b {
+    --d-sky-x: -45;
+    --d-sky-y: 44;
+  }
+  .d-sky[data-scene="flight"] .d-sky-c,
+  .d-sky[data-scene="compare"] .d-sky-c {
+    --d-sky-x: -20;
+  }
+  .d-sky[data-scene="flight"] .d-sky-d,
+  .d-sky[data-scene="compare"] .d-sky-d {
+    --d-sky-x: 62;
+    --d-sky-y: 96;
+  }
+}
+/* A gutter wide enough to hold it: the sun comes down out of its corner and shows whole, clear of the
+   column. Where the maths is there it sits in the middle of the gutter and is never wider than it. */
+@media (min-width: 1400px) {
+  .d-sky[data-scene="flight"] .d-sky-sun {
+    --d-sky-x: 94;
+    --d-sky-y: 22;
+    --d-sky-s: 0.512;
+  }
+  @supports (scale: tan(atan2(1px, 1px))) and (width: hypot(1px, 1px)) {
+    .d-sky[data-scene="flight"] .d-sky-sun {
+      --d-sky-tx: calc(75vw + 272px);
+      --d-sky-s: min(0.512, tan(atan2(50vw - 532px, 41vmin)));
+    }
+  }
+}
+
+/* Compare, golden afternoon: the deck turns butter and the sun settles half behind it. */
+.d-sky[data-scene="compare"] .d-sky-sun {
+  --d-sky-x: 80;
+  --d-sky-y: 84;
+}
+/* The far cloud rests beside the "Add a flight" row, never higher: on a short phone a share of the
+   height would lift it behind the line under the heading. */
+.d-sky[data-scene="compare"] .d-sky-a {
+  --d-sky-x: 66;
+  --d-sky-ty: max(16 * var(--d-sky-vh), 135px);
+  --d-sky-o: 0.55;
+}
+.d-sky[data-scene="compare"] .d-sky-deck-back {
+  --d-sky-ty: calc(-3 * var(--d-sky-vh));
+  --d-sky-s: 0.909;
+  --d-sky-o: 0.8;
+}
+.d-sky[data-scene="compare"] .d-sky-deck-front {
+  --d-sky-ty: 0px;
+  --d-sky-s: 0.882;
+  --d-sky-o: 1;
+}
+.d-sky[data-scene="compare"] .d-sky-band-gold {
+  opacity: 1;
+}
+/* From a laptop up the table fills the column: the far cloud stays in the left gutter, where the sky is still blue. */
+@media (min-width: 1024px) {
+  .d-sky[data-scene="compare"] .d-sky-a {
+    --d-sky-tx: calc(50vw - 840px);
+    --d-sky-ty: calc(27 * var(--d-sky-vh));
+  }
+}
+
+/* ── Motion (none of it for visitors who asked for less) ─────────────────────── */
+
+/* Every rule that moves something sits inside `no-preference` below. This one only makes the still
+   version exact: the app's global reduced-motion rule leaves a 0.01 ms transition on everything, which
+   would hold a scene change back by a frame. */
+@media (prefers-reduced-motion: reduce) {
+  .d-sky,
+  .d-sky * {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The camera move: a page change glides every sprite to its new place, near layers a beat after far ones. */
+  .d-sky-at,
+  .d-sky-deck {
+    transition-property: translate, scale, opacity;
+    transition-duration: 900ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: var(--d-sky-lag, 0ms);
+  }
+  .d-sky-b {
+    --d-sky-lag: 40ms;
+  }
+  .d-sky-c,
+  .d-sky-d,
+  .d-sky-deck {
+    --d-sky-lag: 80ms;
+  }
+  .d-sky-band-gold {
+    transition: opacity 900ms cubic-bezier(0.22, 1, 0.36, 1) 80ms;
+  }
+  /* The light changes over 700 ms. A scene's gradient fades in over the one below it, or fades out to
+     reveal it; `visibility` follows only once the fade is over. */
+  .d-sky-air {
+    transition:
+      opacity 700ms cubic-bezier(0.45, 0, 0.25, 1),
+      visibility 0s linear 700ms;
+  }
+  .d-sky[data-scene="home"] .d-sky-air-home,
+  .d-sky[data-scene="results"] .d-sky-air-results,
+  .d-sky[data-scene="flight"] .d-sky-air-flight,
+  .d-sky[data-scene="compare"] .d-sky-air-compare {
+    transition-delay: 0s;
+  }
+
+  /* Drift: a few pixels over most of a minute, each cloud on its own clock. */
+  .d-sky-a .d-sky-drift {
+    animation: d-sky-drift-far 30s ease-in-out -7s infinite alternate;
+  }
+  .d-sky-b .d-sky-drift {
+    animation: d-sky-drift-mid 22s ease-in-out -13s infinite alternate;
+  }
+  .d-sky-c .d-sky-drift {
+    animation: d-sky-drift-near 18s ease-in-out -4s infinite alternate;
+  }
+  .d-sky-d .d-sky-drift {
+    animation: d-sky-drift-near 18s ease-in-out -11s infinite alternate-reverse;
+  }
+  .d-sky-deck-back .d-sky-drift {
+    animation: d-sky-drift-deck 25s ease-in-out -9s infinite alternate;
+  }
+}
+@keyframes d-sky-drift-far {
+  from {
+    translate: -4px 0;
+  }
+  to {
+    translate: 4px -2px;
+  }
+}
+@keyframes d-sky-drift-mid {
+  from {
+    translate: -5px 1px;
+  }
+  to {
+    translate: 5px -2px;
+  }
+}
+@keyframes d-sky-drift-near {
+  from {
+    translate: -6px 0;
+  }
+  to {
+    translate: 6px -3px;
+  }
+}
+@keyframes d-sky-drift-deck {
+  from {
+    translate: -7px 0;
+  }
+  to {
+    translate: 7px 0;
+  }
+}
+
+/* Scroll parallax: over the first 1200 px of a page the clouds rise, near ones most, then hold. The
+   browser drives it from the scroll position (no listener); where it cannot, the sky is simply still. */
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .d-sky-par {
+      animation: d-sky-rise-far 1ms linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0px 1200px;
+    }
+    .d-sky-b .d-sky-par {
+      animation-name: d-sky-rise-mid;
+    }
+    .d-sky-c .d-sky-par,
+    .d-sky-d .d-sky-par {
+      animation-name: d-sky-rise-near;
+    }
+  }
+}
+@keyframes d-sky-rise-far {
+  to {
+    translate: 0 -16px;
+  }
+}
+@keyframes d-sky-rise-mid {
+  to {
+    translate: 0 -48px;
+  }
+}
+@keyframes d-sky-rise-near {
+  to {
+    translate: 0 -96px;
+  }
+}
+
+/* Pointer parallax, mouse only: DSky writes where the pointer is (-1 to 1 from the centre) on the sky
+   root a few times a second; each layer shifts against it by its depth and the transition does the easing. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .d-sky-ptr {
+    translate: calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1) calc(var(--d-sky-py, 0) * var(--d-sky-depth, 0px) * -1);
+    transition: translate 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .d-sky-sun {
+    --d-sky-depth: 2px;
+  }
+  .d-sky-a {
+    --d-sky-depth: 3px;
+  }
+  .d-sky-b {
+    --d-sky-depth: 8px;
+  }
+  .d-sky-c,
+  .d-sky-d {
+    --d-sky-depth: 16px;
+  }
+  /* The deck only slides sideways: lifted, it would show the frame's bottom edge. */
+  .d-sky-deck .d-sky-ptr {
+    translate: calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1) 0;
+  }
+  .d-sky-deck-back {
+    --d-sky-depth: 6px;
+  }
+  .d-sky-deck-front {
+    --d-sky-depth: 10px;
+  }
+}
