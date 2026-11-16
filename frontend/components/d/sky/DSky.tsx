@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, type RefObject } from "react";
+import { transitionRunning } from "@/components/d/motion/motion";
 import { DSkyCloud, DSkyDeck } from "./DSkyCloud";
 import { skyFramesPage, skySceneFor } from "./scene";
 
@@ -13,14 +14,17 @@ import { skyFramesPage, skySceneFor } from "./scene";
  * a page change, so the sky glides while the page under it changes.
  *
  * Decoration only: hidden from assistive technology, takes no input, logs nothing. All the
- * movement is CSS (transitions, keyframes, a scroll timeline). The one thing this file
- * writes is the pointer's place, for the mouse parallax.
+ * movement is CSS (transitions, keyframes, a scroll timeline). This file writes two things on
+ * the sky's root and nothing else: the pointer's place, for the mouse parallax, and a mark once
+ * the sky has been drawn (`data-drawn`), which lets a sprite a scene shows again glide back in.
  *
- * The wrappers around each drawing have one job each (see the stylesheet): d-sky-ptr, outermost
- * and a child of the root, the pointer parallax (it also carries the sprite's name, which the
- * scenes place); d-sky-at (d-sky-deck for the deck) the scene position; d-sky-par the scroll
- * parallax; d-sky-drift the slow drift. The pointer wrapper is outermost so that the pointer's
- * place, written on the root, reaches the boxes that read it and nothing under them.
+ * The boxes around each drawing have one job each (see the stylesheet): d-sky-at (d-sky-deck for
+ * the deck), a child of the root carrying the sprite's name, which the scenes place, takes the
+ * scene position (translate, scale, opacity) and the pointer parallax (transform); d-sky-par the
+ * scroll parallax; d-sky-drift the slow drift. The scene box is outermost so that the pointer's
+ * place, written on the root, reaches the boxes that read it and nothing under them. There is no
+ * frame-sized wrapper: every box is the size of its drawing, because WebKit pays for each of the
+ * sky's boxes in every frame of a page transition, moving or not.
  */
 export function DSky() {
   // The layout stays mounted across /d, so the pathname is the only thing that changes here:
@@ -31,6 +35,7 @@ export function DSky() {
   const elsewhere = !skyFramesPage(pathname);
   const skyRef = useRef<HTMLDivElement>(null);
   usePointerPlace(skyRef);
+  useDrawnMark(skyRef);
 
   return (
     <div ref={skyRef} className="d-sky" data-scene={scene} data-elsewhere={elsewhere ? "" : undefined} aria-hidden="true">
@@ -40,10 +45,8 @@ export function DSky() {
       <div className="d-sky-air d-sky-air-flight" />
       <div className="d-sky-air d-sky-air-compare" />
 
-      <div className="d-sky-ptr d-sky-sun">
-        <div className="d-sky-at">
-          <div className="d-sun" />
-        </div>
+      <div className="d-sky-at d-sky-sun">
+        <div className="d-sun" />
       </div>
 
       {/* Far, mid, then the two near clouds. */}
@@ -60,13 +63,11 @@ export function DSky() {
 
 function Cloud({ className, shape }: { className: string; shape?: "wide" | "round" }) {
   return (
-    <div className={`d-sky-ptr ${className}`}>
-      <div className="d-sky-at d-sky-cloud">
-        <div className="d-sky-par">
-          {/* The drift is on a box around the drawing: animated on the <svg> itself it would run on the main thread. */}
-          <div className="d-sky-drift">
-            <DSkyCloud shape={shape} />
-          </div>
+    <div className={`d-sky-at d-sky-cloud ${className}`}>
+      <div className="d-sky-par">
+        {/* The drift is on a box around the drawing: animated on the <svg> itself it would run on the main thread. */}
+        <div className="d-sky-drift">
+          <DSkyCloud shape={shape} />
         </div>
       </div>
     </div>
@@ -76,19 +77,42 @@ function Cloud({ className, shape }: { className: string; shape?: "wide" | "roun
 /** One band of the deck: the same shape twice, in daylight white and in butter, so the afternoon can fade one over the other. */
 function DeckBand({ className, mirrored }: { className: string; mirrored?: boolean }) {
   return (
-    <div className={`d-sky-ptr ${className}`}>
-      <div className="d-sky-deck">
-        <div className="d-sky-drift d-sky-band">
-          <div className="d-sky-band-day">
-            <DSkyDeck mirrored={mirrored} />
-          </div>
-          <div className="d-sky-band-gold">
-            <DSkyDeck mirrored={mirrored} />
-          </div>
+    <div className={`d-sky-deck ${className}`}>
+      <div className="d-sky-drift d-sky-band">
+        <div className="d-sky-band-day">
+          <DSkyDeck mirrored={mirrored} />
+        </div>
+        <div className="d-sky-band-gold">
+          <DSkyDeck mirrored={mirrored} />
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * Marks the sky as drawn: `data-drawn` on the root once the sky has been on screen for a frame,
+ * taken off again when the layout is hidden (a kept-alive page) or unmounted. A sprite that a
+ * scene leaves out is out of the render tree, and the stylesheet starts its return from where
+ * the scenes left it (a starting style) only under this mark. Without it that starting style
+ * would also apply whenever the whole sky is drawn for the first time, and the clouds would
+ * glide and fade in on a tab opened in the background, on an arrival from another layout and
+ * on a return to a kept-alive page, where today the sky simply is where its scene puts it.
+ */
+function useDrawnMark(skyRef: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const sky = skyRef.current;
+    if (!sky) return;
+    // Two frames: the first callback runs before its frame's styles are worked out, so the sky is
+    // drawn once without the mark; the second sets it. Neither runs while the tab is hidden.
+    let frame = window.requestAnimationFrame(() => {
+      frame = window.requestAnimationFrame(() => sky.setAttribute("data-drawn", ""));
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      sky.removeAttribute("data-drawn");
+    };
+  }, [skyRef]);
 }
 
 /** Mouse parallax runs only where there is a hovering, precise pointer and no request for less motion. */
@@ -121,8 +145,9 @@ function usePointerPlace(skyRef: RefObject<HTMLDivElement | null>) {
 
     const write = () => {
       timer = undefined;
-      // Under an open sheet the page is inert; the sky holds still with it.
-      if (sky.closest("[inert]")) return;
+      // Under an open sheet the page is inert; the sky holds still with it. So it does during a page
+      // transition, which WebKit draws only as fast as the page commits: the next move after it writes.
+      if (sky.closest("[inert]") || transitionRunning()) return;
       const x = place(clientX, window.innerWidth || 1);
       const y = place(clientY, window.innerHeight || 1);
       if (x === writtenX && y === writtenY) return;

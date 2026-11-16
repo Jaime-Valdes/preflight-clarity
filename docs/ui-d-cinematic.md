@@ -181,7 +181,8 @@ A client component, first child of the layout root: `position: fixed; top: 0; le
 z-index: -1; pointer-events: none; overflow: clip`. It reads the pathname and sets `data-scene="home | results |
 flight | compare"` (anything else under `/d` uses `results`, and is marked `data-elsewhere`: there the low clouds,
 and the mid cloud below 1024 px, wait just below the frame, since there is no card for them to wait behind; the
-error page renders on one of the four routes and is not marked). Only `opacity`, `translate` and `scale` animate.
+error page renders on one of the four routes and is not marked). Only `opacity`, `translate`, `scale` and
+`transform` animate (`display` and `visibility` only flip, once a fade has ended).
 
 Layers, back to front: **air** (four stacked gradient divs, the current scene's opaque, cross-fading over 700 ms);
 **sun** (hidden on home, where the hero has its own in-flow sun; a warm corner on results and flight; half behind the
@@ -194,12 +195,31 @@ climbs. Phones under 640 px use three clouds.
 
 Depth: scroll parallax with `animation-timeline: scroll(root)` over the first 1200 px (progressive enhancement, no
 scroll listener); pointer parallax of a few pixels for fine pointers only (first thing to cut). DSky writes the
-pointer's place as one style attribute on `.d-sky` (both values in one write, at least 100 ms apart). The pointer
-wrapper `.d-sky-ptr` is each sprite's outermost box and a direct child of the root, carrying the sprite's name class;
-the boxes inside it reset `--d-sky-px` / `--d-sky-py` to `initial`, so a write restyles only the root, its children
-and their children. Do not register these with `@property { inherits: false }`: WebKit then never restyles the
-wrappers and the parallax stops. Reduced motion: scenes switch with no transition, nothing drifts, no parallax; the
-still frame is the design.
+pointer's place as one style attribute on `.d-sky` (both values in one write, at least 100 ms apart, and none while a
+page transition runs: the next move after it writes). Each sprite's scene box (`.d-sky-at`, `.d-sky-deck` for the
+deck) is a direct child of the root and carries the sprite's name class: the scene sets its `translate`, `scale` and
+`opacity`, and the pointer's offset is its `transform`, eased over 600 ms (a transform applies inside the box's
+scale, so the sun divides its depth by its scale). The boxes inside a scene box reset `--d-sky-px` / `--d-sky-py` to
+`initial`, so a write restyles only the root, its children and their children. Do not register these with
+`@property { inherits: false }`: WebKit then never restyles the scene boxes and the parallax stops. Reduced motion:
+scenes switch with no transition, nothing drifts, no parallax; the still frame is the design.
+
+The sky keeps its boxes few and small, because WebKit pays for each of them in every frame of a page transition,
+moving or not. No box is frame-sized (each sprite once had a frame-sized pointer wrapper), and a sprite a scene puts
+at opacity 0, and the deck's butter copy outside compare, leaves the render tree once its fade has ended: `display:
+none`, held back by an `allow-discrete` transition for the 900 ms fade and the sprite's lag (`visibility: hidden`
+after the fade where `transition-behavior` is unsupported). When a scene shows it again, a `@starting-style` starts
+it at opacity 0, at full size, at the place the scenes leave it out, and it glides and fades in as before. That
+starting style covers only the sprites a scene can leave out (never the sun or the far cloud) and applies only under
+`.d-sky[data-drawn]`, a mark DSky sets on the root once the sky has been on screen for a frame and takes off when
+the layout is hidden or unmounted: a starting style applies to anything drawn for the first time, so without the
+mark the clouds would glide and fade in whenever the whole sky is first drawn (a tab opened in the background, an
+arrival from another layout, a return to a kept-alive page). Those left-out places are written twice in `d-sky.css`
+("What a scene leaves out" and the starting style), after the scenes' own opacity-0 places: a change to one needs
+the others. A box inside a scene box that gets a transition of its own needs its own starting style too: a starting
+style inherits from the parent's settled style, not from the parent's starting style. At rest on a laptop's flight
+page the sky is 7 boxes that may get their own layer, covering 0.8 of the viewport (25 boxes and 9 viewports
+before).
 
 As built (accepted departures from the director's positions, all in `d-sky.css`): the sun keeps to the right all day
 but enters the frame only where it can show as a sun, clear of the header's links and the cards: a corner on results
@@ -383,7 +403,7 @@ speeds up nor slows down is the calmest plane there is):
 | Piece | What it is |
 | --- | --- |
 | `DMotionLayer` | Client component mounted once in the layout: fixed, z 40, pointer-events none. Draws the **tap ring** (a 44 px ring, `gold` inside and white outside, growing from the tap point and fading over 420 ms; three pooled elements; on `click` with a pointer, never on scroll starts or keyboard). Sets `--d-tap-y` on a click that will change page in this tab (a form's submit button, or a plain primary click on a same-origin link to another path or query; never on pointer-down), ends a running page transition on such a click, and plays the scroll reveal for every `.d-reveal` in the layout and for the flight page's shared other-flight cards (`[data-theme="d"] #other-flights > ul > li > div`, a hook in `scripts/d-hooks.mjs`), with one IntersectionObserver, a childList observer on the layout root, a re-scan on each route change and a passive scroll listener that only notes when the page last scrolled down. Exposes `flyTo(fromRect, toRect)`: a 14 px paper plane on a shallow arc, 520 ms. |
-| `motion.ts` | `prefersReducedMotion()`, easing and duration constants, `animateOnce(el, preset)` for Web Animations API presets: `pop` (a glyph of 28 px or less arriving: scale .6 to 1, at most 8 % past), `stamp` (scale .8 to 1), `settle` (10 px rise, no fade), `reveal` (16 px rise, 360 ms, out easing; played by DMotionLayer for `.d-reveal`). |
+| `motion.ts` | `prefersReducedMotion()`; `transitionRunning()` (whether a page transition is running now: `:active-view-transition` on `<html>`, false where the browser cannot tell) and `whenTransitionEnds(fn)` (runs `fn` at once, or when the running transition's `finished` settles, or at the first 100 ms check where there is no such promise, waiting out one that starts as the last ends, and after 3 s at most; returns a cancel): script that holds still during a page transition asks and waits with these two, and CSS writes the same test as `html[data-d-on]:active-view-transition …`. Easing and duration constants, `animateOnce(el, preset)` for Web Animations API presets: `pop` (a glyph of 28 px or less arriving: scale .6 to 1, at most 8 % past), `stamp` (scale .8 to 1), `settle` (10 px rise, no fade), `reveal` (16 px rise, 360 ms, out easing; played by DMotionLayer for `.d-reveal`). |
 | `buttons.ts` | Class strings: `D_PILL_PRIMARY` (royal with the lip), `D_PILL_OUTLINE`, `D_PILL_SELECTED`, `D_LINK`. |
 | CSS classes | `.d-btn-primary`, `.d-btn-outline`, `.d-link` (a `butter` highlighter grows under the words on hover or press), `.d-lift` (card hover: 3 px up, lifted shadow, fine pointers only), `.d-reveal` (a marker class with no CSS: an element below the screen when first seen rises its last 16 px once as the page's scrolling brings it in through the bottom edge (a downward scroll in the last 250 ms, its top within max(96 px, 25 % of the screen's height, the distance the page scrolled since the last report) of the bottom, so a Tab focus move or a fling counts too); one that comes into view any other way (a sort, a filter or a date change re-dealing the list, a layout shift) is only marked seen, so a re-dealt list settles as one piece, the same for every flight. It never rises while it or an ancestor is still moving under another animation (its entrance, the list's stagger), so nothing moves more than one 16 px step. 360 ms, through the Web Animations API, nothing left on it afterwards; an element on screen or above when first seen never moves; position only; nothing under reduced motion; never on an element holding a combobox or on the sign-up card. Not scroll-driven: a `view()` timeline keeps every card a compositor layer for the page's life, up to six times the phone memory), `.d-route-plane` (the small plane on a card's time line travels along it as the card crosses the screen; scroll-driven; the same for every card. Each plane holds a small compositor layer for the page's life, 14 on a results page: accepted for the effect), `.d-pop`. |
 | Shared controls | Scoped CSS gives shared primaries (`:is(button, a).bg-night-900`) the same lip, hover and press; fields the focus halo; date tiles, sort pills, chips and rating rows their hover and press. |

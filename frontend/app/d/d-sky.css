@@ -6,17 +6,21 @@
  * data-scene="home | results | flight | compare" and every sprite reads its place for that
  * scene from custom properties, so a page change is a glide, never a swap.
  *
- * Each sprite is nested wrappers, one job each, so no two effects fight over one property:
- *   .d-sky-ptr    pointer parallax (translate from --d-sky-px / --d-sky-py; a transition). The
- *                 outermost, a child of the root and as big as it, and it carries the sprite's
- *                 name (.d-sky-sun, .d-sky-a … .d-sky-d, .d-sky-deck-back / -front), so the
- *                 scenes set their places on it and the boxes inside inherit them
- *   .d-sky-at     where the scene puts it (translate, scale, opacity; a transition); .d-sky-deck
- *                 for the deck
+ * Each sprite is nested boxes, one job, or one property, each, so no two effects fight over one:
+ *   .d-sky-at     the scene box, a child of the root, carrying the sprite's name (.d-sky-sun,
+ *                 .d-sky-a … .d-sky-d) so the scenes set their places on it: where the scene puts
+ *                 it (translate, scale, opacity; a transition) and the pointer parallax (transform
+ *                 from --d-sky-px / --d-sky-py; a transition). .d-sky-deck for the deck, with
+ *                 .d-sky-deck-back / -front
  *   .d-sky-par    scroll parallax (a scroll-driven animation of translate)
  *   .d-sky-drift  the slow drift (a keyframe loop of translate), on a box around the drawing:
  *                 Chrome animates an <svg> element itself on the main thread, every frame
- * Only opacity, translate and scale ever animate. No filters, no blur, no shadows.
+ * Every box is the size of its drawing; nothing is a frame-sized wrapper. WebKit pays for each of
+ * the sky's boxes in every frame of a page transition, moving or not, so the sky keeps as few and as
+ * small as it can: a sprite a scene does not show leaves the render tree once its fade has ended
+ * ("What a scene leaves out").
+ * Only opacity, translate, scale and transform ever animate (`display` and `visibility` only flip,
+ * after a fade). No filters, no blur, no shadows.
  *
  * The first half of this file is the still frame of each scene, which is the whole design for
  * anyone who asked for less motion: every transition and animation lives further down, inside
@@ -101,13 +105,8 @@
 
 /* ── Sprites ─────────────────────────────────────────────────────────────────── */
 
-/* The pointer wrapper fills the frame, so every place inside it is measured from the frame as before. */
-.d-sky > .d-sky-ptr {
-  position: absolute;
-  inset: 0;
-}
-
-/* A scene places a sprite with --d-sky-x / --d-sky-y: its left and top edge in hundredths of the
+/* A sprite's scene box is a child of the root, so every place is measured from the frame. A scene
+   places a sprite with --d-sky-x / --d-sky-y: its left and top edge in hundredths of the
    sky's width and height (for the sun: its centre). Where a place has to follow the layout instead
    (a gutter, a fixed distance from an edge), --d-sky-tx / --d-sky-ty take a whole length.
    --d-sky-s: size against its largest. --d-sky-o: opacity. */
@@ -139,7 +138,7 @@
   );
 }
 /* In the sky the sun is placed by its centre and drawn at its largest (compare); other scenes scale it down. */
-.d-sky-sun > .d-sky-at {
+.d-sky-at.d-sky-sun {
   width: 0;
   height: 0;
 }
@@ -197,10 +196,10 @@
   scale: 1 var(--d-sky-s, 1);
   opacity: var(--d-sky-o, 0);
 }
-.d-sky-deck-back > .d-sky-deck {
+.d-sky-deck.d-sky-deck-back {
   height: calc(22 * var(--d-sky-vh));
 }
-.d-sky-deck-front > .d-sky-deck {
+.d-sky-deck.d-sky-deck-front {
   height: calc(17 * var(--d-sky-vh));
 }
 .d-sky-band,
@@ -534,6 +533,52 @@
   }
 }
 
+/* ── What a scene leaves out ─────────────────────────────────────────────────── */
+
+/* A sprite a scene puts at opacity 0 leaves the render tree once its fade has ended, and so does the deck's
+   butter copy outside the golden afternoon: WebKit pays for a box in every frame of a page transition even
+   where nothing of it shows. The list repeats the opacity-0 places of the scenes above, so keep it in step
+   with them: the mid and the near clouds above the clouds and in the afternoon, the near cloud c in a laptop's
+   climb and d in a tablet's, and the deck at first light and in the climb. The motion block holds the switch
+   back until the fade (900 ms and the sprite's lag) is over, and a sprite a scene shows again glides and fades
+   back in from where it was left out (its starting style, there). A browser that cannot hold a `display`
+   change back hides the sprite after its fade instead (`visibility`, as the airs do), so it never drops out
+   mid-fade. */
+@supports (transition-behavior: allow-discrete) {
+  .d-sky:is([data-scene="flight"], [data-scene="compare"]) :is(.d-sky-b, .d-sky-c, .d-sky-d),
+  .d-sky:is([data-scene="home"], [data-scene="results"]) .d-sky-deck,
+  .d-sky:not([data-scene="compare"]) .d-sky-band-gold {
+    display: none;
+  }
+  @media (min-width: 640px) and (max-width: 1023.98px) {
+    .d-sky[data-scene="results"] .d-sky-d {
+      display: none;
+    }
+  }
+  @media (min-width: 1024px) {
+    .d-sky[data-scene="results"] .d-sky-c {
+      display: none;
+    }
+  }
+}
+@supports not (transition-behavior: allow-discrete) {
+  .d-sky:is([data-scene="flight"], [data-scene="compare"]) :is(.d-sky-b, .d-sky-c, .d-sky-d),
+  .d-sky:is([data-scene="home"], [data-scene="results"]) .d-sky-deck,
+  .d-sky:not([data-scene="compare"]) .d-sky-band-gold {
+    visibility: hidden;
+  }
+  @media (min-width: 640px) and (max-width: 1023.98px) {
+    .d-sky[data-scene="results"] .d-sky-d {
+      visibility: hidden;
+    }
+  }
+  @media (min-width: 1024px) {
+    .d-sky[data-scene="results"] .d-sky-c {
+      visibility: hidden;
+    }
+  }
+}
+
 /* ── Motion (none of it for visitors who asked for less) ─────────────────────── */
 
 /* Every rule that moves something sits inside `no-preference` below. This one only makes the still
@@ -547,13 +592,19 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* The camera move: a page change glides every sprite to its new place, near layers a beat after far ones. */
+  /* The camera move: a page change glides every sprite to its new place, near layers a beat after far ones.
+     The fourth is the pointer parallax's own ease (its offset is the same box's transform, set further down
+     for mouse pointers only; elsewhere transform never changes, so that one never runs). The last two hold a
+     sprite that a scene leaves out in the render tree until its fade is over (`display`, which needs
+     allow-discrete; `visibility` where the browser hides it instead). Longhands only: a browser that does not
+     know allow-discrete drops that one declaration, not the camera move. */
   .d-sky-at,
   .d-sky-deck {
-    transition-property: translate, scale, opacity;
-    transition-duration: 900ms;
+    transition-property: translate, scale, opacity, transform, display, visibility;
+    transition-duration: 900ms, 900ms, 900ms, 600ms, 900ms, 900ms;
     transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-    transition-delay: var(--d-sky-lag, 0ms);
+    transition-delay: var(--d-sky-lag, 0ms), var(--d-sky-lag, 0ms), var(--d-sky-lag, 0ms), 0ms, var(--d-sky-lag, 0ms), var(--d-sky-lag, 0ms);
+    transition-behavior: allow-discrete;
   }
   .d-sky-b {
     --d-sky-lag: 40ms;
@@ -563,8 +614,61 @@
   .d-sky-deck {
     --d-sky-lag: 80ms;
   }
+  /* The deck's lag (80 ms) as a variable: with plain values the minifier folds these longhands into a
+     `transition` shorthand written after `transition-behavior`, which resets it to normal, and the butter
+     copy would drop out of the render tree without its fade. */
   .d-sky-band-gold {
-    transition: opacity 900ms cubic-bezier(0.22, 1, 0.36, 1) 80ms;
+    transition-property: opacity, display, visibility;
+    transition-duration: 900ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: var(--d-sky-lag, 80ms);
+    transition-behavior: allow-discrete;
+  }
+  /* Coming back: a sprite (or the butter copy) that a scene shows again starts from nothing at the place the
+     scenes leave it out, and glides and fades in from there, as it did when it never left: the deck from below
+     the frame (its own fallbacks), the mid and near clouds from where they sink above the clouds and in the
+     afternoon, at full size (keep these in step with those scenes; c on a laptop and d on a tablet leave the
+     climb 4 and 6 hundredths higher, unseen at opacity 0). The places are written out as the properties
+     themselves, which no scene sets (a scene only sets the custom properties), so no scene's rule can outweigh
+     them. Only the sprites a scene can leave out, never the sun or the far cloud, and only under
+     .d-sky[data-drawn], which DSky sets once the sky has been on screen for a frame: a starting style applies
+     to whatever is drawn for the first time, and when the whole sky is (a load, a tab opened in the background,
+     an arrival from another layout, a return to a kept-alive page) it simply is where its scene puts it. */
+  @supports (transition-behavior: allow-discrete) {
+    @starting-style {
+      .d-sky[data-drawn] > :is(.d-sky-b, .d-sky-c, .d-sky-d, .d-sky-deck) {
+        scale: 1;
+        opacity: 0;
+      }
+      .d-sky[data-drawn] > .d-sky-deck .d-sky-band-gold {
+        opacity: 0;
+      }
+      .d-sky[data-drawn] > .d-sky-b {
+        translate: 62vw calc(96 * var(--d-sky-vh));
+      }
+      .d-sky[data-drawn] > .d-sky-c {
+        translate: -12vw calc(96 * var(--d-sky-vh));
+      }
+      .d-sky[data-drawn] > .d-sky-d {
+        translate: 104vw calc(90 * var(--d-sky-vh));
+      }
+      .d-sky[data-drawn] > .d-sky-deck {
+        translate: 0 45%;
+      }
+    }
+    @media (min-width: 1024px) {
+      @starting-style {
+        .d-sky[data-drawn] > .d-sky-b {
+          translate: -45vw calc(44 * var(--d-sky-vh));
+        }
+        .d-sky[data-drawn] > .d-sky-c {
+          translate: -20vw calc(96 * var(--d-sky-vh));
+        }
+        .d-sky[data-drawn] > .d-sky-d {
+          translate: 62vw calc(96 * var(--d-sky-vh));
+        }
+      }
+    }
   }
   /* The light changes over 700 ms. A scene's gradient fades in over the one below it, or fades out to
      reveal it; `visibility` follows only once the fade is over. */
@@ -665,22 +769,25 @@
 }
 
 /* Pointer parallax, mouse only: DSky writes where the pointer is (-1 to 1 from the centre) on the sky
-   root a few times a second; each layer shifts against it by its depth and the transition does the easing.
-   The two values stop at the pointer wrappers, the root's children: the boxes inside reset them, so a
+   root a few times a second; each scene box shifts against it by its depth, as its `transform` (the scene
+   has translate, scale and opacity), and the 600 ms transition in the motion block does the easing.
+   The two values stop at the scene boxes, the root's children: the boxes inside reset them, so a
    write restyles the root, its children and their children, and not the drawings and paths further in.
    (Not @property with inherits: false and an explicit inherit, which would do the same in Chrome:
-   WebKit then never restyles the wrappers when the root's value changes, and the clouds hold still.) */
-.d-sky-ptr > * {
+   WebKit then never restyles the boxes when the root's value changes, and the clouds hold still.) */
+.d-sky > :is(.d-sky-at, .d-sky-deck) > * {
   --d-sky-px: initial;
   --d-sky-py: initial;
 }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .d-sky > .d-sky-ptr {
-    translate: calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1) calc(var(--d-sky-py, 0) * var(--d-sky-depth, 0px) * -1);
-    transition: translate 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  .d-sky > :is(.d-sky-at, .d-sky-deck) {
+    transform: translate(calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1), calc(var(--d-sky-py, 0) * var(--d-sky-depth, 0px) * -1));
   }
+  /* A transform applies inside the box's scale, so the sun, scaled by every scene, divides its depth by
+     its scale to shift 2 px on screen. (A cloud on a scaled scene box, 0.85 to 1 from 1024 px and down to
+     0.6 below, shifts its depth times that, up to 3 px less, until its scale moves to a box inside it.) */
   .d-sky-sun {
-    --d-sky-depth: 2px;
+    --d-sky-depth: calc(2px / var(--d-sky-s, 1));
   }
   .d-sky-a {
     --d-sky-depth: 3px;
@@ -693,8 +800,8 @@
     --d-sky-depth: 16px;
   }
   /* The deck only slides sideways: lifted, it would show the frame's bottom edge. */
-  .d-sky > .d-sky-ptr:is(.d-sky-deck-back, .d-sky-deck-front) {
-    translate: calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1) 0;
+  .d-sky > .d-sky-deck {
+    transform: translateX(calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1));
   }
   .d-sky-deck-back {
     --d-sky-depth: 6px;

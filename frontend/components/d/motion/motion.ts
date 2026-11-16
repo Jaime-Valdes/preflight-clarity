@@ -6,7 +6,9 @@
  * price or a position in a list, so no motion can treat one flight differently from
  * another. The CSS side of the kit (app/d/d-motion.css) carries the same easings and the
  * move duration as --d-ease-out, --d-ease-in-out and --d-move, plus --d-press (100 ms) and
- * --d-quick (160 ms), which only CSS uses.
+ * --d-quick (160 ms), which only CSS uses. And the one question everything that holds still
+ * during a page transition asks, with the way to wait it out: transitionRunning() and
+ * whenTransitionEnds() (the CSS side writes `html[data-d-on]:active-view-transition …`).
  */
 
 export const EASE_OUT = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -95,6 +97,76 @@ const running = new WeakMap<Element, Animation>();
 export function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** document.activeViewTransition (Chrome 142+, Safari 26.2+), not yet in TypeScript's DOM types. */
+type ActiveViewTransitionDocument = Document & {
+  activeViewTransition?: { finished: Promise<void>; skipTransition(): void } | null;
+};
+
+/**
+ * Whether a page transition is running now (`:active-view-transition` on <html>). Safari draws each
+ * frame of one only as fast as the page behind it commits, so D's own work holds still meanwhile.
+ * False where the browser cannot tell (no view transitions, or no such pseudo-class: there D runs no
+ * page transition) and outside the browser.
+ */
+export function transitionRunning(): boolean {
+  if (typeof document === "undefined") return false;
+  try {
+    return document.documentElement.matches(":active-view-transition");
+  } catch {
+    return false;
+  }
+}
+
+/** How often whenTransitionEnds() looks again where the browser gives it no promise to wait on. */
+const TRANSITION_RECHECK_MS = 100;
+/** How long whenTransitionEnds() waits at most: no page transition lasts that long. */
+const TRANSITION_WAIT_MS = 3000;
+
+/**
+ * Runs `fn` once no page transition is running: at once if none is; otherwise when the running one's
+ * `finished` promise settles (either way) or, where the browser has none, at the first check (every
+ * 100 ms) that finds none. One that starts as the last ends is waited out too. After 3 s it runs `fn`
+ * anyway, so nothing waits forever on a transition that never finishes. Returns a cancel, which does
+ * nothing once `fn` has run.
+ */
+export function whenTransitionEnds(fn: () => void): () => void {
+  if (!transitionRunning()) {
+    fn();
+    return () => {};
+  }
+  let done = false;
+  let recheck: number | undefined;
+  /** The promise already waited on: once it has settled, only the timer looks again (no busy loop). */
+  let awaited: Promise<void> | undefined;
+  const cap = window.setTimeout(() => run(), TRANSITION_WAIT_MS);
+  const cancel = () => {
+    done = true;
+    window.clearTimeout(recheck);
+    window.clearTimeout(cap);
+  };
+  const run = () => {
+    if (done) return;
+    cancel();
+    fn();
+  };
+  const check = () => {
+    if (done) return;
+    if (!transitionRunning()) {
+      run();
+      return;
+    }
+    const finished = (document as ActiveViewTransitionDocument).activeViewTransition?.finished;
+    if (finished && finished !== awaited && typeof finished.then === "function") {
+      awaited = finished;
+      finished.then(check, check);
+    } else {
+      recheck = window.setTimeout(check, TRANSITION_RECHECK_MS);
+    }
+  };
+  check();
+  return cancel;
 }
 
 /**
