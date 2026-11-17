@@ -50,11 +50,14 @@ export const viewport: Viewport = { themeColor: "#7EC3F4" };
  * content at z -1, and `relative` so the companion is placed in page coordinates;
  * `overflow-x-clip` keeps wide decoration from scrolling the page sideways without
  * turning the root into a scroll container (sticky pieces keep working).
+ * `suppressHydrationWarning` is on the root only: the sky's boot script, which
+ * DScope prints as the root's first child, sets `data-d-time` on it before React
+ * hydrates (docs/ui-d-cinematic.md, "Day and night").
  */
 export default function DLayout({ children }: { children: ReactNode }) {
   return (
     <ToolProvider version="d">
-      <div data-theme="d" className="relative isolate flex min-h-dvh w-full flex-1 flex-col overflow-x-clip bg-canvas text-ink-900">
+      <div data-theme="d" suppressHydrationWarning className="relative isolate flex min-h-dvh w-full flex-1 flex-col overflow-x-clip bg-canvas text-ink-900">
         <DScope />
         <DSky />
         <TestFlag />

@@ -137,6 +137,22 @@ Rulings from the foundation review:
   HOOKS table of `frontend/scripts/d-hooks.mjs` (D side, shared file, exact text, why). If that text changes, the D
   rule stops matching without any error and version C's colours come back under D.
 - `frontend/app/d/layout.tsx` exports a `viewport` with `themeColor: "#7EC3F4"` so the phone's browser bar is sky.
+  On top of it D keeps a theme-color of its own, `<meta name="theme-color" data-d-time>`, first in `<head>` (browsers
+  use the first in tree order): the top of the sky, #7EC3F4 by day and #0E1838 by night. The boot script inserts it
+  on a hard load, the sky's clock on a client-side arrival, and the clock's cleanup removes it when the layout is
+  hidden or unmounted, so a move to /c shows C's own colour (#f3f6f9) again. Nothing ever writes D's colour into
+  the layout's or C's meta. D's meta spells its colour in lower case (`SKY_EDGE` in `components/d/sky/time.ts`),
+  never with the exact `content` string of a meta React renders: when React mounts a `<meta>` it reuses any meta it
+  does not own with the same name and content, and by day it took D's over (leaving /d then crashed React's commit in
+  development and left a sky-blue theme colour in front of C's in production). See section 4, "Day and night".
+- **Day or night** is `data-d-time="day" | "night"` on the D root (set by the boot script before the first paint,
+  so night rules inside the page select on `[data-theme="d"][data-d-time="night"]`), mirrored on `<html>` from
+  DScope's layout effect on (hydration, or a client-side arrival) and removed with `data-d-on`. `html[data-d-time]`
+  is only for `<html>` itself, `<body>` and the `::view-transition-*` pseudo-elements, and is **always written
+  together with `[data-d-on]`** (`html[data-d-on][data-d-time="night"]`), never alone: if a cleanup were ever
+  missed, a rule keyed on `html[data-d-time]` alone would reach A, B or C. During a live dusk or dawn fade the root
+  also carries `data-d-time-fade` (the look it is fading to). Clicks inside D carry both in autocapture's
+  `elements_chain`.
 - The layout root (`[data-theme="d"]`) is `position: relative; isolation: isolate; overflow-x: clip`. Layers inside it:
 
 | z-index | Layer |
@@ -167,7 +183,7 @@ File ownership for the foundations:
 
 | Area | Files |
 | --- | --- |
-| Theme, shell, sky, page transition | `frontend/app/globals.css` (the Version D part only), `frontend/app/d/layout.tsx`, `frontend/app/d/d-sky.css`, `frontend/app/d/d-transition.css`, `frontend/components/d/sky/**`, `frontend/components/d/brand/DScope.tsx`, `frontend/components/d/brand/DPageTransition.tsx`, the four `frontend/app/d/**/page.tsx` (only to add the transition stage), `frontend/scripts/d-contrast.mjs` |
+| Theme, shell, sky, page transition | `frontend/app/globals.css` (the Version D part only), `frontend/app/d/layout.tsx`, `frontend/app/d/d-sky.css`, `frontend/app/d/d-transition.css`, `frontend/components/d/sky/**`, `frontend/components/d/brand/DScope.tsx`, `frontend/components/d/brand/DPageTransition.tsx`, the four `frontend/app/d/**/page.tsx` (only to add the transition stage), `frontend/scripts/d-contrast.mjs`, `frontend/scripts/d-sky-zones.mjs` (writes `components/d/sky/zones.ts`), `frontend/scripts/d-sky-boot.mjs` |
 | The cloud | `frontend/app/d/d-cloud.css`, `frontend/components/d/cloud/**`, `frontend/components/d/brand/CloudMascot.tsx` |
 | Motion kit and control feedback | `frontend/app/d/d-motion.css`, `frontend/components/d/motion/**`, `frontend/components/d/brand/buttons.ts` |
 
@@ -296,6 +312,64 @@ flight card 590 to 630 px down: a screen change that moves them needs a matching
 screens: `.d-sky[data-scene]` precedes header, main and footer (a sibling selector can read
 it), `.d-sun` with `--d-sun` (disc diameter) draws the sun in flow, `<DSkyCloud shape="wide" | "round" />` draws a
 flat scenery cloud.
+
+### Day and night
+
+Pass 4, the owner's request: "have it be day during the day, and night-time with stars at night". This subsection
+covers when it is night and how the page knows; what night looks like follows with the night sky's own steps (until
+then the sky looks the same by night, and only the browser's bar turns navy).
+
+- **The rule.** Night is when the sun is more than 6° below the horizon (the end of civil twilight, when the first
+  stars come out) where the visitor probably is; the same line in the morning. New York on 12 November 2026: civil
+  dawn 06:10, civil dusk 17:11 (EST), so about 13 h of night; in June about 8 h. The sun's altitude is NOAA's
+  general solar position formula (fractional-year form, UTC, a few minutes' accuracy), `skyTimeAt` in
+  `components/d/sky/time.ts`.
+- **The place** comes from the device's time zone alone (`Intl.DateTimeFormat().resolvedOptions().timeZone`): no
+  location prompt, no network, nothing stored or sent. `components/d/sky/zones.ts` maps 170 zone names (every US zone
+  and territory, 93 common world zones, 41 older names browsers report) to the zone's principal place from the tz
+  database's `zone.tab`, rounded to 0.1°. It is generated: `node frontend/scripts/d-sky-zones.mjs --ts` writes it,
+  `--check` fails when it is stale, `--hogql` prints the same table as two HogQL `transform()` lists, so an analyst
+  can work out the look of any event exactly as the browser did. A zone outside the table takes its longitude from
+  the standard-time offset (15° an hour) and its latitude from the summer-time months (north 45°, south −35°, none
+  20°). A zone that names no place (`UTC`, `Etc/UTC`, `GMT`, `Universal`, `Zulu`, `Factory`, none, or an error;
+  privacy modes report UTC) is always day: day is the designed default.
+- **The first frame.** The pages are static shells, so the server cannot know the visitor's clock. `DScope` (the
+  root's first child, which rendered nothing before) prints the boot script while the server renders and while that
+  HTML hydrates, and nothing after (`useSyncExternalStore` with a server snapshot of `true`): a script React creates
+  on the client never runs, and the 7 KB of text does not stay in the DOM. It is DScope's own output and not a new
+  child of the root, because a new sibling would renumber every server-rendered React id under the root, which
+  autocapture records. The string is built in DScope's module (`skyBootScript()`, the source of `bootSky` and
+  `skyTimeAt` with the zone table), not passed from the layout, so the HTML carries it once and not again in the RSC
+  payload. As the root's first child the script runs after the head's stylesheets and before anything of the page
+  is parsed, so before the first paint. It sets `data-d-time` on the root, inserts D's theme-color meta (section 3)
+  and adds `<style id="d-time-boot">html,body{background-color:…}</style>` to `<head>` for the overscroll until
+  hydration. It never touches `<html>` or `<body>` themselves: an attribute set on either before hydration is a
+  hydration error. Any exception leaves day. The root has `suppressHydrationWarning` (React then keeps the
+  attribute the script set); the root layout's `<html>` has none. `bootSky` and `skyTimeAt` are ES5 and read only
+  their arguments and browser globals, because their compiled source is what is printed;
+  `node frontend/scripts/d-sky-boot.mjs <server>` runs the printed script in `node:vm` and checks it.
+- **The clock** (`components/d/sky/clock.ts`, `startSkyClock(root)`, started by DScope's layout effect after it sets
+  `data-d-on`). On a hard load (the boot style is still there) it copies the root's value to `<html>` and the meta
+  rather than reading the clock again, since parse and hydration can straddle dusk, and removes the boot style. On
+  a client-side arrival from another version, or a return to the kept-alive layout, it decides now and writes the
+  root first, before the browser paints, with no fade. It looks again every 60 s, on `visibilitychange` to visible
+  and on `pageshow` (the back-forward cache); a check is a few lines of arithmetic and writes nothing unless the
+  look changed. Its cleanup ends a fade cut short at its target, and removes `data-d-time-fade`, `html[data-d-time]`
+  and D's meta; the root keeps its value. Every write happens only when the value differs.
+- **The live flip.** A change found while the tab is hidden, or under reduced motion, is applied at once. Otherwise,
+  at most once in 15 minutes (so a sky grazing −6° cannot blink): the root gets `data-d-time-fade="night" | "day"`
+  (the sky's 4 s cross-fade), at 2 s its `data-d-time` changes (the words on the sky swap at the fade's steepest
+  point) and `<html>` and the meta follow, and at 4.2 s the fade mark goes. So a visitor on a page at dusk sees the
+  sky fade to night within about a minute of the threshold, and at most twice a day.
+- **Page transitions are never disturbed.** No check (so no flip) starts while `:active-view-transition` matches; it
+  looks again when the transition ends (`whenTransitionEnds`, `components/d/motion/motion.ts`). A flip already under
+  way changes the root on time (the page being covered does not mind), but `html[data-d-time]` and the theme colour
+  change only after the transition has ended, so the running transition's pseudo-elements are never restyled
+  mid-sweep. Since `<html>` carries the mirror from hydration on, it is set before any transition can start.
+- **Replay and analytics.** A flip is 5 records on 3 nodes (the fade mark on, the root, `<html>`, the meta, the fade
+  mark off); an arrival is up to 3. Nothing else is written on `<html>`, and no custom property ever is. The look is
+  a confound for D's numbers: split D by it, with the zone table and the same formula in HogQL (the pass's
+  paragraph in docs/ANALYTICS.md carries the query).
 
 ## 5. The cloud
 
@@ -564,6 +638,14 @@ Run from the repo root:
 - `node frontend/scripts/d-contrast.mjs`: every text and mark pair the look relies on, and no red, pink or orange
   token.
 - `node frontend/scripts/d-transition-art.mjs --check`: the transition's generated blocks match the generator.
+- `node frontend/scripts/d-sky-zones.mjs --check`: the sky clock's zone table (`components/d/sky/zones.ts`) matches
+  this machine's tz database (exit 1 when stale, 2 when `/usr/share/zoneinfo/zone.tab` is missing); `--ts` rewrites
+  it, `--hogql` prints it for HogQL.
+- `node frontend/scripts/d-sky-boot.mjs <server>` (default `http://localhost:3000`), against `next dev` and against a
+  `next start` of the build: runs the boot script the server prints in `node:vm` for eight zones and moments (New
+  York at night, noon and either side of dusk, UTC, an unknown zone, Anchorage's midsummer midnight, London's
+  winter evening) and checks the root's attribute, D's meta and the boot style; a compiler helper in the printed
+  functions shows as a ReferenceError.
 - `node frontend/scripts/d-hooks.mjs`: every piece of shared markup a D rule or handler finds by class string, label,
   id or nesting is still there (otherwise version C's colours come back under D without any error).
   `D_HOOKS_ROOT=<dir>` (or `--root <dir>`) reads a shared file from a copy under `<dir>` to try a change first;

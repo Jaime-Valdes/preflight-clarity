@@ -15,6 +15,19 @@ never set the theme and must render pixel-identically after any change here.
   on cleanup. Rules that must reach outside the themed `<div>` use it: the `::view-transition-*` rules
   (`app/d/d-transition.css`), the `<html>` / `<body>` background (overscroll), and sheets. Do not use
   `:has([data-theme="d"])` on `html` instead: kept-alive pages (below) would keep it matching.
+- **`data-d-time`, day or night** (the contract's section 4, "Day and night"). `"day"` or `"night"` on the root
+  (`[data-theme="d"]`), set before the first paint by the boot script that `DScope` prints as the root's first
+  child; the root has `suppressHydrationWarning` for it (the root layout's `<html>` has none). DScope's clock
+  (`components/d/sky/clock.ts`) mirrors it on `<html>` from hydration on and removes the mirror with `data-d-on`.
+  Rules inside the page select on the root's attribute. `html[data-d-time]` is only for `<html>`, `<body>` and the
+  `::view-transition-*` pseudo-elements, and is never used alone: always `html[data-d-on][data-d-time="…"]`, so a
+  missed cleanup can never reach A, B or C.
+- **D's own pieces in `<head>`.** `<meta name="theme-color" data-d-time>`, inserted before the layout's own
+  theme-color (the top of the sky: #7EC3F4 by day, #0E1838 by night, spelt in lower case so React never mistakes
+  it for the layout's own meta; the contract's section 3) and removed when the layout is hidden or unmounted, so C
+  gets its own colour back; nothing writes into the layout's or C's meta. On a hard load, until
+  DScope's effect runs, also `<style id="d-time-boot">html,body{background-color:…}</style>` (the overscroll before
+  hydration; the boot script may not touch `<html>` or `<body>`).
 - **Tokens, in `frontend/app/globals.css`, in the part headed "Version D theme".**
   - A second `@theme static` block holds D-only names (`sky`, `royal`, `gold`, `butter`, `cream`, `leaf`, `sun`,
     `amber`, `ink`, `slate` and their steps) and the one D entrance, `--animate-d-rise`. `static` makes Tailwind emit
@@ -87,6 +100,7 @@ checks):
 - `node frontend/scripts/d-contrast.mjs`: every text and mark pair the palette relies on, and no red, pink or orange
   token. Run it after any colour change.
 - `node frontend/scripts/d-transition-art.mjs --check`: the transition's generated blocks match the generator.
+- `node frontend/scripts/d-sky-zones.mjs --check`: the sky clock's zone table is up to date.
 - `node frontend/scripts/d-hooks.mjs`: every piece of shared markup a D rule or handler depends on is still there.
   `D_HOOKS_ROOT=<dir>` (or `--root <dir>`) reads a shared file from a copy under `<dir>` to try a change first;
   `--strict` also fails when a D rule named in the table has been renamed or removed.
