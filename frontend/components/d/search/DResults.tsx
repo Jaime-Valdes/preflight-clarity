@@ -430,8 +430,8 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                             if (!changed) return;
                             // Adding: the mirror image, from this button to the chip the tray has just gained.
                             if (!inCompare) flyToTray(control);
-                            // "Noted": the same nod for adding and for removing, and for every flight.
-                            cloudReact("nod");
+                            // "Noted": the same beam and nod for adding and for removing, and for every flight.
+                            cloudReact("noted");
                           }}
                         />
                       </li>

@@ -243,7 +243,7 @@ File ownership for the foundations:
 | Area | Files |
 | --- | --- |
 | Theme, shell, sky, page transition | `frontend/app/globals.css` (the Version D part only), `frontend/app/d/layout.tsx`, `frontend/app/d/d-sky.css`, `frontend/app/d/d-transition.css`, `frontend/components/d/sky/**`, `frontend/components/d/brand/DScope.tsx`, `frontend/components/d/brand/DPageTransition.tsx`, the four `frontend/app/d/**/page.tsx` (only to add the transition stage), `frontend/scripts/d-contrast.mjs`, `frontend/scripts/d-sky-zones.mjs` (writes `components/d/sky/zones.ts`), `frontend/scripts/d-sky-boot.mjs` |
-| The cloud | `frontend/app/d/d-cloud.css`, `frontend/components/d/cloud/**`, `frontend/components/d/brand/CloudMascot.tsx` |
+| The cloud | `frontend/app/d/d-cloud.css`, `frontend/components/d/cloud/**`, `frontend/components/d/brand/CloudMascot.tsx`, `frontend/components/d/brand/CloudDrawing.tsx` |
 | Motion kit and control feedback | `frontend/app/d/d-motion.css`, `frontend/components/d/motion/**`, `frontend/components/d/brand/buttons.ts` |
 
 File ownership for the screen pass (each screen also owns one stylesheet, loaded after the kit):
@@ -481,18 +481,36 @@ night".
 ### The rig (`CloudMascot`)
 
 Same 120 x 96 viewBox and body path, regrouped so parts can move; same props, still server-renderable.
+`CloudMascot` gives each drawing its ids (`useId`, its only hook) and renders `CloudDrawing`
+(`components/d/brand/CloudDrawing.tsx`), a client component with no hooks, so a server page (the not-found card, the
+loading state) sends a reference and its props in its RSC data rather than the whole drawing a second time; the
+HTML is the same.
 
 - Body: cream fill with a soft vertical gradient to `#FFF1CF`, 4 px `ink` outline, a white rim light at the top left
   (`M27 43C29 36 35 33 40 35`), a `cream-deep` belly shade clipped to the body.
-- Face group (cheeks, eyes, mouth) shifts by `--gx` / `--gy` (-1 to 1): the eyes travel about 1.4 x 1.2 units with a
-  90 ms transition, the whole face about 3 x 2.4 units with 180 ms, so a look reads as a head turning even at 60 px
-  (multiply the travel by 1.5 under 112 px wide). Each eye has a small white catch-light that does not move.
-- Cheeks `gold`. Eyes: open / happy arcs / closed arcs. Mouth: smile / wide. States swap by opacity (no path
-  morphing). Blink: 70 ms closing, 20 ms shut, 110 ms opening.
-- Moods (`data-mood`): **calm** (default), **curious** (leans up to 3° toward the look), **nod** (down 2.5 px with
-  `scale(1.03, .96)` in 120 ms, back in 180 ms, one blink), **glad** (happy eyes, wide smile, cheeks 1.15, 900 ms).
-  It is never sad, worried, surprised or sleepy, and it has no eyebrows. Squash and stretch never exceeds 6 %. It
-  moves like a cloud: all glide, no bounce.
+- The face, sized to read at 60 px (1 unit = 0.5 px there): eyes 9 x 10.8 units (ellipses at 48.5 / 67.5, 50.4), white
+  catch-lights 3.2 units across, a resting smile 18 units wide with a 3.8-unit line, `gold` cheeks 11.2 x 7.4 units.
+  Clouds narrower than 56 px (the 40 to 54 px home clouds) draw the face 15 % larger. Each state of a feature (three
+  mouths, three pairs of eyes, the catch-lights) is its own HTML box holding its own full-size SVG, so a face change is
+  an opacity cross-fade (90 ms) the compositor runs; nothing morphs.
+- The face slides by `--gx` / `--gy` (-1 to 1): the eyes travel about 1.4 x 1.2 units with a 90 ms transition, the
+  whole face about 3 x 2.4 units with 180 ms, so a look reads as a head turning even at 60 px (multiply the travel by
+  1.5 under 112 px wide). The catch-lights do not move. Blink: 70 ms closing, 20 ms shut, 110 ms opening, about the
+  eye line (58, 50.4); only open eyes blink.
+- **Faces and motions.** A face (`data-face`): **rest** (default: open eyes, the smile), **bright** (open eyes, an open
+  D-shaped smile, a grin and never an "O"), **beam** (happy arcs for eyes, the wide smile). A motion (`data-mood`):
+  **nod** (down 2.5 px with `scale(1.03, .96)` in 120 ms, back in 180 ms; the plain nod blinks once), **lift** (its
+  mirror: up 2 px with `scale(.985, 1.03)` in 144 ms, back in 236 ms), **curious** (a fixed 4° head tilt, 300 ms each
+  way). `data-eyes="happy | closed"` and `data-mouth="wide"` give a still drawing a fixed face. Both attributes are
+  written only by `components/d/cloud/reactions.ts`, in one task. It is never sad, worried, surprised or sleepy, and
+  it has no eyebrows. Squash and stretch never exceeds 6 %. It moves like a cloud: all glide, no bounce.
+- **By night**, on the clouds that stand on the sky (the companion, the home hero's and the loader's stage clouds), a
+  thin moonlit rim (`#E3EBFF`) outside the ink outline: the body's fill wears a 10-unit stroke painted before the fill
+  (`paint-order: stroke` on `.d-cloud-body`), so 3 units show outside the 4-unit outline (2 from 126 px wide). Without
+  it the outline is about 1.1 : 1 on the navy; the rim is 8.8 : 1 or more on every night stop and 6.0 : 1 over the
+  moonlit far cloud, the outline 13.4 : 1 on the rim (`d-contrast.mjs`). Clouds inside paper (the results strip, the
+  boarding pass, the compare corner, the empty, error and not-found cards) look as by day, like every card. It changes
+  when the words on the sky do. Same face, same gold: lit by the moon, never asleep.
 
 ### Gaze
 
@@ -500,7 +518,10 @@ One passive pointer / touch listener for the whole layout (throttled to one writ
 look properties in one write of the cloud's style attribute, and none on a home cloud while the companion is out: it
 takes the companion's look in the frame it shows again)
 aims every visible cloud at the pointer, or at the thumb while a finger is down; 600 ms after the finger lifts, or
-after 6 s without pointer movement, the eyes return to the visitor. Idle looks only go up or to the reader.
+after 6 s without pointer movement, the eyes return to the visitor. Idle looks only go up or to the reader. On a page
+change the eyes look ahead in the commit that shows the new page and then hold still: no look is written while the
+page transition runs (in Safari each write would restyle the live page the transition draws), and no idle glance
+starts.
 
 ### Where it lives
 
@@ -556,25 +577,62 @@ height changes.
 
 ### Reactions
 
-Called from D components as `cloudReact(kind)`; the call carries a kind and nothing about a flight.
+`components/d/cloud/reactions.ts`, started by `DCloudFaces` in every motion setting. D's components call
+`cloudReact(kind)` (`cloud/react.ts`) with a kind and nothing about a flight; every other control gets the generic
+tap from one delegated listener (`click` and `change`, capture and passive: it never cancels or delays anything).
 
-| Event | Reaction |
-| --- | --- |
-| A priority ranked or un-ranked; compare added or removed; "I'd pick this flight" picked or withdrawn | **nod**, identical in both directions and for every flight |
-| "Why?" opened | **curious** for 800 ms |
-| The setup answered | **glad** |
-| A page change | the eyes follow the plane, then return to the visitor; if the transition ends early (a click that starts no page move), they return at once |
+| Event | Kind | Face | Motion | Held | Rank |
+| --- | --- | --- | --- | --- | --- |
+| A page has settled (first load or a new path) and the visitor has done nothing yet | greet | bright | lift | 900 ms | 0 |
+| Any other control: buttons, toggles, chips, sort, filters, same-page links (the date strip), "Why?" closed, "Change", "Skip for now", a combobox option; a select or a range slider on `change` | tap | bright | lift | 700 ms (a tap during it extends it, to 1.8 s at most) | 1 |
+| "Why?" opened | curious | bright | tilt | 1000 ms | 2 |
+| "I'd pick this flight" picked or withdrawn | nod | none | nod | 340 ms | 3 |
+| Compare added or removed anywhere (results, the flight page's fare card and other flights, the compare table and its empty state, a tray chip's remove and "Clear"); a priority ranked, un-ranked, "Start over" | noted | beam | nod | 800 ms | 3 |
+| The setup answered | glad | beam | none | 900 ms | 4 |
 
-The pick is acknowledged, not celebrated: a nod says "noted". The cloud is not tappable and nothing invites a tap on
-it (stray taps would inflate the study's click counts). The cloud code imports nothing from the ratings, fare or
-search modules. Behind an open sheet every cloud holds still: the cloud code counts the page as behind a sheet when
-the D root or one of its ancestors is inert (`behindSheet` in `cloud/dom.ts`), so a wrapper added around the layout
-later does not break it.
+The pick is the study's outcome: it is acknowledged, not rewarded, so it keeps the plain nod and no face, identical
+both ways. "Noted" is identical in both directions and for every flight. A skip of the setup gets the generic tap.
+
+- **Precedence and rate caps.** One reaction per cloud at a time. A lower rank than the one worn is dropped, never
+  queued; an equal or higher one replaces it (new face, motion restarted), except that a tap during a tap extends the
+  hold, and a nod during a nod's first 600 ms extends it with no second dip (toggling fast never bobs). A new tap face
+  starts at most once every 1.2 s and not within 0.6 s of the last one ending. The listener decides a frame and a
+  task after the click, so a component's own reaction (the compare table answers a frame late) is already on the
+  cloud: a click changes the face once, never bright and then beam. Writes: one `data-face` and at most one
+  `data-mood` per reaction, and their removals; no inline styles, no new nodes.
+- **Never** for anything in the sign-up card (`[aria-labelledby^="c-interest-"]`), the footer, a sheet opener
+  (`[aria-haspopup="dialog"]`), anything in a dialog, a disabled control, a form's submit button, a hash link or a
+  link to another page (the transition takes over); nothing behind an open sheet. The listener reads only whether
+  the element is a control, whether it is excluded, whether a link changes page and whether it is one of the tray's
+  buttons (pinned in `scripts/d-hooks.mjs`), never text, labels or a flight.
+- **Which cloud acts:** the companion when it is out and on screen, else a stage cloud on screen, else the home cloud,
+  else any other on screen; never the loader's. With none on screen a component's reaction tries once more after
+  200 ms (the companion may be on its way); a tap or a greeting is dropped.
+- **Hand-over:** when the companion lifts out of its home cloud (or appears elsewhere from it) and when it sits back
+  down, the reaction worn goes with it with what is left of its hold (`handOverFace`, called by `companion.ts`); a dip
+  or lift already playing is not replayed, a tilt carries on.
+- **The greeting:** on a new path (not a query change: sort, filter and date keep the page and its faces) every worn
+  reaction ends at once; then, once no page transition runs, no sheet is open, a cloud is on screen and its boxes have
+  finished arriving, and the visitor has done nothing, the cloud greets 200 ms later (within 4 s of the arrival, or
+  never).
+- **Holding still during a page transition.** While `:active-view-transition` matches (`transitionRunning()`), every
+  cloud holds still: the blink and any dip or lift are removed and the float waits (`d-cloud.css`), no face, motion
+  or look is written after the commit that shows the new page, the idle glance waits, and the companion takes no
+  seat, glides nowhere and measures nothing; it looks at the page once when the transition has ended
+  (`whenTransitionEnds`). The greeting waits for the end, looks again 100 ms later and comes 200 ms after that, about
+  300 ms after the end.
+
+The cloud is not tappable and nothing invites a tap on it (stray taps would inflate the study's click counts). The
+cloud code imports nothing from the ratings, fare, search, flight or compare modules. Behind an open sheet every
+cloud holds still: the cloud code counts the page as behind a sheet when the D root or one of its ancestors is inert
+(`behindSheet` in `cloud/dom.ts`), so a wrapper added around the layout later does not break it.
 
 Stage clouds float once (4.5 s) as they arrive and then rest, since nothing loops beside text. The loading cloud
 (inside the loader's `aria-busy` box) floats for as long as the loader shows.
 
-Reduced motion: no companion at all. Stage and home clouds are still drawings: eyes forward, no float, no blink.
+Reduced motion: no companion, no gaze and nothing that moves (no float, blink, dip, lift or tilt). A face is not
+motion: the faces still change, by a 120 ms cross-fade, on the stage and home clouds, and `data-mood` is never
+written.
 
 ## 6. The page transition
 
@@ -614,12 +672,13 @@ speeds up nor slows down is the calmest plane there is):
   primary click on a same-origin link to another path or query. A Cmd, Ctrl, Shift, Alt or middle click, a link with
   another target or a download, a hash link (the skip link) and a link to the page already showing leave it running.
   React holds the next page until the running transition has finished, so without this the new move would queue
-  behind the old one (house rule 4). If a wipe ends early anyway, the cloud's eyes stop following the plane at once.
+  behind the old one (house rule 4).
 - **No dead time at either end.** The travel is fitted to the artwork in six width bands (from 0, 400, 530, 750,
   1024 and 1640 px), so on every width the plane's nose is on screen within 45 ms of the first frame and the last
   puff leaves within 30 ms of the end (at 1440 px: 35 ms and 23 ms). The travel is published per band as plain custom
   properties on `html[data-d-on]`: `--d-vt-from` and `--d-vt-to` (the seam's start and end, in vw) and `--d-vt-lead`
-  (how far the plane's middle flies ahead of the seam); the cloud's eyes read them to follow the plane.
+  (how far the plane's middle flies ahead of the seam). The cloud's eyes no longer follow the plane: every cloud holds
+  still while a transition runs (section 5, "Reactions").
 - **The artwork and the travel table are generated.** `frontend/scripts/d-transition-art.mjs` writes the two marked
   blocks of `d-transition.css` (the drawings as data URIs, the bands); `--check` exits 1 when the stylesheet is
   stale. Change a size or a drawing there, not in the CSS.
@@ -671,8 +730,9 @@ The director's table (section 6 of that treatment) is the list, with these rulin
 
 - Primary and selected controls are royal, not navy; no sheen.
 - Compare add: the plus becomes a check, the pill takes `royal-100` with a `royal` ring, a small plane flies to the
-  tray chip, the cloud nods. Remove: the mirror, the same nod. The tray itself does not animate on arrival or
-  departure; add and remove get the same plane, glyph pop, colour cross-fade and nod.
+  tray chip, the cloud's "noted" (beam + nod). Remove: the mirror, the same "noted", also from a tray chip's remove
+  and "Clear". The tray itself does not animate on arrival or departure; add and remove get the same plane, glyph
+  pop, colour cross-fade and "noted".
 - "I'd pick this flight": press, the pill cross-fades to `royal-100` with its `royal` ring, one soft ring expands
   from the pill. Withdrawing gets exactly the same. No confetti, no sparkle, no filled heart.
 - Priority tiles: a tapped tile fills royal, its badge becomes a `gold` coin with the rank number popping in.
@@ -695,17 +755,20 @@ What each screen must end up with:
   the plane flies it (one timing for both, 1600 ms from the first frame on the same glide, so the plane is always at
   the line's tip and never waits in the air), the wordmark's gold swash draws. "Let's begin" is the royal pill, visible and tappable in the
   first frame. Setup card: a tapped tile fills royal and its badge becomes a gold coin with the rank number popping
-  in; the cloud nods on every rank and un-rank and is glad when the setup is answered; "Next" is the royal pill
+  in; the cloud's "noted" (beam + nod) on every rank, un-rank and "Start over", the beam face when the setup is
+  answered and the generic tap for "Skip for now"; "Next" is the royal pill
   (disabled: `sky-deep`). The setup card and the search card are seats.
 - **Results.** At least 24 px between cards and 30 px (32 px from 640 px) between the first card and the row above it.
   Cards lift on hover and rise their last 16 px as they scroll in; the small plane on each time line travels with
   the scroll. That plane is D's outlined paper plane (`PaperPlane`), like every other plane in D. Compare: the pill swaps outline for selected, the plus becomes a check, a small plane flies to the tray
-  chip (and back from it on remove), the cloud nods both ways. "Why?" makes the cloud curious. "Details" and
+  chip (and back from it on remove), the cloud's "noted" both ways. "Why?" opened makes the cloud curious (bright +
+  tilt); closed, the generic tap. "Details" and
   "Choose what matters" are `D_LINK`. The date strip is filled in the first frame of an arrival.
 - **Flight.** The header is a boarding pass: two panels meeting at the dashed rule, with a notch at each end of it.
   The route line draws on arrival and the plane flies from the origin's code to the destination's, over a gold
   under-stroke. 30 px (32 px from 640 px) between the back link and the pass. "I'd pick this flight" is the royal
-  pill; picked, it is the selected look (`royal-100`, royal ring and label), with one soft ring and a nod for pick
+  pill; picked, it is the selected look (`royal-100`, royal ring and label), with one soft ring and the plain nod (no
+  face) for pick
   and withdraw alike and no filled heart. Rating rows lift and their badges stamp as they scroll in; the rating
   sheet's tier block settles and its reasons rise in turn. The page has a home cloud in the pass.
 - **Compare and the small states.** The table rises as one piece. The label column's top corner holds the home cloud;
@@ -743,7 +806,11 @@ cloud on laptops. Each is the same for every flight.
 - No expression, glow, lean, delay, colour or camera move depends on a rating, a price, an airline or a position in
   the list. The same card decoration and motion for every flight.
 - "I'd pick this flight" is the measured outcome: it is acknowledged, never rewarded, and withdrawing is acknowledged
-  identically.
+  identically (the plain nod, no face).
+- The cloud's reactions are chosen by their kind and nothing else: compare add and remove, rank and un-rank and the
+  tray's removals get the identical "noted"; the setup answered gets the beam face, no bigger or longer than before;
+  other controls the same rate-capped tap; the sign-up card, the footer, dialogs and sheets, page-changing links and
+  submit buttons nothing. Nothing about a flight reaches the cloud, and the cloud is never tappable.
 - Copy is frozen, including screen-reader text and status announcements.
 - Nothing delays a participant: no splash, no blocked tap beyond the old page's half of a 760 ms transition, a still
   version of everything under reduced motion.

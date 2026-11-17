@@ -611,6 +611,61 @@ const HOOKS = [
     text: "return `${item.origin}.${item.destination}.${item.date}.${item.key}`;",
     why: "the hand-built id must keep itemId's order and dots, or the removal plane starts from the wrong chip",
   },
+
+  // The cloud's reactions (components/d/cloud/reactions.ts): the delegated listener finds shared markup by selector.
+  {
+    d: ["components/d/cloud/reactions.ts", '[aria-labelledby^="c-interest-"]'],
+    file: "components/c/interest/InterestCard.tsx",
+    text: ["<section", "aria-labelledby={`c-interest-${placement}`}"],
+    within: 3,
+    why: "nothing in the sign-up card makes the cloud react; without it its button and links would get the generic tap",
+  },
+  {
+    d: ["components/d/cloud/reactions.ts", '[data-theme="d"] > footer'],
+    file: "components/c/shell/Footer.tsx",
+    text: '<footer className="border-t ',
+    why: "the footer's \"Get early access\" link makes the cloud react to nothing; found as the root's <footer>",
+  },
+  {
+    d: ["components/d/cloud/reactions.ts", '[aria-haspopup="dialog"]'],
+    file: "components/c/interest/EarlyAccessLink.tsx",
+    text: 'aria-haspopup="dialog"',
+    why: "a sheet opener gets no reaction (the sheet takes over); the footer's sign-up opener is found by it too",
+  },
+  {
+    d: ["components/d/cloud/reactions.ts", '[aria-haspopup="dialog"]'],
+    file: "components/c/interest/InterestCard.tsx",
+    text: 'aria-haspopup="dialog"',
+    why: "the sign-up card's button opens a sheet and gets no reaction",
+  },
+  {
+    d: ["components/d/cloud/reactions.ts", "#c-compare-tray [data-tray-remove]"],
+    file: "components/c/shell/CompareTray.tsx",
+    text: ['const TRAY_ID = "c-compare-tray";', "id={TRAY_ID}"],
+    within: 80,
+    why: "the tray's removals get the same \"noted\" as every other compare change; without the id they would get the generic tap",
+  },
+  {
+    d: ["components/d/cloud/reactions.ts", "#c-compare-tray [data-tray-remove]"],
+    file: "components/c/shell/CompareTray.tsx",
+    text: ["<button", "data-tray-remove", "compare.remove(id);"],
+    within: 4,
+    why: "a chip's remove is found by data-tray-remove and gets \"noted\"",
+  },
+  {
+    d: ["components/d/cloud/reactions.ts", "#c-compare-tray button:not([data-tray-remove])"],
+    file: "components/c/shell/CompareTray.tsx",
+    text: ["<button", 'type="button"', "compare.clear();"],
+    within: 4,
+    why: '"Clear" is the tray\'s other button and gets "noted"',
+  },
+  {
+    d: ["components/d/cloud/reactions.ts", "#c-compare-tray button:not([data-tray-remove])"],
+    file: "components/c/shell/CompareTray.tsx",
+    text: "<button",
+    count: 2,
+    why: "the tray's only buttons are a chip's remove and \"Clear\": a new one would get \"noted\" too",
+  },
 ];
 
 // ── The check ───────────────────────────────────────────────────────────────────

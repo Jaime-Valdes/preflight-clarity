@@ -13,7 +13,7 @@
  */
 
 import { watchAttention } from "./attention";
-import { CLOUD, behindSheet, inViewport, isSeen, lookOf, writeLook } from "./dom";
+import { CLOUD, behindSheet, inViewport, isSeen, lookOf, transitionRunning, writeLook } from "./dom";
 
 /** How long nothing has to happen. Longer than the gaze takes to let go of a resting mouse (6 s) or a lifted finger (600 ms). */
 const IDLE_MS = 6600;
@@ -45,11 +45,16 @@ export function startIdle(root: HTMLElement): () => void {
     idleTimer = null;
     // Behind an open sheet the page is inert, and so are its clouds.
     if (behindSheet(root)) return;
+    // While a page transition runs every cloud holds still: the wait starts over.
+    if (transitionRunning()) {
+      idleTimer = window.setTimeout(glance, IDLE_MS);
+      return;
+    }
     // Every read before any write.
     const clouds: HTMLElement[] = [];
     for (const cloud of root.querySelectorAll<HTMLElement>(CLOUD)) {
       // Not the companion, not a cloud in the middle of a reaction, not one nobody can see.
-      if (cloud.closest(".d-companion") || cloud.hasAttribute("data-mood")) continue;
+      if (cloud.closest(".d-companion") || cloud.hasAttribute("data-mood") || cloud.hasAttribute("data-face")) continue;
       if (!isSeen(cloud) || !inViewport(cloud.getBoundingClientRect())) continue;
       // And not one that is looking somewhere already: the gaze still holds it, or its page gave it a look to rest in.
       const style = getComputedStyle(cloud);

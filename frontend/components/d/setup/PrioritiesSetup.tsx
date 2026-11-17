@@ -127,18 +127,18 @@ function RankingForm({ initial, changing, onDone }: RankingFormProps) {
   function toggle(category: RatingCategory) {
     setRanked((current) => (current.includes(category) ? current.filter((c) => c !== category) : [...current, category]));
     setTouched((current) => (current.has(category) ? current : new Set(current).add(category)));
-    // The cloud's "noted": one nod, the same whether the tap gave the tile a rank or took it away.
-    cloudReact("nod");
+    // The cloud's "noted" (beam and nod), the same whether the tap gave the tile a rank or took it away.
+    cloudReact("noted");
   }
 
   function startOver() {
     setTouched((current) => new Set([...current, ...ranked]));
     setRanked([]);
-    cloudReact("nod");
+    cloudReact("noted");
   }
 
   function finish() {
-    // The visitor finished a task of their own: the cloud is glad. Not for a skip.
+    // The visitor finished a task of their own: the cloud is glad (the beam face). A skip gets the generic tap.
     cloudReact("glad");
     onDone(true, savePriorities(ranked));
   }

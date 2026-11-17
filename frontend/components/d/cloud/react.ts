@@ -4,13 +4,19 @@
  * a list ever reaches the cloud, so it cannot treat one of them differently from another.
  * ./reactions listens and has the cloud on screen act the kind out, the same way every time.
  *
- *   cloudReact("nod")      compare added or removed, a pick made or withdrawn, a priority ranked or un-ranked
- *   cloudReact("curious")  "Why?" opened
- *   cloudReact("glad")     the setup answered
+ *   cloudReact("noted")    compare added or removed, a priority ranked or un-ranked, "Start over":
+ *                          the beam face and a nod, identical in both directions and for every flight
+ *   cloudReact("nod")      "I'd pick this flight" picked or withdrawn: the plain nod and no face, the
+ *                          same both ways (the study's outcome is acknowledged, never rewarded)
+ *   cloudReact("curious")  "Why?" opened: the bright face and a head tilt
+ *   cloudReact("glad")     the setup answered: the beam face, no motion
+ *
+ * Every other control gets the generic tap (the bright face and a lift, at most every 1.2 s) from
+ * ./reactions' own listener, and the sign-up, the footer, dialogs and sheets get nothing.
  */
 
-/** nod: "noted" (identical for add and remove, pick and withdraw). curious: leans toward what it looks at. glad: the visitor finished a task of their own. */
-export type CloudReaction = "nod" | "curious" | "glad";
+/** The kinds a component can call. Each is acted out the same way every time, whatever it was for. */
+export type CloudReaction = "noted" | "nod" | "curious" | "glad";
 
 export const CLOUD_REACT_EVENT = "d-cloud-react";
 

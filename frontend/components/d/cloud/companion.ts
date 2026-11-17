@@ -23,10 +23,16 @@
  * gliding (app/d/d-cloud.css). What happens while the page scrolls is heard from intersection
  * observers (a seat reaches the reading line, a top edge leaves or enters the screen), never from
  * the scroll itself. Writes happen when something changes, at most once every MOVE_MS.
+ *
+ * While a page transition runs it holds still: it lands home at once in the commit that shows the
+ * new page (pageChanged), and then takes no seat, glides nowhere and measures nothing until the
+ * transition has ended; it looks at the page again once, then. A reaction the cloud wears goes
+ * with it when it leaves its home cloud or sits back down in it (handOverFace, ./reactions).
  */
 
 import { MOVE_MS, nudgeAttention, watchAttention, type Pointer } from "./attention";
-import { AWAY, HOME, SEAT, STAGE, behindSheet, cloudOf, isRendered, lookOf, writeLook } from "./dom";
+import { AWAY, HOME, SEAT, STAGE, behindSheet, cloudOf, isRendered, lookOf, transitionRunning, whenTransitionEnds, writeLook } from "./dom";
+import { handOverFace } from "./reactions";
 
 /** A seat has to hold the visitor's attention this long before the cloud moves to it. */
 const DWELL_MS = 140;
@@ -153,6 +159,25 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     if (timer !== null) window.clearTimeout(timer);
     return null;
   };
+
+  /** The cancel of the wait for a running page transition to end (after which the cloud looks at the page again), while there is one. */
+  let afterPass: (() => void) | null = null;
+
+  /**
+   * True while a page transition runs: the cloud holds still. The first time, it arranges one look at
+   * the page for when the transition has ended (the new page's seats, home and edges, then where to be).
+   */
+  function heldByPass(): boolean {
+    if (!transitionRunning()) return false;
+    afterPass ??= whenTransitionEnds(() => {
+      afterPass = null;
+      watchEdges();
+      scan();
+      follow();
+      review();
+    });
+    return true;
+  }
 
   // ── Reading the page ───────────────────────────────────────────────────────
 
@@ -441,8 +466,8 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
   }
 
   function review(now = false) {
-    // While a sheet is open the page behind it is inert, and the companion does nothing.
-    if (behindSheet(root)) return;
+    // While a sheet is open the page behind it is inert, and the companion does nothing; nor while a page transition runs.
+    if (behindSheet(root) || heldByPass()) return;
     const want = settled(choose());
     const here: Spot = state === "out" && seat ? seat : "home";
     if (want === here) {
@@ -463,7 +488,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       dwellTimer = null;
       const held = pending;
       pending = null;
-      if (held === null || behindSheet(root)) return;
+      if (held === null || behindSheet(root) || heldByPass()) return;
       if (settled(choose()) === held) go(held);
       else review();
     }, DWELL_MS);
@@ -567,7 +592,7 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
 
   /** Measures the seat again and moves if it has moved: the page grew, the pointer slid along, an entrance finished. */
   function follow() {
-    if (behindSheet(root)) return;
+    if (behindSheet(root) || heldByPass()) return;
     if (state === "returning" && home && isRendered(home)) {
       const to = boxIn(home);
       place(to.x, to.y, to.width / host.offsetWidth);
@@ -612,11 +637,14 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
           copyLook(start, cloudOf(host));
           start.setAttribute(AWAY, "");
           host.setAttribute("data-on", "");
+          // The face it wears comes along.
+          if (fromHome) handOverFace(start, cloudOf(host));
         } else {
           host.removeAttribute("data-on");
           place(to.x, to.y + RISE);
-          // What can still be seen of the home cloud fades as the companion appears elsewhere.
+          // What can still be seen of the home cloud fades as the companion appears elsewhere, and its face comes along.
           home?.setAttribute(AWAY, "fade");
+          if (fromHome) handOverFace(home, cloudOf(host));
         }
       });
       host.setAttribute("data-on", "");
@@ -657,7 +685,11 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
     const swap = () => {
       host.removeAttribute("data-on");
       for (const el of root.querySelectorAll<HTMLElement>(`[${AWAY}]`)) {
-        if (el === home) copyLook(cloudOf(host), el);
+        if (el === home) {
+          copyLook(cloudOf(host), el);
+          // The face it wears sits back down with it.
+          handOverFace(cloudOf(host), el);
+        }
         el.removeAttribute(AWAY);
       }
     };
@@ -821,6 +853,8 @@ export function startCompanion(root: HTMLElement, host: HTMLElement): Companion 
       topWatch?.disconnect();
       nearWatch?.disconnect();
       sizeWatch?.disconnect();
+      afterPass?.();
+      afterPass = null;
       dwellTimer = clear(dwellTimer);
       tapTimer = clear(tapTimer);
       measureTimer = clear(measureTimer);

@@ -1,8 +1,16 @@
 /*
- * The markup the cloud code reads (docs/ui-d-cinematic.md, "Where it lives") and two ways of
- * asking whether an element is really there. Screens place the attributes; nothing here, or
- * anywhere under components/d/cloud, knows what the marked elements show.
+ * The markup the cloud code reads (docs/ui-d-cinematic.md, "Where it lives"), two ways of asking
+ * whether an element is really there, and whether a page transition is running (every cloud holds
+ * still meanwhile). Screens place the attributes; nothing here, or anywhere under
+ * components/d/cloud, knows what the marked elements show.
  */
+
+/**
+ * Whether a page transition is running, and the way to wait it out: the motion kit's, shared by the
+ * reactions, the gaze, the idle glance and the companion. While one runs nothing under
+ * components/d/cloud writes a face, a mood, a look or a seat (the CSS side is app/d/d-cloud.css).
+ */
+export { transitionRunning, whenTransitionEnds } from "@/components/d/motion/motion";
 
 /** An in-flow card the companion may perch on. Never a sticky element. */
 export const SEAT = "[data-cloud-seat]";

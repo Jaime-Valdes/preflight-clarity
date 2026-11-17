@@ -383,6 +383,22 @@ pair("focus ring: moon", t.moon, `the lightest night ${palest.colour}`, palest.c
 pair("sort tab outline: moon", t.moon, `the lightest night ${palest.colour}`, palest.colour, "SortTabs' focus outline", "mark");
 pair("pending note icon: moon", t.moon, `the lightest night ${palest.colour}`, palest.colour, "PendingNote's calendar on the sky", "mark");
 pair("outline button ring: moon", t.moon, `near cloud ${MOONLIT[2][1]}`, MOONLIT[2][1], "Filters' ring over a near cloud", "mark");
+// The cloud's moonlit rim (app/d/d-cloud.css, .d-cloud-body by night): a mark outside the ink outline of the clouds that
+// stand on the sky (the companion, the hero's and the loader's stage clouds), on every stop of every night air and
+// over the moonlit far cloud there. The ink outline then reads against the rim. Its colour is read from the stylesheet.
+{
+  const cloudCss = readFileSync(join(dDir, "d-cloud.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const found = /data-d-time="night"\][^{]*\.d-cloud-body\s*\{\s*stroke:\s*(#[0-9a-fA-F]{6})\s*;/.exec(cloudCss);
+  if (!found) fail("the cloud's night rim (.d-cloud-body's stroke by night) is not in app/d/d-cloud.css");
+  const rim = found[1].toUpperCase();
+  const stops = new Map();
+  for (const [scene, list] of Object.entries(NIGHT_SKY)) for (const [at, colour] of list) if (!stops.has(colour)) stops.set(colour, `${scene} at ${at}%`);
+  for (const [colour, where] of stops) pair("cloud rim (night)", rim, `${where} ${colour}`, colour, "the moonlit rim outside a cloud on the sky", "mark");
+  const farOver = nightSkies4.map((sky) => over(MOONLIT[0][1], MOONLIT[0][2], sky.colour));
+  const far = farOver.reduce((a, b) => (luminance(b) > luminance(a) ? b : a));
+  pair("cloud rim (night)", rim, `${MOONLIT[0][0]} over the lightest air (${far})`, far, "a cloud in front of the far cloud", "mark");
+  pair("mascot outline: ink", "#14213D", `cloud rim (night) ${rim}`, rim, "the cloud's outline against its rim (the cloud keeps the day ink)", "mark");
+}
 // Paper by night: the unchosen date tiles and the compare footnote strip are paper at 90 % (C11), reverted to the day ink.
 const nightTile = over(t.surface, 0.9, midnight);
 pair("ink-soft", t["ink-700"], `night date tile (paper 90% over ${midnight})`, nightTile, "an unchosen day: date and fare");

@@ -2,12 +2,14 @@
  * Version D — d-cloud (docs/ui-d-cinematic.md, "The cloud"). Plain CSS, loaded by app/d/layout.tsx.
  * Every selector starts with [data-theme="d"], html[data-d-on] or a .d-… class only D renders.
  *
- * Two parts. The rig: how components/d/brand/CloudMascot.tsx looks, floats, blinks, looks around
- * and wears a mood. The companion: the one roaming cloud components/d/cloud/DCompanion.tsx places
- * on the top edge of a card. The scripts under components/d/cloud write only --gx / --gy and
- * data-mood on a cloud, data-cloud-away on a home cloud, and translate / scale / data-on /
- * data-blink on the companion; everything that moves is a transition or an animation declared
- * here, on an HTML box, so the browser can run it without laying out or painting anything again.
+ * Two parts. The rig: how components/d/brand/CloudMascot.tsx looks, floats, blinks, looks around,
+ * changes face and moves when it reacts. The companion: the one roaming cloud
+ * components/d/cloud/DCompanion.tsx places on the top edge of a card. The scripts under
+ * components/d/cloud write only --gx / --gy, data-face and data-mood on a cloud, data-cloud-away on a
+ * home cloud, and translate / scale / data-on / data-blink on the companion; everything that moves or
+ * changes is a transition or an animation declared here, on an HTML box, so the browser can run it
+ * without laying out or painting anything again. While a page transition runs every cloud holds
+ * still (the end of the rig).
  */
 
 /* ── The rig ─────────────────────────────────────────────────────────────── */
@@ -108,41 +110,64 @@
 /* A look is written on the cloud's box about twelve times a second and inherits down to the two
    boxes above. The drawings in them never read it, and here they say so: a look that kept
    inheriting into them would restyle every shape, and repaint the layer under the cloud, on
-   each write. With it stopped at the drawings a write restyles ten boxes and paints nothing. */
+   each write. With it stopped at the drawings a write restyles a few boxes and paints nothing. */
 .d-cloud-art svg {
   --gx: initial;
   --gy: initial;
 }
 
-/* Eye and mouth states swap by opacity; nothing morphs. */
-.d-cloud-eyes-open,
-.d-cloud-eyes-happy,
-.d-cloud-eyes-closed,
-.d-cloud-glints,
-.d-cloud-smile,
-.d-cloud-wide {
-  transition: opacity 80ms linear;
+/* Faces (data-face on the box, written by components/d/cloud/reactions.ts): whole parts swap by
+   opacity, nothing morphs. Rest is the drawing as it is (open eyes, the smile); bright opens the smile
+   into a grin; beam has happy arcs for eyes and the wide smile. data-eyes and data-mouth give a still
+   drawing a fixed face without a reaction. Each part is a box of its own the size of the drawing, so a
+   face change is a cross-fade of a few boxes the browser runs by itself. */
+.d-cloud-part {
+  display: block;
+  position: absolute;
+  inset: 0;
+  transition: opacity 90ms linear;
+  /* The look never reaches the drawings (the same reason as the .d-cloud-art svg rule above). */
+  --gx: initial;
+  --gy: initial;
 }
-.d-cloud-eyes-happy,
-.d-cloud-eyes-closed,
-.d-cloud-wide {
+.d-cloud :is(.d-cloud-eyes-happy, .d-cloud-eyes-closed, .d-cloud-wide, .d-cloud-open) {
   opacity: 0;
 }
-.d-cloud:is([data-mood="glad"], [data-eyes="happy"]) .d-cloud-eyes-happy,
-.d-cloud[data-eyes="closed"] .d-cloud-eyes-closed,
-.d-cloud:is([data-mood="glad"], [data-mouth="wide"]) .d-cloud-wide {
+.d-cloud[data-face] .d-cloud-smile {
+  opacity: 0;
+}
+.d-cloud[data-face="bright"] .d-cloud-open {
   opacity: 1;
 }
-.d-cloud:is([data-mood="glad"], [data-eyes="happy"], [data-eyes="closed"]) :is(.d-cloud-eyes-open, .d-cloud-glints),
-.d-cloud:is([data-mood="glad"], [data-mouth="wide"]) .d-cloud-smile {
+.d-cloud[data-face="beam"] :is(.d-cloud-eyes-happy, .d-cloud-wide) {
+  opacity: 1;
+}
+.d-cloud[data-face="beam"] :is(.d-cloud-eyes-open, .d-cloud-glints) {
   opacity: 0;
 }
+.d-cloud[data-eyes="happy"] .d-cloud-eyes-happy,
+.d-cloud[data-eyes="closed"] .d-cloud-eyes-closed,
+.d-cloud[data-mouth="wide"] .d-cloud-wide {
+  opacity: 1;
+}
+.d-cloud[data-eyes] :is(.d-cloud-eyes-open, .d-cloud-glints),
+.d-cloud[data-mouth] .d-cloud-smile {
+  opacity: 0;
+}
+/* A cloud narrower than 56 px (the home clouds, 40 to 54 px) draws its face 15 % larger, about the eye
+   line, so it still reads. The scale composes with the look's translate. */
+@container (max-width: 55.9px) {
+  .d-cloud-face {
+    scale: 1.15;
+    transform-origin: 48.333% 59.375%;
+  }
+}
 
-/* The blink: 70 ms closing, 20 ms shut, 110 ms opening, around the eye line: (58, 52) in the
+/* The blink: 70 ms closing, 20 ms shut, 110 ms opening, around the eye line: (58, 50.4) in the
    drawing's 120 x 96 box. Three in a 9.6 s round, the last two close together, so it does not tick
    like a clock. */
 .d-cloud-blinks {
-  transform-origin: 48.333% 54.167%;
+  transform-origin: 48.333% 52.5%;
   animation: d-cloud-blink 9.6s linear 1.4s infinite;
 }
 @keyframes d-cloud-blink {
@@ -176,23 +201,22 @@
   }
 }
 
-/* Moods. Calm is the drawing as it is. */
+/* Motions (data-mood on the box, never under reduced motion, never while a page transition runs).
+   Calm is the drawing as it is. All glide, no bounce: neither passes its rest on the way back, and
+   squash and stretch stay under 6 %. */
 
-/* Curious: leans up to 3 degrees toward what it looks at. */
+/* Curious: a head tilt of 4 degrees, the same whichever way it looks (on touch it looks ahead). */
 .d-cloud[data-mood="curious"] > .d-cloud-pose {
-  rotate: calc(var(--gx, 0) * 3deg);
+  rotate: 4deg;
 }
 
-/* Nod, "noted": down with a small squash in 120 ms, back in 180 ms, one blink. */
+/* Nod: down with a small squash in 120 ms, back in 180 ms. The plain nod (a pick or a withdrawal, no
+   face) blinks once with it, as it always has; "noted" wears happy eyes, which do not blink. */
 .d-cloud[data-mood="nod"] .d-cloud-art {
   animation: d-cloud-nod 300ms linear;
 }
-.d-cloud[data-mood="nod"] .d-cloud-blinks {
+.d-cloud[data-mood="nod"]:not([data-face]) .d-cloud-blinks {
   animation: d-cloud-blink-once 200ms linear 70ms;
-}
-/* Only open eyes blink: the happy and the closed ones are arcs already. */
-.d-cloud:is([data-mood="glad"], [data-eyes]) .d-cloud-blinks {
-  animation: none;
 }
 @keyframes d-cloud-nod {
   0% {
@@ -208,14 +232,51 @@
   }
 }
 
-/* Glad: happy eyes and the wide smile (above), and the cheeks swell a little. */
-.d-cloud-cheek {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+/* Lift, the nod's mirror (a tap, a greeting): up 0.8 of the dip with a small stretch in 144 ms, back in 236 ms. */
+.d-cloud[data-mood="lift"] .d-cloud-art {
+  animation: d-cloud-lift 380ms linear;
 }
-.d-cloud[data-mood="glad"] .d-cloud-cheek {
-  transform: scale(1.15);
+@keyframes d-cloud-lift {
+  0% {
+    transform: none;
+    animation-timing-function: cubic-bezier(0.3, 0, 0.5, 1);
+  }
+  38% {
+    transform: translateY(calc(var(--d-cloud-dip) * -0.8)) scale(0.985, 1.03);
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* Only open eyes blink: the happy and the closed ones are arcs already. */
+.d-cloud:is([data-face="beam"], [data-eyes]) .d-cloud-blinks,
+[data-theme="d"] .d-companion[data-blink] .d-cloud[data-face="beam"] .d-cloud-blinks {
+  animation: none;
+}
+
+/* By night, on the sky: a thin moonlit rim outside the ink outline, so the outline does not dissolve
+   into the navy (about 1.1 : 1 without it). The body's fill wears a 10-unit stroke painted before the
+   fill, so 3 units of it show outside the 4-unit outline (2 from 126 px wide). Only on the clouds that
+   stand on the sky: the companion and the stage clouds of the home hero and the loader. Clouds inside
+   paper (the results strip, the boarding pass, the compare corner, the empty, error and not-found
+   cards) stay as by day, like every card. It changes when the words on the sky do (a repaint once). */
+.d-cloud-body {
+  paint-order: stroke;
+  stroke: none;
+  stroke-width: 10px;
+  stroke-linejoin: round;
+}
+@container (min-width: 126px) {
+  .d-cloud-body {
+    stroke-width: 8px;
+  }
+}
+@media screen {
+  [data-theme="d"][data-d-time="night"] :is(.d-companion, .d-home-cloud, .d-loading-look) .d-cloud-body {
+    stroke: #e3ebff;
+  }
 }
 
 /* The contact shadow belongs to a cloud resting on a card. */
@@ -231,6 +292,21 @@
 }
 .d-cloud[data-cloud-away="fade"] {
   transition: opacity 160ms linear;
+}
+
+/* While a page transition runs the cloud holds still: no blink (removed, not paused: a blink paused
+   half way would hold the eyes half shut; the round starts again afterwards), no dip or lift, and the
+   float waits. Nothing writes a face, a mood or a look meanwhile (components/d/cloud). */
+html[data-d-on]:active-view-transition [data-theme="d"] :is(.d-cloud-blinks, .d-cloud-art) {
+  animation: none !important;
+}
+html[data-d-on]:active-view-transition [data-theme="d"] .d-cloud-pose {
+  animation-play-state: paused !important;
+}
+/* And no transition runs on a cloud meanwhile: the look the eyes take in the commit that shows the new page (ahead)
+   and a face that ends there arrive at once instead of gliding under the transition. */
+html[data-d-on]:active-view-transition [data-theme="d"] :is(.d-cloud-pose, .d-cloud-face, .d-cloud-eyes, .d-cloud-part, .d-cloud) {
+  transition: none !important;
 }
 
 /* ── The companion ───────────────────────────────────────────────────────── */
@@ -278,8 +354,9 @@
 
 /* ── Reduced motion ──────────────────────────────────────────────────────── */
 
-/* No companion at all; every other cloud is a still drawing with its eyes forward. The scripts do
-   not run either (they check the same setting), so nothing writes a look or a mood. */
+/* No companion at all; every other cloud is a still drawing with its eyes forward: no float, blink,
+   look, dip, lift or tilt (the scripts write no look and no motion either). A face is not motion: it
+   still changes, as a short cross-fade. */
 @media (prefers-reduced-motion: reduce) {
   [data-theme="d"] .d-companion {
     display: none;
@@ -296,5 +373,9 @@
   .d-cloud-face,
   .d-cloud-eyes {
     translate: none;
+  }
+  /* Wins over .d-cloud-art * above, and over globals.css's 0.01 ms for every transition. */
+  .d-cloud-art .d-cloud-part {
+    transition: opacity 120ms linear !important;
   }
 }

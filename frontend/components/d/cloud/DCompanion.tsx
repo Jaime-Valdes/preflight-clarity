@@ -4,17 +4,19 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useLayoutEffect, useRef } from "react";
 import { CloudMascot } from "@/components/d/brand/CloudMascot";
 import { startCompanion, type Companion } from "./companion";
+import { DCloudFaces } from "./DCloudFaces";
 import { DCloudGaze } from "./DCloudGaze";
 import { useStill } from "./still";
 
 /**
  * The cloud's life in the /d layout (docs/ui-d-cinematic.md, "The cloud"), mounted once in
- * app/d/layout.tsx: the gaze and reactions of every cloud drawing (DCloudGaze), and the roaming
- * companion that sits on the top edge of the card the visitor attends to (./companion).
+ * app/d/layout.tsx: the faces every cloud drawing makes when the visitor does something
+ * (DCloudFaces), their gaze (DCloudGaze), and the roaming companion that sits on the top edge of
+ * the card the visitor attends to (./companion).
  *
- * Under reduced motion none of it exists: nothing is rendered and no listener is added, and the
- * inline clouds stay the still drawings the server sent. Nothing is rendered on the server
- * either, so a page works and looks complete before this arrives.
+ * Under reduced motion only the faces exist: they still change (a face is not motion), while there
+ * is no companion, no gaze and nothing that moves, and the inline clouds stay still drawings.
+ * Nothing is rendered on the server either, so a page works and looks complete before this arrives.
  */
 export function DCompanion() {
   // The query string is only known in the browser, so the part that reads the address waits for it.
@@ -29,12 +31,16 @@ function Crew() {
   const still = useStill();
   const pathname = usePathname();
   const query = useSearchParams().toString();
-  if (still) return null;
-  // Any change of address is a new page to the cloud, a sort or a filter included: the cards under it are not the same list.
+  // The faces exist whatever the motion setting (DCloudGaze mounts them when motion is welcome). To them only a
+  // new path is a new page: a sort keeps the page and its faces.
+  if (still) return <DCloudFaces still pathname={pathname} />;
+  // Any change of address is a new page to the gaze and the companion, a sort or a filter included: the cards
+  // under them are not the same list. (The two stay this pair, in this order: the companion's drawing takes its
+  // ids from its place in the tree.)
   const page = `${pathname}?${query}`;
   return (
     <>
-      <DCloudGaze page={page} />
+      <DCloudGaze page={page} pathname={pathname} />
       <Roamer page={page} />
     </>
   );

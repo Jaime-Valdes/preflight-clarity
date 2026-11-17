@@ -143,7 +143,7 @@ function RemoveButton({ id, label, onRemove }: { id: string; label: string; onRe
       onClick={() => {
         onRemove(id);
         // The cloud's "noted", the same for every flight; a frame later, when the card shows what is left.
-        window.requestAnimationFrame(() => cloudReact("nod"));
+        window.requestAnimationFrame(() => cloudReact("noted"));
       }}
       className={cn(D_LINK, "inline-flex h-11 shrink-0 items-center gap-1 rounded-full px-2 text-sm")}
     >

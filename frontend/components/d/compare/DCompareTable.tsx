@@ -102,7 +102,7 @@ function optionsOn(column: FlightColumn): readonly FlightOption[] {
  * answers is the one the page shows after the change: the corner cloud, or the empty state's.
  */
 function nodAfterRemoval() {
-  window.requestAnimationFrame(() => cloudReact("nod"));
+  window.requestAnimationFrame(() => cloudReact("noted"));
 }
 
 /**

@@ -209,7 +209,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
    * shared components: they cannot call D's motion kit. Their clicks pass through this handler on the way up,
    * after the component has changed the list and before the page is drawn again, and each is acknowledged as
    * D's own compare buttons are (docs/ui-d-cinematic.md, "Small interactions"): a small plane from the control
-   * to the tray for an add, from the tray's chip back to the control for a removal, and the same nod for both.
+   * to the tray for an add, from the tray's chip back to the control for a removal, and the same "noted" for both.
    * It reads which control was pressed and that flight's place in the visitor's own list: nothing about the
    * flight itself. A control that is switched off (the list is full) changes nothing and gets nothing.
    */
@@ -233,7 +233,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
     } else {
       return;
     }
-    cloudReact("nod");
+    cloudReact("noted");
   };
 
   /** The pick, with everything the event needs (one on phones under the header, one in the sticky column). */
