@@ -202,6 +202,10 @@
   /* The example in an empty field and nothing else: lighter than a typed answer, still 4.5 : 1 on paper. */
   --color-ink-faint: #507295;
   --color-slate: #9bb8d3;
+  --color-moon: #fffdf8;
+  --color-moon-soft: #dfe5f7;
+  --color-moon-mute: #cbd3ef;
+  --color-midnight: #0e1838;
 
   /* The entrance (animate-d-rise): arriving content rises 12 px into place and never fades, so it is readable in
      its first frame and the sun cannot show through a card that is still on its way. It fills backwards only:

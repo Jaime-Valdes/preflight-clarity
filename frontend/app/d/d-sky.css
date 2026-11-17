@@ -924,3 +924,140 @@ html[data-d-on]:active-view-transition :is(.d-sky-trip, .d-sky-band) {
     --d-sky-depth: 10px;
   }
 }
+
+/* ── Night ───────────────────────────────────────────────────────────────────── */
+
+/* By night (docs/ui-d-cinematic.md, section 4, "Day and night") the sky keeps its boxes and draws them in
+   moonlight: the four airs become navy to indigo, the clouds and the deck a dim, cool blue, lighter than the air
+   behind them and darker than any word on them, and the sun is not drawn. No box is added to the page for it
+   (the server's HTML has no room left; the night is all in this stylesheet): at rest the day's boxes simply take
+   the night's colours, so by night as by day each drawing is drawn once. Only while the look changes
+   (data-d-time-fade on the root, 4.2 s, set by components/d/sky/clock.ts) does each air, cloud and deck band
+   carry a second, moonlit drawing as its ::after, which fades over the day one (motion block below); a load,
+   a hidden tab or reduced motion switches at once. Every rule starts at the theme root with data-d-time or
+   data-d-time-fade, which only D's root carries.
+
+   The night airs, navy at the top to indigo at the horizon (hues 224 to 232, never black): the home keeps its
+   bright band low down as a moonlit glow, compare's horizon is the bluest. On the box each scene already has,
+   so the scene rules cross-fade them on a page change exactly like the day ones. */
+[data-theme="d"]:is([data-d-time="night"], [data-d-time-fade]) .d-sky-air-home {
+  --d-sky-night: linear-gradient(180deg, #0e1838 0%, #17214f 34%, #1f2860 60%, #232d6a 74%, #253274 87%, #22397e 100%);
+}
+[data-theme="d"]:is([data-d-time="night"], [data-d-time-fade]) .d-sky-air-results {
+  --d-sky-night: linear-gradient(180deg, #0e1838 0%, #172352 45%, #1f2a61 80%, #252f6c 100%);
+}
+[data-theme="d"]:is([data-d-time="night"], [data-d-time-fade]) .d-sky-air-flight {
+  --d-sky-night: linear-gradient(180deg, #0e1838 0%, #14204d 40%, #1b285c 75%, #212d65 100%);
+}
+[data-theme="d"]:is([data-d-time="night"], [data-d-time-fade]) .d-sky-air-compare {
+  --d-sky-night: linear-gradient(180deg, #0e1838 0%, #192457 36%, #212b66 60%, #253274 80%, #203a84 100%);
+}
+
+/* At rest by night: the airs, clouds and deck in moonlight (far #5d69a1, mid #4b5790, near #44508c; the deck's
+   back #3a4682 and front #44508c; compare's butter deck has no night version), and no sun. */
+[data-theme="d"][data-d-time="night"]:not([data-d-time-fade]) .d-sky-air {
+  background: var(--d-sky-night);
+}
+[data-theme="d"][data-d-time="night"]:not([data-d-time-fade]) .d-sky-a .d-sky-size > .d-sky-shape {
+  fill: #5d69a1;
+}
+[data-theme="d"][data-d-time="night"]:not([data-d-time-fade]) .d-sky-b .d-sky-size > .d-sky-shape {
+  fill: #4b5790;
+}
+[data-theme="d"][data-d-time="night"]:not([data-d-time-fade]) :is(.d-sky-c, .d-sky-d) .d-sky-size > .d-sky-shape,
+[data-theme="d"][data-d-time="night"]:not([data-d-time-fade]) .d-sky-deck-front .d-sky-band-day {
+  fill: #44508c;
+}
+[data-theme="d"][data-d-time="night"]:not([data-d-time-fade]) .d-sky-deck-back .d-sky-band-day {
+  fill: #3a4682;
+}
+[data-theme="d"][data-d-time="night"]:not([data-d-time-fade]) :is(.d-sky-band-gold, .d-sky-sun .d-sun, .d-home-sun) {
+  display: none;
+}
+
+/* While the look changes: the moonlit copies, the same drawings in the night's colours, each over its day one
+   in the same box, so the two travel and scale as one. Shown at full strength going to night, at none going to
+   day; with motion they fade (below). The same shapes as components/d/sky/DSkyCloud.tsx (WIDE, ROUND,
+   DECK_LOOP), keep them in step. */
+[data-theme="d"][data-d-time-fade] :is(.d-sky-air, .d-sky-size, .d-sky-band)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: 0 0 / 100% 100% no-repeat;
+}
+[data-theme="d"][data-d-time-fade="night"] :is(.d-sky-air, .d-sky-size, .d-sky-band)::after {
+  opacity: 1;
+}
+[data-theme="d"][data-d-time-fade] .d-sky-air::after {
+  background-image: var(--d-sky-night);
+}
+[data-theme="d"][data-d-time-fade] .d-sky-a .d-sky-size::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 96' fill='%235d69a1'%3E%3Cpath d='M30 80C10 80 6 58 24 54C20 38 40 28 52 38C58 18 92 16 100 36C116 26 140 38 132 56C150 58 152 80 132 80Z'/%3E%3C/svg%3E");
+}
+[data-theme="d"][data-d-time-fade] .d-sky-b .d-sky-size::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 96' fill='%234b5790'%3E%3Cpath d='M30 80C10 80 6 58 24 54C20 38 40 28 52 38C58 18 92 16 100 36C116 26 140 38 132 56C150 58 152 80 132 80Z'/%3E%3C/svg%3E");
+}
+[data-theme="d"][data-d-time-fade] .d-sky-c .d-sky-size::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 96' fill='%2344508c'%3E%3Cpath d='M30 80C10 80 6 58 24 54C20 38 40 28 52 38C58 18 92 16 100 36C116 26 140 38 132 56C150 58 152 80 132 80Z'/%3E%3C/svg%3E");
+}
+[data-theme="d"][data-d-time-fade] .d-sky-d .d-sky-size::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 96' fill='%2344508c'%3E%3Cpath d='M24 74C8 74 6 54 20 50C16 36 32 26 42 35C44 17 68 13 75 30C87 23 103 34 97 50C111 52 111 74 96 74Z'/%3E%3C/svg%3E");
+}
+[data-theme="d"][data-d-time-fade] .d-sky-deck-back .d-sky-band::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2880 220' preserveAspectRatio='none' fill='%233a4682'%3E%3Cpath d='M0 120C60 70 150 70 200 110C240 60 340 50 400 100C450 60 560 60 610 105C660 55 780 50 830 100C890 60 990 65 1040 108C1100 60 1200 55 1250 102C1300 70 1390 70 1440 120L1440 220L0 220Z'/%3E%3Cpath d='M0 120C60 70 150 70 200 110C240 60 340 50 400 100C450 60 560 60 610 105C660 55 780 50 830 100C890 60 990 65 1040 108C1100 60 1200 55 1250 102C1300 70 1390 70 1440 120L1440 220L0 220Z' transform='translate(1440 0)'/%3E%3C/svg%3E");
+}
+[data-theme="d"][data-d-time-fade] .d-sky-deck-front .d-sky-band::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2880 220' preserveAspectRatio='none' fill='%2344508c'%3E%3Cpath d='M0 120C60 70 150 70 200 110C240 60 340 50 400 100C450 60 560 60 610 105C660 55 780 50 830 100C890 60 990 65 1040 108C1100 60 1200 55 1250 102C1300 70 1390 70 1440 120L1440 220L0 220Z' transform='translate(1440 0) scale(-1 1)'/%3E%3Cpath d='M0 120C60 70 150 70 200 110C240 60 340 50 400 100C450 60 560 60 610 105C660 55 780 50 830 100C890 60 990 65 1040 108C1100 60 1200 55 1250 102C1300 70 1390 70 1440 120L1440 220L0 220Z' transform='translate(2880 0) scale(-1 1)'/%3E%3C/svg%3E");
+}
+[data-theme="d"][data-d-time-fade="night"] :is(.d-sky-sun .d-sun, .d-home-sun) {
+  opacity: 0;
+}
+
+/* The live change: the moonlight comes over the day across 4 s and goes again at dawn (the words on the sky
+   swap at 2 s, when clock.ts turns the root's data-d-time); the sun sets in the first 1.6 s, or rises in the
+   last. Opacity only. Animations, not transitions, so a copy that has just been made starts from its first
+   frame with no starting style; each ends in its rest state before clock.ts takes the mark off. Not paused by
+   a page transition: none starts during one, and one already going ends where it was going. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="d"][data-d-time-fade="night"] :is(.d-sky-air, .d-sky-size, .d-sky-band)::after {
+    animation: d-sky-night-in 4000ms cubic-bezier(0.8, 0, 0.2, 1) both;
+  }
+  [data-theme="d"][data-d-time-fade="day"] :is(.d-sky-air, .d-sky-size, .d-sky-band)::after {
+    animation: d-sky-night-out 4000ms cubic-bezier(0.8, 0, 0.2, 1) both;
+  }
+  [data-theme="d"][data-d-time-fade="night"] :is(.d-sky-sun .d-sun, .d-home-sun) {
+    animation: d-sky-night-out 1600ms linear both;
+  }
+  [data-theme="d"][data-d-time-fade="day"] :is(.d-sky-sun .d-sun, .d-home-sun) {
+    animation: d-sky-night-in 1600ms cubic-bezier(0.22, 1, 0.36, 1) 1400ms both;
+  }
+  /* The hero's sun keeps its sunrise (app/d/d-home.css) in the list, so it does not rise again when the mark
+     comes off. */
+  [data-theme="d"][data-d-time-fade="night"] .d-home-sun {
+    animation:
+      d-home-sunrise 1400ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) backwards,
+      d-sky-night-out 1600ms linear both;
+  }
+  [data-theme="d"][data-d-time-fade="day"] .d-home-sun {
+    animation:
+      d-home-sunrise 1400ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) backwards,
+      d-sky-night-in 1600ms cubic-bezier(0.22, 1, 0.36, 1) 1400ms both;
+  }
+}
+@keyframes d-sky-night-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes d-sky-night-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

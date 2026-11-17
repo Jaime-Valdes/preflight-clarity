@@ -211,7 +211,7 @@ html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.b
 
 @media (hover: hover) and (pointer: fine) {
   .d-btn-outline:hover {
-    background-color: rgb(20 33 61 / 0.06);
+    background-color: var(--d-veil, rgb(20 33 61 / 0.06));
   }
 }
 
@@ -224,7 +224,7 @@ html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.b
 }
 
 .d-btn-outline:active {
-  background-color: rgb(20 33 61 / 0.1);
+  background-color: var(--d-veil-press, rgb(20 33 61 / 0.1));
   transition-duration: var(--d-press);
 }
 
@@ -290,7 +290,7 @@ html[data-d-on] [role="dialog"][aria-modal="true"] :is(button, a).rounded-full.b
  */
 .d-link,
 [data-theme="d"] a.text-calm-700 {
-  background-image: linear-gradient(var(--color-butter), var(--color-butter));
+  background-image: linear-gradient(var(--d-hl, var(--color-butter)), var(--d-hl, var(--color-butter)));
   background-repeat: no-repeat;
   background-position: 0 calc(50% + 0.46em);
   background-size: 0% 0.42em;

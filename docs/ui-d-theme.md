@@ -41,9 +41,19 @@ never set the theme and must render pixel-identically after any change here.
     colour" (airline tiles, "in compare" states, calm-coloured links, tiles and expanders, sand form hints), each put
     on royal, sky or ink.
 - **Per-page partials.** `app/d/d-sky.css`, `d-transition.css`, `d-cloud.css`, `d-motion.css`, `d-home.css`,
-  `d-results.css`, `d-flight.css` and `d-compare.css`, imported by `app/d/layout.tsx` in that order. Plain CSS: no
-  Tailwind directives, colours through `var(--color-…)`, classes and keyframes prefixed `d-`. Every selector in them
-  starts with `[data-theme="d"]`, `html[data-d-on]` or a `.d-…` class that only D renders.
+  `d-results.css`, `d-flight.css`, `d-compare.css` and `d-night.css`, imported by `app/d/layout.tsx` in that order.
+  Plain CSS: no Tailwind directives, colours through `var(--color-…)`, classes and keyframes prefixed `d-`. Every
+  selector in them starts with `[data-theme="d"]`, `html[data-d-on]` or a `.d-…` class that only D renders.
+- **The night** (`app/d/d-night.css`, imported last so a tie of specificity goes to it; docs/ui-d-cinematic.md,
+  section 2, "By night"). On the root with `data-d-time="night"` the ink family is re-pointed to the moon tokens
+  (`moon`, `moon-soft`, `moon-mute`, `midnight` in the D `@theme static` block), so every word on the sky turns to
+  moonlight without a rule of its own. Everything that paints paper inside the root is reverted to the day ink: the
+  variables on a list of selectors (`.bg-surface`, translucent `bg-surface/…` except the header, the tray, the
+  header's current link, the notice and footnote strips, the companion, the tap layer, the home's flight line, the
+  brand tile), and in `@layer base` the `color` those boxes would otherwise inherit from the root (a box's own text
+  utility still wins). The overscroll and Safari's bar tint come from `html[data-d-on][data-d-time="night"]` and
+  its `body`; nothing keys on `html[data-d-time]` alone, so nothing can reach A, B or C. Screen only: print stays ink
+  on paper. The shared markup it finds by class string is pinned in `scripts/d-hooks.mjs`.
 - **D's own components** (`frontend/components/d/**`) use the D tokens directly (`components/d/brand/buttons.ts`
   holds the shared class strings: `D_PILL_PRIMARY`, `D_PILL_OUTLINE`, `D_PILL_SELECTED`, `D_LINK`).
 - **Optional props on shared components**, each defaulting to C's look: `HomeSearch tone` (D passes `"light"`),

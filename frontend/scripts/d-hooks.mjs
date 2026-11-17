@@ -45,6 +45,7 @@ const OVERRIDE = rootArg >= 0 ? args[rootArg + 1] : process.env.D_HOOKS_ROOT;
 
 const G = "app/globals.css";
 const MOTION = "app/d/d-motion.css";
+const NIGHT = "app/d/d-night.css";
 const SHEET = 'html[data-d-on] :where(body > div:has(> [role="dialog"][aria-modal="true"]))';
 
 // ── The hooks ───────────────────────────────────────────────────────────────────
@@ -485,6 +486,79 @@ const HOOKS = [
     text: ["export const LINK_TONE = {", 'primary: "bg-night-900 text-white'],
     within: 2,
     why: "the notice's primary is told from its secondary by bg-night-900; without it both would wear the outline",
+  },
+
+  // By night (app/d/d-night.css): the ink turns to moonlight on the sky and is reverted on the paper it finds by
+  // these strings. A lapse shows as light text on paper, or a sky-blue mark on the navy.
+  {
+    d: [NIGHT, '[data-theme="d"][data-d-time="night"] > header nav a[aria-current]'],
+    file: "components/c/shell/Header.tsx",
+    text: ["aria-current={pathname === tool.base", 'onFlights ? "bg-canvas text-ink-900 ring-1 ring-inset ring-line"'],
+    within: 4,
+    why: "the current link is the pill that turns solid paper with the day ink by night; found by aria-current",
+  },
+  {
+    d: [NIGHT, '[data-theme="d"][data-d-time="night"] > header nav a:not([aria-current]):hover'],
+    file: "components/c/shell/Header.tsx",
+    text: '"text-ink-500 hover:bg-canvas hover:text-ink-900"',
+    count: 2,
+    why: "the other links' hover tint is light (bg-canvas): by night it is moon at 14 %, or the moon words on it would fail",
+  },
+  {
+    d: [NIGHT, '[data-theme="d"] > header a[aria-label^="Cloud9"] > span[aria-hidden]:first-child'],
+    file: "components/c/shell/Header.tsx",
+    text: ["aria-label={`Cloud9, ${tool.name}`}", "<BrandTile"],
+    within: 3,
+    why: "the ink brand tile keeps the day ink and takes a thin moon ring by night, or its edge is lost on the navy",
+  },
+  {
+    d: [NIGHT, "--tw-ring-shadow: 0 0 0 1px rgb(255 253 248 / 0.4);"],
+    file: "components/ui/BrandMark.tsx",
+    text: ["export function BrandTile", '"flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-night-900 shadow-soft"'],
+    within: 6,
+    why: "the night ring rides in the tile's shadow-soft box-shadow (its ring slot); without the utility the ring is not drawn",
+  },
+  {
+    d: [NIGHT, '[data-theme="d"][data-d-time="night"] nav a.rounded-2xl[class*="bg-surface/"]:not(:hover)'],
+    file: "components/c/search/DateStrip.tsx",
+    text: ['"flex h-[6.25rem] flex-col items-center justify-center rounded-2xl', '"bg-surface/60 text-ink-700 ring-line/70 hover:bg-surface hover:ring-line-strong"'],
+    within: 5,
+    why: "an unchosen day is paper at 90 % by night; at 60 % over the navy its weekday and count would fall to 3.5 : 1",
+  },
+  {
+    d: [NIGHT, "main > div > div.bg-breeze-50,"],
+    file: "components/c/compare/ComparePage.tsx",
+    text: ['<div className="mt-4 flex', "bg-breeze-50"],
+    within: 1,
+    why: "the notice strip is paper and keeps the day ink by night; without the revert its words would be moon on paper",
+  },
+  {
+    d: [NIGHT, '[data-theme="d"][data-d-time="night"] main > div > div:has(> .d-compare-arrive) + p'],
+    file: "components/c/compare/ComparePage.tsx",
+    text: ['<div className="mt-5">', "<Table", '{comparing ? <p className="mt-3 px-1 text-xs leading-relaxed text-ink-500">{note}</p> : null}'],
+    within: 14,
+    why: "the footnote under the table is paper at 90 % with the day ink by night; found as the paragraph after the table's box (position: look at the page after a change here)",
+  },
+  {
+    d: [NIGHT, "#c-compare-tray,"],
+    file: "components/c/shell/CompareTray.tsx",
+    text: ['const TRAY_ID = "c-compare-tray";', "id={TRAY_ID}"],
+    within: 80,
+    why: "the tray is paper and keeps the day ink by night",
+  },
+  {
+    d: [NIGHT, '[data-theme="d"][data-d-time="night"] [class*="peer-focus-visible:outline-breeze-500"]'],
+    file: "components/c/search/SortTabs.tsx",
+    text: '"peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-breeze-500"',
+    count: 1,
+    why: "a sort tab's focus outline is sky blue (about 2 : 1 on the night air); by night it takes the ink, moon on the sky",
+  },
+  {
+    d: [NIGHT, '[data-theme="d"][data-d-time="night"] svg.mt-px.size-3\\.5.shrink-0.text-breeze-700'],
+    file: "components/c/flight/PendingNote.tsx",
+    text: '<CalendarClock aria-hidden className="mt-px size-3.5 shrink-0 text-breeze-700" />',
+    count: 1,
+    why: "the pending note's calendar is breeze-700 (2.3 : 1 on the night air); by night it takes the ink",
   },
 
   // The results summary (app/d/d-results.css): its Swap / Change row wraps instead of overflowing at large text.

@@ -41,8 +41,10 @@ House rules (they settle most decisions):
 3. **Feedback is symmetric and blind.** Adding and removing, picking and withdrawing get the same response, and no
    animation, colour or mascot behaviour ever reads a flight's rating, price, airline or place in the list.
 4. **What you see is what you can tap.** Motion never queues, delays or hides a tap target.
-5. **Fair weather only.** No grey or dark sky, no rain, no lightning. Planes fly level or climb a few degrees: no
-   dives, banks, shakes or wobble. Nothing bounces. Never red, rose, coral, pink or orange.
+5. **Fair weather only: a clear day, or a clear, starry night (navy, never black or grey).** No grey or overcast
+   sky, no rain, no lightning. Planes fly level or climb a few degrees: no dives, banks, shakes or wobble. Nothing
+   bounces. Never red, rose, coral, pink or orange. (Amended in pass 4 at the owner's request for night "with stars";
+   before it the rule read "No grey or dark sky".)
 
 ## 2. Colour
 
@@ -108,6 +110,52 @@ every text / background pair this look relies on, including the darkest point of
 (3 : 1 for 24 px+ or 19 px+ bold text and for non-text marks). It also fails on any token whose hue is red, pink or
 orange. Run it after any colour change: `node frontend/scripts/d-contrast.mjs`. Lowest text pairs today: white at 70 %
 on `royal` (the chosen day's small print) at 4.60 : 1, then `ink-mute` on the deepest sky (#7EC3F4) at 4.68 : 1.
+
+### By night
+
+Pass 4 (section 4, "Day and night"). Four more tokens in the same `@theme static` block (hues 43°, 225°, 227°, 226°):
+
+| Token | Hex | Role |
+| --- | --- | --- |
+| `moon` | #FFFDF8 | ink's role on the night sky: headlines, header links, the brand word, outlines, focus |
+| `moon-soft` | #DFE5F7 | ink-soft's role on the night sky: hero copy, sub-lines |
+| `moon-mute` | #CBD3EF | ink-mute's role on the night sky: counts, captions, the footer |
+| `midnight` | #0E1838 | the top of every night sky: the browser bar, the overscroll, the root's flat colour |
+
+Night skies, navy at the top to indigo at the horizon (hues 224° to 232°, never black): the home keeps its bright
+band low down as a moonlit glow, compare's horizon is the bluest.
+
+| Scene | Night stops |
+| --- | --- |
+| home | #0E1838 0%, #17214F 34%, #1F2860 60%, #232D6A 74%, #253274 87%, #22397E 100% |
+| results | #0E1838 0%, #172352 45%, #1F2A61 80%, #252F6C 100% |
+| flight | #0E1838 0%, #14204D 40%, #1B285C 75%, #212D65 100% |
+| compare | #0E1838 0%, #192457 36%, #212B66 60%, #253274 80%, #203A84 100% |
+
+Moonlit clouds: far #5D69A1, mid #4B5790, near #44508C; the deck's back and front bands #3A4682 and #44508C
+(compare's butter deck has no night version). Each is lighter than the air behind it and darker than any word on it.
+
+**Only what sits directly on the sky changes; paper does not.** Cards, ratings, prices, chips and controls look
+exactly as by day (pixel-identical, checked). The mechanism is one re-point and one revert (`app/d/d-night.css`, see
+docs/ui-d-theme.md): on the night root `ink`, `ink-soft`, `ink-mute` (and the shared `ink-900` to `ink-400` D points
+at them) become `moon`, `moon-soft`, `moon-mute`, and everything that paints paper inside the root gets the day ink
+back, the variables and the inherited text colour alike. Every word on the sky already asks for an ink token, so none
+needs a rule of its own. The rest, by night:
+
+- the header's current link is solid paper with ink; a link's hover tint is moon at 14 %; the ink brand tile takes a
+  1 px moon ring at 40 % (in the ring slot of its own shadow, so its soft shadow stays);
+- the unchosen date tiles and the compare footnote strip are paper at 90 % (at 60 % over the night air ink-mute
+  would fall to 3.5 : 1; at 90 % a price keeps its day contrast: ink-mute 7.17 against day's 6.89);
+- the text link's highlighter is butter at 30 % on the sky (`--d-hl`) and the outline button's hover and press veils
+  moon at 10 % and 16 % (`--d-veil`, `--d-veil-press`), butter and ink on paper as by day;
+- the sort tabs' focus outline and the pending note's calendar (sky blue, about 2 : 1 on the night air) take the ink,
+  moon on the sky; the loading dashes are moon at 25 %; selected text stays ink on butter;
+- `html` and `body` take `midnight` (the overscroll at both ends and Safari's bar tint), and D's theme colour is
+  #0E1838.
+
+Lowest night pairs (`d-contrast.mjs`, "At night"): `moon-mute` on the mid cloud over compare's horizon 4.81 : 1 and on
+the far cloud 4.82 : 1; `moon` on the highlighter 5.21 : 1; the brand ring against midnight 3.73 : 1 (a mark). The
+night airs at their lightest point give 7.05 : 1 or more for `moon-mute`.
 
 Rulings from the foundation review:
 
@@ -316,8 +364,8 @@ flat scenery cloud.
 ### Day and night
 
 Pass 4, the owner's request: "have it be day during the day, and night-time with stars at night". This subsection
-covers when it is night and how the page knows; what night looks like follows with the night sky's own steps (until
-then the sky looks the same by night, and only the browser's bar turns navy).
+covers when it is night, how the page knows and what changes in the sky; the night's colours are in section 2, "By
+night". (The stars and the moon follow in a later step.)
 
 - **The rule.** Night is when the sun is more than 6° below the horizon (the end of civil twilight, when the first
   stars come out) where the visitor probably is; the same line in the morning. New York on 12 November 2026: civil
@@ -366,6 +414,19 @@ then the sky looks the same by night, and only the browser's bar turns navy).
   way changes the root on time (the page being covered does not mind), but `html[data-d-time]` and the theme colour
   change only after the transition has ended, so the running transition's pseudo-elements are never restyled
   mid-sweep. Since `<html>` carries the mirror from hydration on, it is set before any transition can start.
+- **What changes in the sky.** The four airs, the clouds and the deck turn to moonlight and the sun (the sky's and
+  the hero's) is not drawn. No box is added for it: the server's HTML has no room left (the boot script took the
+  pass's budget), so the night lives in `app/d/d-sky.css` ("Night"). At rest by night the day's own boxes take the
+  night's colours (each air its night gradient, each cloud and deck band a night `fill`), and the butter deck and
+  the suns leave the render tree, so the night draws as many boxes as the day. Only while `data-d-time-fade` is on
+  the root (4.2 s) does each air, cloud and deck band carry a moonlit copy as its `::after` (the night gradient, or
+  the same shape as a data-URI SVG in the night fill; keep the shapes in step with `DSkyCloud.tsx`) over its day
+  drawing, which fades in over 4 s (`cubic-bezier(0.8, 0, 0.2, 1)`) going to night and out going to day; the sun
+  sets in the first 1.6 s or rises in the last. Opacity only, and animations rather than transitions, so a copy
+  that has just been made starts from its first frame. Each ends in its rest state before the mark comes off, so
+  nothing jumps. The copies travel and scale with their drawings (they are inside the same boxes) and are not
+  paused by a page transition (none starts during one). Through the fade, 12 px muted text on the sky dips under
+  4.5 : 1 for about 0.5 to 1.4 s, once at dusk and once at dawn, and only for a visitor on the page at that minute.
 - **Replay and analytics.** A flip is 5 records on 3 nodes (the fade mark on, the root, `<html>`, the meta, the fade
   mark off); an arrival is up to 3. Nothing else is written on `<html>`, and no custom property ever is. The look is
   a confound for D's numbers: split D by it, with the zone table and the same formula in HogQL (the pass's
@@ -610,6 +671,14 @@ What each screen must end up with:
   restyled by `d-flight.css`): the same paper card with the cloud in place of the icon tile (a still drawing on the
   notices), a 56 px royal primary with the lip and a 2 px ink outline secondary.
 
+By night (section 2, "By night"), on every screen: the header's words, the footer and every word directly on the sky
+are moonlight; the cards, the boarding pass, the table, the tray, sheets, notices and the date tiles are paper with
+the day ink. Home: the h1, the wordmark and its copy are moon and moon-soft, the swash stays gold, the progress dashes
+moon and slate, no sun. Results: the count, the date strip's caption and the sort note are moon-mute, the date tiles
+paper at 90 %, "Filters" a moon outline with moon veils; loading shows "Checking the skies…" in moon. Flight: "All
+flights", "Rated for you" and "Other flights this day" in moon, the back link's highlighter butter at 30 %. Compare:
+the title and its notes in moon and moon-mute, the footnote under the table on paper at 90 %.
+
 Accepted as built after the review (choices the screen builders made beyond this brief): on compare, the gold badge
 on the Ratings band, the proximity snap of the sideways scroll, the label column's badge stamp, the row wash under a
 mouse and the table's `top`-based arrival (section 3 keeps transforms off the ancestors of sticky elements, and the
@@ -629,6 +698,10 @@ cloud on laptops. Each is the same for every flight.
   version of everything under reduced motion.
 - Event names, routes, query parameters, forms, the sign-up and the compare list do not change. Versions A, B and C
   render pixel-identically (checked by screenshot hash before and after).
+- Night changes only the sky and the words directly on it: every card's interior (cards, the pass, ratings, prices,
+  chips, controls) is pixel-identical by day and by night (checked at 390 and 1440 on every screen). Night is the
+  real sky where the visitor probably is, never chosen by the study or the visitor, and the look is a confound to
+  split D's numbers by (docs/ANALYTICS.md).
 
 ## 11. Checks before a commit or a deploy
 
@@ -636,7 +709,12 @@ Run from the repo root:
 
 - `npx tsc --noEmit -p frontend` and `npx eslint frontend --max-warnings=0` (the React Compiler rules are errors).
 - `node frontend/scripts/d-contrast.mjs`: every text and mark pair the look relies on, and no red, pink or orange
-  token.
+  token. By night: walks `app/d/d-sky.css` rule by rule, checks a gradient whose rule names `.d-sky-night` or
+  `data-d-time="night"` as a night sky (the moon tokens at its lightest point; it must print "4 night skies found"),
+  every other one as a day sky; the "At night" sections (each night air at its lightest, the moonlit clouds and
+  deck composited over it, the highlighter, the veils, the brand ring, focus rings and the two on-sky marks, the
+  night date tile and footnote strip); the date tiles' night ratios within 0.6 of the day's; and a hue scan of every
+  colour written out in `app/d/d-*.css`, data URIs decoded.
 - `node frontend/scripts/d-transition-art.mjs --check`: the transition's generated blocks match the generator.
 - `node frontend/scripts/d-sky-zones.mjs --check`: the sky clock's zone table (`components/d/sky/zones.ts`) matches
   this machine's tz database (exit 1 when stale, 2 when `/usr/share/zoneinfo/zone.tab` is missing); `--ts` rewrites

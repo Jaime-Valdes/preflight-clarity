@@ -1,0 +1,128 @@
+/*
+ * Version D by night (docs/ui-d-cinematic.md, section 4, "Day and night"): what sits directly on the sky
+ * turns to moonlight; paper does not change.
+ *
+ * One re-point of the ink family on the night root, and a revert on everything that paints paper inside it.
+ * Every word on the sky already asks for an ink token (ink, ink-soft, ink-mute and the shared ink-900 to
+ * ink-400 that D points at them), so by night each reads in the moon tokens (app/globals.css) without a rule
+ * of its own. Cards, ratings, prices, chips and controls sit on paper, and the revert gives them back the day
+ * ink, so they look exactly as by day (decision 5). The risk is the other way round, paper that is not
+ * reverted; the night audit looks for light text on paper on every screen.
+ *
+ * Every selector starts at the theme root with data-d-time="night", or at html[data-d-on] (set only while D is
+ * mounted), so nothing here can reach A, B or C. Imported last (app/d/layout.tsx), so a tie of specificity
+ * goes to the night. Screen only: on paper a page always prints in ink.
+ *
+ * Shared markup found by its classes is pinned in scripts/d-hooks.mjs.
+ */
+@media screen {
+  [data-theme="d"][data-d-time="night"] {
+    background-color: var(--color-midnight);
+    --color-ink: var(--color-moon);
+    --color-ink-soft: var(--color-moon-soft);
+    --color-ink-mute: var(--color-moon-mute);
+    --color-ink-900: var(--color-ink);
+    --color-ink-700: var(--color-ink-soft);
+    --color-ink-500: var(--color-ink-mute);
+    --color-ink-400: var(--color-ink-mute);
+    /* The text link's highlighter (butter at 30 %) and the outline button's hover and press veils (moon). */
+    --d-hl: rgb(255 224 138 / 0.3);
+    --d-veil: rgb(255 253 248 / 0.1);
+    --d-veil-press: rgb(255 253 248 / 0.16);
+  }
+
+  /* Paper, and the drawings that are ink by design, keep the day ink: the cards and sheets (bg-surface), the
+     translucent paper (the date tiles, a loading card; not the header, which is the sky's), the compare tray,
+     the header's current link, the notice strip, the compare footnote strip, the companion cloud, the tap
+     layer, the home's flight line and the brand tile. */
+  [data-theme="d"][data-d-time="night"] :is(
+    .bg-surface,
+    [class*="bg-surface/"]:not([data-theme="d"] > header),
+    #c-compare-tray,
+    [data-theme="d"] > header nav a[aria-current],
+    main > div > div.bg-breeze-50,
+    main > div > div:has(> .d-compare-arrive) + p,
+    .d-cloud,
+    .d-motion-layer,
+    .d-home-line,
+    [data-theme="d"] > header a[aria-label^="Cloud9"] > span[aria-hidden]:first-child
+  ) {
+    --color-ink: #14213d;
+    --color-ink-soft: #27344f;
+    --color-ink-mute: #3a4a66;
+    --color-ink-900: var(--color-ink);
+    --color-ink-700: var(--color-ink-soft);
+    --color-ink-500: var(--color-ink-mute);
+    --color-ink-400: var(--color-ink-mute);
+    --d-hl: var(--color-butter);
+    --d-veil: rgb(20 33 61 / 0.06);
+    --d-veil-press: rgb(20 33 61 / 0.1);
+  }
+
+  /* Words that ask for no colour of their own inherit the root's, which by night is the moon: inside paper they take
+     the ink again. In the base layer, so a box's own text colour (a utility) still wins, as it does by day. */
+  @layer base {
+    [data-theme="d"][data-d-time="night"] :is(
+      .bg-surface,
+      [class*="bg-surface/"]:not([data-theme="d"] > header),
+      #c-compare-tray,
+      [data-theme="d"] > header nav a[aria-current],
+      main > div > div.bg-breeze-50,
+      main > div > div:has(> .d-compare-arrive) + p,
+      .d-cloud,
+      .d-motion-layer,
+      .d-home-line,
+      [data-theme="d"] > header a[aria-label^="Cloud9"] > span[aria-hidden]:first-child
+    ) {
+      color: var(--color-ink);
+    }
+  }
+
+  /* The header's current link: solid paper with ink, the closest to its day look (it holds no study content). */
+  [data-theme="d"][data-d-time="night"] > header nav a[aria-current] {
+    background-color: var(--color-surface);
+  }
+  /* The day's hover tint is light, and moon on it would fail: moon at 14 % instead. */
+  @media (hover: hover) and (pointer: fine) {
+    [data-theme="d"][data-d-time="night"] > header nav a:not([aria-current]):hover {
+      background-color: rgb(255 253 248 / 0.14);
+    }
+  }
+  /* The ink brand tile on the navy: a thin moon ring shows its edge. Through the ring slot of the tile's own shadow
+     (its shadow-soft utility composes --tw-ring-shadow with the soft shadow), so the soft shadow stays: replacing
+     the whole box-shadow moved the raster of every card below on a 2x phone by a fraction of a pixel. */
+  [data-theme="d"][data-d-time="night"] > header a[aria-label^="Cloud9"] > span[aria-hidden]:first-child {
+    --tw-ring-shadow: 0 0 0 1px rgb(255 253 248 / 0.4);
+  }
+  /* The unchosen date tiles and the compare footnote strip: paper at 90 %, so a price and the muted words keep
+     their day contrast (60 % paper over the night air would leave ink-mute at 3.5 : 1). */
+  [data-theme="d"][data-d-time="night"] nav a.rounded-2xl[class*="bg-surface/"]:not(:hover) {
+    background-color: rgb(255 253 248 / 0.9);
+  }
+  [data-theme="d"][data-d-time="night"] main > div > div:has(> .d-compare-arrive) + p {
+    background-color: rgb(255 253 248 / 0.9);
+  }
+  /* Marks on the sky that ask for a sky blue: the sort tabs' focus outline and the pending note's calendar.
+     By night both take the ink, which is moon on the sky and ink inside paper. */
+  [data-theme="d"][data-d-time="night"] [class*="peer-focus-visible:outline-breeze-500"] {
+    outline-color: var(--color-ink);
+  }
+  [data-theme="d"][data-d-time="night"] svg.mt-px.size-3\.5.shrink-0.text-breeze-700 {
+    color: var(--color-ink);
+  }
+  [data-theme="d"][data-d-time="night"] .d-loading-dashes > span {
+    background-color: rgb(255 253 248 / 0.25);
+  }
+  /* Selected text stays ink on butter, on the sky as on paper. */
+  [data-theme="d"][data-d-time="night"] ::selection {
+    background: var(--color-butter);
+    color: #14213d;
+  }
+
+  /* The page behind the sky, where a phone shows it past either end of the page, and Safari's bar tint (taken
+     from the body): the night's top. Not the --d-overscroll variable: nothing is written on <html>. */
+  html[data-d-on][data-d-time="night"],
+  html[data-d-on][data-d-time="night"] body {
+    background-color: var(--color-midnight);
+  }
+}

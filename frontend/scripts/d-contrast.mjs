@@ -13,9 +13,15 @@
  * [data-theme="d"]), so a token changed there is checked here without a second edit. The four sky gradients are
  * not tokens: they are copied below from the contract's table, and any top-to-bottom gradient written out in
  * app/d/d-sky.css is checked as well, so the sky that ships cannot drift from the one that was measured.
- * No dependencies.
+ *
+ * By night (docs/ui-d-cinematic.md, section 4, "Day and night") the ink on the sky turns to the moon tokens and the
+ * sky to navy, so the night skies are checked the other way round: light text at each gradient's lightest point. A
+ * gradient in d-sky.css is a night sky when the selector of the rule that holds it names .d-sky-night or
+ * data-d-time="night". Last, every colour written out in app/d/d-*.css (data URIs decoded) is hue-checked like the
+ * tokens. No dependencies.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const TEXT = 4.5;
@@ -25,6 +31,7 @@ const APART = 3;
 
 const cssPath = fileURLToPath(new URL("../app/globals.css", import.meta.url));
 const skyCssPath = fileURLToPath(new URL("../app/d/d-sky.css", import.meta.url));
+const dDir = fileURLToPath(new URL("../app/d/", import.meta.url));
 
 /** One sky per scene, top to bottom: [position in %, colour]. Mirrors the table in docs/ui-d-cinematic.md. */
 const SKY = {
@@ -33,6 +40,22 @@ const SKY = {
   "flight (Above the clouds)": [[0, "#86C8F6"], [40, "#B7DEF9"], [75, "#E7F3FD"], [100, "#FCFDFE"]],
   "compare (Golden afternoon)": [[0, "#93CDF5"], [36, "#CBE7F9"], [60, "#FBF7EC"], [80, "#FFEFC4"], [100, "#FFDF96"]],
 };
+
+/** The same four scenes by night (the night airs in app/d/d-sky.css). Mirrors the night table in docs/ui-d-cinematic.md. */
+const NIGHT_SKY = {
+  "home by night": [[0, "#0E1838"], [34, "#17214F"], [60, "#1F2860"], [74, "#232D6A"], [87, "#253274"], [100, "#22397E"]],
+  "results by night": [[0, "#0E1838"], [45, "#172352"], [80, "#1F2A61"], [100, "#252F6C"]],
+  "flight by night": [[0, "#0E1838"], [40, "#14204D"], [75, "#1B285C"], [100, "#212D65"]],
+  "compare by night": [[0, "#0E1838"], [36, "#192457"], [60, "#212B66"], [80, "#253274"], [100, "#203A84"]],
+};
+/** The moonlit clouds and deck (app/d/d-sky.css, "Night"), each at the most a scene shows it: lighter is worse for light text. */
+const MOONLIT = [
+  ["far cloud a #5D69A1 at 55%", "#5D69A1", 0.55],
+  ["mid cloud b #4B5790 at 90%", "#4B5790", 0.9],
+  ["near clouds c, d #44508C", "#44508C", 1],
+  ["deck back #3A4682", "#3A4682", 1],
+  ["deck front #44508C", "#44508C", 1],
+];
 
 // ── Colour maths (sRGB, WCAG 2.x relative luminance) ────────────────────────────
 
@@ -92,6 +115,18 @@ function darkest(stops) {
     if (lum < worst.lum) worst = { at, colour, lum };
   }
   return worst;
+}
+
+/** The lightest point of a gradient, sampled every 0.5 %: where light text has the least contrast. */
+function lightest(stops) {
+  let best = { at: 0, colour: stops[0][1], lum: -Infinity };
+  for (let step = 0; step <= 200; step++) {
+    const at = step / 2;
+    const colour = sample(stops, at);
+    const lum = luminance(colour);
+    if (lum > best.lum) best = { at, colour, lum };
+  }
+  return best;
 }
 
 // ── Tokens, from globals.css ────────────────────────────────────────────────────
@@ -161,21 +196,65 @@ for (const sky of skies) {
   pair("ink-mute", t["ink-mute"], on, sky.colour, "counts, captions, the footer");
 }
 
-// Gradients written out in d-sky.css, if any (they should be the four above).
+// Gradients written out in d-sky.css. The file is walked rule by rule (it nests @media and @supports), and each
+// gradient takes the selector of the innermost rule that holds it: a night sky (C12: .d-sky-night or
+// data-d-time="night" in the selector, quotes optional) is checked with the moon tokens at its lightest point,
+// every other one with the ink at its darkest.
+const NIGHT_RULE = /\.d-sky-night|data-d-time=["']?night/;
+const GRADIENT = /linear-gradient\(\s*(?:(?:180deg|to bottom)\s*,)?\s*([^()]*)\)/gi;
+/** Every top-to-bottom gradient in a stylesheet: [{ stops, selector }], selector being the innermost rule's. */
+function gradients(source) {
+  const found = [];
+  const stack = [];
+  let buffer = "";
+  const take = (text) => {
+    for (const m of text.matchAll(GRADIENT)) {
+      const stops = m[1].split(",").map((part) => /^\s*(#[0-9a-f]{3}(?:[0-9a-f]{3})?)\s+([\d.]+)%\s*$/i.exec(part));
+      if (stops.length < 2 || stops.some((part) => !part)) continue;
+      found.push({ stops: stops.map((part) => [Number(part[2]), part[1]]), selector: stack.at(-1) ?? "" });
+    }
+  };
+  for (const ch of source) {
+    if (ch === "{") {
+      const cut = buffer.lastIndexOf(";") + 1;
+      take(buffer.slice(0, cut));
+      stack.push(buffer.slice(cut).trim());
+      buffer = "";
+    } else if (ch === "}") {
+      take(buffer);
+      stack.pop();
+      buffer = "";
+    } else buffer += ch;
+  }
+  return found;
+}
+let nightSkies = 0;
 if (existsSync(skyCssPath)) {
   const skyCss = readFileSync(skyCssPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   let n = 0;
-  for (const m of skyCss.matchAll(/linear-gradient\(\s*(?:(?:180deg|to bottom)\s*,)?\s*([^()]*)\)/gi)) {
-    const stops = m[1].split(",").map((s) => /^\s*(#[0-9a-f]{3}(?:[0-9a-f]{3})?)\s+([\d.]+)%\s*$/i.exec(s));
-    if (stops.length < 2 || stops.some((s) => !s)) continue;
+  const night = [];
+  for (const g of gradients(skyCss)) {
+    if (NIGHT_RULE.test(g.selector)) {
+      night.push(g);
+      continue;
+    }
     n++;
     if (n === 1) section = "On the sky: gradients found in app/d/d-sky.css";
-    const worst = darkest(stops.map((s) => [Number(s[2]), s[1]]));
+    const worst = darkest(g.stops);
     const on = `d-sky.css gradient ${n}: ${worst.colour} at ${worst.at}%`;
     pair("ink", t.ink, on, worst.colour, "as above");
     pair("ink-soft", t["ink-soft"], on, worst.colour, "as above");
     pair("ink-mute", t["ink-mute"], on, worst.colour, "as above");
   }
+  nightSkies = night.length;
+  night.forEach((g, i) => {
+    if (i === 0) section = "At night: night skies found in app/d/d-sky.css, at their lightest point";
+    const light = lightest(g.stops);
+    const on = `night sky ${i + 1}: ${light.colour} at ${light.at}%`;
+    pair("moon", t.moon, on, light.colour, "as below");
+    pair("moon-soft", t["moon-soft"], on, light.colour, "as below");
+    pair("moon-mute", t["moon-mute"], on, light.colour, "as below");
+  });
 }
 
 section = "On the sky: other things text passes over";
@@ -264,6 +343,56 @@ pair("icon: calm-500", t["calm-500"], "surface", t.surface, "check marks in the 
 pair("icon: calm-600", t["calm-600"], "surface", t.surface, "icons in the detail sections", "mark");
 pair("icon: breeze-500", t["breeze-500"], "surface", t.surface, "info icons", "mark");
 
+// ── At night: what sits directly on the sky (d-night.css, d-sky.css "Night") ──────────
+
+const nightSkies4 = Object.entries(NIGHT_SKY).map(([scene, stops]) => ({ scene, ...lightest(stops) }));
+const palest = nightSkies4.reduce((a, b) => (b.lum > a.lum ? b : a));
+const midnight = t.midnight;
+
+section = "At night: on the sky, the lightest point of each scene's night air";
+for (const sky of nightSkies4) {
+  const on = `${sky.scene}: ${sky.colour} at ${sky.at}%`;
+  pair("moon", t.moon, on, sky.colour, "headlines, header links, the brand (ink re-pointed)");
+  pair("moon-soft", t["moon-soft"], on, sky.colour, "hero copy, sub-lines");
+  pair("moon-mute", t["moon-mute"], on, sky.colour, "counts, captions, the footer");
+}
+
+section = "At night: on the sky, other things text passes over";
+for (const [label, fill, alpha] of MOONLIT) {
+  // The worst scene: the cloud composited over each night air's lightest point, the lightest result kept.
+  const composites = nightSkies4.map((sky) => over(fill, alpha, sky.colour));
+  const worst = composites.reduce((a, b) => (luminance(b) > luminance(a) ? b : a));
+  const on = `${label} over the lightest air (${worst})`;
+  pair("moon", t.moon, on, worst, "words a moonlit cloud passes behind");
+  pair("moon-soft", t["moon-soft"], on, worst, "the same");
+  pair("moon-mute", t["moon-mute"], on, worst, "the same");
+}
+const homeLight = nightSkies4[0].colour;
+const hl = over(t.butter, 0.3, homeLight);
+pair("moon", t.moon, `highlighter (butter 30% over ${homeLight})`, hl, "a text link under the pointer or focus, on the sky");
+const navHover = over(t.moon, 0.14, midnight);
+pair("moon", t.moon, `header link hover (moon 14% over midnight)`, navHover, "a header link under the pointer");
+pair("moon", t.moon, `outline button hover (moon 10% over ${palest.colour})`, over(t.moon, 0.1, palest.colour), "Filters under the pointer");
+pair("moon", t.moon, `outline button press (moon 16% over ${palest.colour})`, over(t.moon, 0.16, palest.colour), "Filters while pressed");
+pair("brand ring: moon 40%", over(t.moon, 0.4, midnight), "midnight", midnight, "the edge of the ink brand tile", "mark");
+pair("focus ring: moon", t.moon, `the darkest night ${midnight}`, midnight, "keyboard focus on the sky", "mark");
+pair("focus ring: moon", t.moon, `the lightest night ${palest.colour}`, palest.colour, "keyboard focus on the sky", "mark");
+pair("sort tab outline: moon", t.moon, `the lightest night ${palest.colour}`, palest.colour, "SortTabs' focus outline", "mark");
+pair("pending note icon: moon", t.moon, `the lightest night ${palest.colour}`, palest.colour, "PendingNote's calendar on the sky", "mark");
+pair("outline button ring: moon", t.moon, `near cloud ${MOONLIT[2][1]}`, MOONLIT[2][1], "Filters' ring over a near cloud", "mark");
+// Paper by night: the unchosen date tiles and the compare footnote strip are paper at 90 % (C11), reverted to the day ink.
+const nightTile = over(t.surface, 0.9, midnight);
+pair("ink-soft", t["ink-700"], `night date tile (paper 90% over ${midnight})`, nightTile, "an unchosen day: date and fare");
+pair("ink-mute", t["ink-500"], `night date tile (paper 90% over ${midnight})`, nightTile, "an unchosen day: weekday and flight count");
+pair("ink-mute", t["ink-500"], `footnote strip (paper 90% over ${palest.colour})`, over(t.surface, 0.9, palest.colour), "the compare table's footnote");
+// A price keeps its day-level contrast by night, neither better nor worse: within 0.6 of the day's tile.
+const dayTile = over(t.surface, 0.6, deepest.colour);
+const tileDrift = [
+  ["fare and date (ink-soft)", contrast(t["ink-700"], nightTile), contrast(t["ink-700"], dayTile)],
+  ["weekday and count (ink-mute)", contrast(t["ink-500"], nightTile), contrast(t["ink-500"], dayTile)],
+];
+const TILE_DRIFT = 0.6;
+
 // ── Report ──────────────────────────────────────────────────────────────────────
 
 const NEEDS = { text: TEXT, large: LARGE, mark: MARK, apart: APART };
@@ -331,6 +460,40 @@ for (const name of [...Object.keys(palette), ...Object.keys(repointed)]) {
   if (h !== null && (h < HUE_MIN || h > HUE_MAX)) offHue.push(`--color-${name} ${colour} (hue ${h.toFixed(1)}°)`);
 }
 
+// Every colour written out in D's own stylesheets, data URIs decoded: hex and rgb() literals.
+const literals = [];
+for (const name of readdirSync(dDir).filter((f) => /^d-.*\.css$/.test(f)).sort()) {
+  const text = readFileSync(join(dDir, name), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/data:image\/svg\+xml,[^"')]*/g, (uri) => {
+      try {
+        return decodeURIComponent(uri);
+      } catch {
+        return uri.replace(/%23/gi, "#");
+      }
+    });
+  for (const m of text.matchAll(/#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})(?![\w-])/gi)) {
+    const h = m[1].length <= 4 ? m[1].slice(0, 3) : m[1].slice(0, 6);
+    literals.push({ name, colour: hex(rgb(h)) });
+  }
+  for (const m of text.matchAll(/rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/gi)) {
+    literals.push({ name, colour: hex([m[1], m[2], m[3]].map(Number)) });
+  }
+}
+const offLiteral = literals.filter((l) => {
+  const h = hue(l.colour);
+  return h !== null && (h < HUE_MIN || h > HUE_MAX);
+});
+
+console.log(`\nTile drift by night (paper 90% over midnight against the day's 60% tile; within ${TILE_DRIFT}):`);
+let drifted = 0;
+for (const [label, night, day] of tileDrift) {
+  const ok = Math.abs(night - day) <= TILE_DRIFT;
+  if (!ok) drifted++;
+  console.log(`  ${label}: night ${night.toFixed(2)}, day ${day.toFixed(2)}, ${night >= day ? "+" : ""}${(night - day).toFixed(2)} ${ok ? "pass" : "FAIL"}`);
+}
+console.log(`${nightSkies} night skies found in app/d/d-sky.css, checked at their lightest point.`);
+
 console.log(
   `\n${rows.length} pairs. Lowest text pair: ${lowest.fgLabel} on ${lowest.bgLabel} at ${show(lowest.ratio, TEXT)} : 1 (needs ${TEXT}).`,
 );
@@ -340,6 +503,13 @@ if (offHue.length) {
 } else {
   console.log(`Hues: all ${Object.keys(palette).length + Object.keys(repointed).length} tokens sit between ${HUE_MIN}° and ${HUE_MAX}°; none is red, pink or orange.`);
 }
+if (offLiteral.length) {
+  console.log(`Colours written in app/d/d-*.css outside ${HUE_MIN}° to ${HUE_MAX}°:`);
+  for (const l of offLiteral) console.log(`  ${l.name}: ${l.colour} (hue ${hue(l.colour).toFixed(1)}°)`);
+} else {
+  console.log(`Literals: all ${literals.length} colours written in app/d/d-*.css (data URIs decoded) are grey or between ${HUE_MIN}° and ${HUE_MAX}°.`);
+}
 if (failed) console.log(`${failed} ${failed === 1 ? "pair is" : "pairs are"} under the threshold.`);
-if (failed || offHue.length) process.exit(1);
+if (drifted) console.log(`${drifted} date tile ${drifted === 1 ? "ratio drifts" : "ratios drift"} more than ${TILE_DRIFT} from the day's.`);
+if (failed || offHue.length || offLiteral.length || drifted) process.exit(1);
 console.log("All pass.");
