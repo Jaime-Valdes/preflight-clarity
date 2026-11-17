@@ -113,6 +113,10 @@
   [data-theme="d"][data-d-time="night"] .d-loading-dashes > span {
     background-color: rgb(255 253 248 / 0.25);
   }
+  /* The home's flight line: the ink stroke stays, its white contrail dims to 55 % so it reads as moonlit, not lit. */
+  [data-theme="d"][data-d-time="night"] .d-home-trail {
+    stroke-opacity: 0.55;
+  }
   /* Selected text stays ink on butter, on the sky as on paper. */
   [data-theme="d"][data-d-time="night"] ::selection {
     background: var(--color-butter);

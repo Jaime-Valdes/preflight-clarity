@@ -11,9 +11,9 @@ import { DSkyCloud } from "@/components/d/sky/DSkyCloud";
  *
  * Decorative and out of reach: hidden from assistive technology, never focusable, and it takes no
  * taps. The sun is the sky's own drawing (.d-sun), placed in the page so it scrolls away with the
- * hero. On laptops a flat scenery cloud lies at its foot, behind the character, so the sun rises
- * from behind something (the sky's own clouds are a layer further back and cannot pass in front of
- * it). The outlined cloud is the page's stage cloud: while it is on screen the roaming companion
+ * hero; by night tonight's moon (.d-moon) rises in its place, and the bank below is moonlit. On
+ * laptops a flat scenery cloud lies at its foot, behind the character, so the sun rises from behind
+ * something (the sky's own clouds are a layer further back and cannot pass in front of it). The outlined cloud is the page's stage cloud: while it is on screen the roaming companion
  * stays away. Both flight lines are rendered; the stylesheet shows the one drawn for the current
  * arrangement.
  */
@@ -22,6 +22,7 @@ export function DHeroScene() {
     <div aria-hidden className="d-home-scene">
       <div className="d-home-stage">
         <div className="d-sun d-home-sun" />
+        <div className="d-moon d-home-moon" />
         <div className="d-home-bank">
           <DSkyCloud />
         </div>

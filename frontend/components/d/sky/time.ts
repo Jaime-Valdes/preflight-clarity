@@ -1,4 +1,5 @@
 /* eslint-disable no-var, @typescript-eslint/no-unused-vars -- `skyTimeAt` and `bootSky` are printed as ES5 (see below): `var`, and `catch (e)` with the binding. */
+import { moonPhaseCss } from "./moon";
 import { SKY_ZONES } from "./zones";
 
 /*
@@ -12,6 +13,7 @@ import { SKY_ZONES } from "./zones";
  * paints. So each is self-contained: it reads only its arguments and the browser's globals (Date, Intl, Math,
  * document), in ES5 (`var`, no arrow functions, no `?.` or `??`, no spread), so no compiler helper is pulled in.
  * Do not make either refer to anything else in this module, or the boot script breaks with a ReferenceError.
+ * The same holds for `unpackZones` below and for ./moon.ts's `moonPhaseCss`, which the script also prints.
  * `node frontend/scripts/d-sky-boot.mjs <server>` runs the script a server prints and checks it.
  */
 
@@ -65,10 +67,11 @@ export function skyTimeAt(now: number, zones: Zones): SkyTime {
 
 /**
  * The boot: runs as an inline script, the first child of the D root, before anything under it is parsed. Marks
- * the root, gives the browser bar its colour (a theme-color of D's own, ahead of the layout's), and colours
- * <html> and <body> until DScope takes over (React owns those two elements, so they are not touched directly).
+ * the root, gives the browser bar its colour (a theme-color of D's own, ahead of the layout's), colours <html> and
+ * <body> until DScope takes over (React owns those two elements, so they are not touched directly), and draws
+ * tonight's moon (`<style id="d-moon-phase">`, kept by the clock).
  */
-export function bootSky(decide: typeof skyTimeAt, zones: Zones, edge: Readonly<Record<SkyTime, string>>) {
+export function bootSky(decide: typeof skyTimeAt, zones: Zones, edge: Readonly<Record<SkyTime, string>>, moon: (now: number) => string) {
   var script = document.currentScript;
   var root = script && script.parentElement;
   if (!root) return;
@@ -95,11 +98,80 @@ export function bootSky(decide: typeof skyTimeAt, zones: Zones, edge: Readonly<R
     head.appendChild(style);
   }
   style.textContent = "html,body{background-color:" + edge[time] + "}";
+  var phase = document.getElementById("d-moon-phase");
+  if (!phase) {
+    phase = document.createElement("style");
+    phase.id = "d-moon-phase";
+    head.appendChild(phase);
+  }
+  try {
+    phase.textContent = moon(Date.now());
+  } catch (e) {
+    phase.textContent = "";
+  }
+}
+
+/*
+ * The zone table as the boot script carries it: the same places as SKY_ZONES, in less text (the page's HTML has a
+ * budget, docs/ui-d-cinematic.md section 11). Groups of entries separated by "|": a group starts with its common
+ * prefix alone ("America/"), then one entry per place, "<rest of the name> <latitude> <longitude>", followed by
+ * every other name in the table with exactly the same coordinates (aliases, written in full). `unpackZones` turns it
+ * back into the table, entry for entry: d-sky-boot.mjs checks the printed one equals zones.ts.
+ */
+function packZones(zones: Zones): string {
+  const places = new Map<string, { name: string; also: string[] }>();
+  for (const [name, at] of Object.entries(zones)) {
+    const key = at.join(" ");
+    const place = places.get(key);
+    if (place) place.also.push(name);
+    else places.set(key, { name, also: [] });
+  }
+  const groups = new Map<string, string[]>();
+  for (const [key, { name, also }] of places) {
+    const cut = name.lastIndexOf("/") + 1;
+    const prefix = name.slice(0, cut);
+    const entries = groups.get(prefix) ?? [];
+    entries.push([name.slice(cut), key, ...also].join(" "));
+    groups.set(prefix, entries);
+  }
+  return [...groups].map(([prefix, entries]) => [prefix, ...entries].join("|")).join("|");
+}
+
+/** The table back from `packZones`'s text. Printed into the boot script (ES5, self-contained). */
+export function unpackZones(packed: string): Zones {
+  var zones: Record<string, [number, number]> = {};
+  var prefix = "";
+  var entries = packed.split("|");
+  for (var i = 0; i < entries.length; i++) {
+    var parts = entries[i].split(" ");
+    if (parts.length < 3) {
+      prefix = parts[0];
+      continue;
+    }
+    var at: [number, number] = [+parts[1], +parts[2]];
+    zones[prefix + parts[0]] = at;
+    for (var j = 3; j < parts.length; j++) zones[parts[j]] = at;
+  }
+  return zones;
 }
 
 /** The boot script's source. Built once per module load (DScope's `SKY_BOOT`); DScope prints it while the server renders. */
 export function skyBootScript(): string {
-  return "(" + bootSky.toString() + ")(" + skyTimeAt.toString() + "," + JSON.stringify(SKY_ZONES) + "," + JSON.stringify(SKY_EDGE) + ")";
+  return (
+    "(" +
+    bootSky.toString() +
+    ")(" +
+    skyTimeAt.toString() +
+    ",(" +
+    unpackZones.toString() +
+    ")(" +
+    JSON.stringify(packZones(SKY_ZONES)) +
+    ")," +
+    JSON.stringify(SKY_EDGE) +
+    "," +
+    moonPhaseCss.toString() +
+    ")"
+  );
 }
 
 /** The state now, for DScope. */

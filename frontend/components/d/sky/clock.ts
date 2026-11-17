@@ -1,4 +1,5 @@
 import { transitionRunning, whenTransitionEnds } from "@/components/d/motion/motion";
+import { moonPhaseCss } from "./moon";
 import { SKY_EDGE, skyTimeNow, type SkyTime } from "./time";
 
 /*
@@ -9,7 +10,9 @@ import { SKY_EDGE, skyTimeNow, type SkyTime } from "./time";
  *   - `data-d-time` ("day" | "night") on the D root, which every night rule inside the page reads;
  *   - the same value on <html> (`html[data-d-time]`), for <html> and <body> themselves and the page transition's
  *     pseudo-elements. Always read together with `html[data-d-on]`, never alone;
- *   - D's own `<meta name="theme-color" data-d-time>`, first in <head>, so the browser's bar takes the top of the sky.
+ *   - D's own `<meta name="theme-color" data-d-time>`, first in <head>, so the browser's bar takes the top of the sky;
+ *   - tonight's moon, `<style id="d-moon-phase">` in <head> (./moon.ts): written when D arrives without the boot
+ *     script (a client-side arrival, a kept-alive return) and again only when the local date changes.
  *
  * On a hard load the boot script (time.ts, `bootSky`) has already marked the root, written D's meta and coloured
  * <html> and <body> with `<style id="d-time-boot">`. The clock copies the root's value instead of reading the clock
@@ -45,6 +48,22 @@ export function startSkyClock(root: HTMLElement): () => void {
   /** The <html> and meta write waiting for a page transition to end, and the check waiting likewise. */
   let edgesWait: (() => void) | undefined;
   let checkWait: (() => void) | undefined;
+  /** The local date the moon was drawn for. */
+  let moonDay = "";
+
+  /** Tonight's moon: kept as the boot script drew it on a hard load (unless `redraw`), drawn now otherwise. */
+  const drawMoon = (redraw: boolean) => {
+    moonDay = new Date().toDateString();
+    let phase = document.getElementById("d-moon-phase");
+    if (phase && !redraw) return;
+    if (!phase) {
+      phase = document.createElement("style");
+      phase.id = "d-moon-phase";
+      head.appendChild(phase);
+    }
+    const css = moonPhaseCss(Date.now());
+    if (phase.textContent !== css) phase.textContent = css;
+  };
 
   /** <html>'s mirror and the browser's bar. Called only when no page transition runs. */
   const paintEdges = (time: SkyTime) => {
@@ -74,6 +93,7 @@ export function startSkyClock(root: HTMLElement): () => void {
   const booted = boot ? asTime(root.getAttribute("data-d-time")) : null;
   settle(booted ?? skyTimeNow());
   boot?.remove();
+  drawMoon(false);
 
   const check = () => {
     if (checkWait) return;
@@ -84,6 +104,7 @@ export function startSkyClock(root: HTMLElement): () => void {
       });
       return;
     }
+    if (new Date().toDateString() !== moonDay) drawMoon(true);
     const next = skyTimeNow();
     const shown = root.getAttribute("data-d-time") === "night" ? "night" : "day";
     if (next === shown || root.hasAttribute("data-d-time-fade")) return;
@@ -117,5 +138,6 @@ export function startSkyClock(root: HTMLElement): () => void {
     if (html.hasAttribute("data-d-time")) html.removeAttribute("data-d-time");
     meta?.remove();
     meta = null;
+    document.getElementById("d-moon-phase")?.remove();
   };
 }

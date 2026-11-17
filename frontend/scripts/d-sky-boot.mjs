@@ -13,9 +13,17 @@
  * before the existing one, with the top of that sky's colour, in a spelling other than the existing meta's: see
  * SKY_EDGE in time.ts) and `<style id="d-time-boot">`. It also calls the
  * printed `skyTimeAt` directly, outside the boot's try/catch, so a compiler helper or any other name the printed
- * functions cannot reach shows up as a ReferenceError instead of a silent "day". Exit 1 on any mismatch or error.
- * Run it against `next dev` and against `next start`: the two compile the functions differently.
+ * functions cannot reach shows up as a ReferenceError instead of a silent "day".
+ *
+ * The zone table travels packed (time.ts, `packZones`); the printed `unpackZones` call must give back exactly the
+ * table in components/d/sky/zones.ts, entry for entry, so no answer changes. The moon (moon.ts, `moonPhaseCss`,
+ * printed too) is checked at six dates: `<style id="d-moon-phase">` either takes the moon out (near a new moon) or
+ * holds a picture whose lit part is read back from its path (the limb's side, the terminator's x-radius and side).
+ * Exit 1 on any mismatch or error. Run it against `next dev` and against `next start`: the two compile the
+ * functions differently.
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const base = (process.argv[2] || "http://localhost:3000").replace(/\/+$/, "");
@@ -122,7 +130,7 @@ function sandbox(c) {
   return { root, theirs, head, context: vm.createContext({ document, Date: FixedDate, Intl }) };
 }
 
-/** The printed call is `(bootSky)(skyTimeAt, zones, edge)`: the second and third pieces, for the direct call. */
+/** The printed call is `(bootSky)(skyTimeAt, (unpackZones)(packed), edge, moonPhaseCss)`: its pieces, for the direct calls. */
 let acorn = null;
 try {
   acorn = await import("acorn");
@@ -143,7 +151,7 @@ let failed = 0;
 for (const c of CASES) {
   const problems = [];
   let direct = "";
-  if (pieces && pieces.length === 3) {
+  if (pieces && pieces.length === 4) {
     const { context } = sandbox(c);
     try {
       const decide = vm.runInContext(`(${pieces[0]})`, context);
@@ -177,5 +185,101 @@ for (const c of CASES) {
   if (problems.length) failed++;
   console.log(`  ${problems.length ? "FAIL" : "ok  "} ${c.name}: ${time}${ours ? `, meta ${ours.content}` : ""}${style ? `, ${style.textContent}` : ""}${problems.length ? `  <- ${problems.join("; ")}` : ""}`);
 }
-console.log(failed ? `d-sky-boot: ${failed} of ${CASES.length} cases failed` : `d-sky-boot: all ${CASES.length} cases pass`);
+if (pieces && pieces.length !== 4) {
+  failed++;
+  console.log(`  FAIL the printed call has ${pieces.length} arguments, not 4 (skyTimeAt, the zones, the edge colours, moonPhaseCss)`);
+}
+
+// ── The zone table: the printed one is zones.ts's, entry for entry ──
+let tableOk = !pieces;
+if (pieces && pieces.length === 4) {
+  const ts = readFileSync(fileURLToPath(new URL("../components/d/sky/zones.ts", import.meta.url)), "utf8");
+  const want = new Function(`return ${ts.slice(ts.indexOf("{", ts.indexOf("export const SKY_ZONES")), ts.lastIndexOf("}") + 1)}`)();
+  const { context } = sandbox(CASES[0]);
+  let got = {};
+  try {
+    got = vm.runInContext(`(${pieces[1]})`, context);
+  } catch (e) {
+    console.log(`  FAIL the printed zone table threw ${e && e.name}: ${e && e.message}`);
+  }
+  const names = Object.keys(want);
+  const wrong = names.filter((z) => !Array.isArray(got[z]) || got[z].length !== 2 || got[z][0] !== want[z][0] || got[z][1] !== want[z][1]);
+  const extra = Object.keys(got).filter((z) => !(z in want));
+  tableOk = wrong.length === 0 && extra.length === 0;
+  if (!tableOk) failed++;
+  console.log(
+    `  ${tableOk ? "ok  " : "FAIL"} the printed zone table equals zones.ts: ${names.length} zones, ${pieces[1].length} characters printed` +
+      (tableOk ? "" : `; differ: ${wrong.slice(0, 6).join(", ")}; extra: ${extra.slice(0, 6).join(", ")}`),
+  );
+}
+
+// ── The moon: tonight's phase at six dates ──
+/** Expected: none (no moon), or the lit share's range, its side ("right" waxing, "left" waning), crescent or not. */
+const MOONS = [
+  { at: "2026-11-09T12:00:00Z", want: "no moon", none: true },
+  { at: "2026-11-13T00:00:00Z", want: "waxing crescent, 6-14 % lit, lit on the right", lit: [0.06, 0.14], side: "right", crescent: true },
+  { at: "2026-11-17T12:00:00Z", want: "40-60 % lit, waxing", lit: [0.4, 0.6], side: "right" },
+  { at: "2026-11-24T12:00:00Z", want: "95 % lit or more", lit: [0.95, 1] },
+  { at: "2026-12-01T12:00:00Z", want: "40-60 % lit, lit on the left", lit: [0.4, 0.6], side: "left" },
+  { at: "2026-12-05T12:00:00Z", want: "waning crescent", side: "left", crescent: true },
+];
+/** Reads the lit part back from the picture's path: M0-1 A1 1 0 0 <limb> 0 1 A<k> 1 0 0 <terminator> 0-1Z. */
+function readMoon(css) {
+  if (/^\.d-moon\{display:none!important\}$/.test(css)) return { none: true };
+  const uri = /^\.d-moon\{--d-moon-phase:url\("data:image\/svg\+xml,([^"]*)"\)\}$/.exec(css);
+  if (!uri) return { error: `unexpected style ${JSON.stringify(css.slice(0, 80))}` };
+  const svg = decodeURIComponent(uri[1]);
+  // Well formed: every element opened is closed, in order.
+  const stack = [];
+  for (const m of svg.matchAll(/<(\/?)([a-zA-Z]+)[^>]*?(\/?)>/g)) {
+    if (m[1]) {
+      if (stack.pop() !== m[2]) return { error: `the picture is not well formed at </${m[2]}>` };
+    } else if (!m[3]) stack.push(m[2]);
+  }
+  if (stack.length) return { error: `the picture leaves <${stack.join("><")}> open` };
+  const path = /d='M0-1A1 1 0 0 ([01]) 0 1A([0-9.]+) 1 0 0 ([01]) 0-1Z'/.exec(svg);
+  if (!path) return { error: "no lit path in the picture" };
+  const limb = +path[1];
+  const k = +path[2];
+  const crescent = +path[3] !== limb;
+  return { side: limb ? "right" : "left", k, crescent, lit: crescent ? (1 - k) / 2 : (1 + k) / 2, bytes: svg.length };
+}
+for (const m of MOONS) {
+  const c = { zone: "America/New_York", at: m.at, jan: 300, jul: 240 };
+  const problems = [];
+  const { head, context } = sandbox(c);
+  let direct = "";
+  try {
+    vm.runInContext(src, context);
+  } catch (e) {
+    problems.push(`the script threw ${e && e.name}: ${e && e.message}`);
+  }
+  if (pieces && pieces.length === 4) {
+    try {
+      direct = vm.runInContext(`(${pieces[3]})`, sandbox(c).context)(Date.parse(m.at));
+    } catch (e) {
+      problems.push(`moonPhaseCss threw ${e && e.name}: ${e && e.message}`);
+    }
+  }
+  const style = head.children.find((n) => n.id === "d-moon-phase");
+  const css = style ? style.textContent : "";
+  if (!style) problems.push("no #d-moon-phase");
+  else if (pieces && pieces.length === 4 && direct !== css) problems.push("the boot's style differs from moonPhaseCss's");
+  const got = readMoon(css);
+  if (got.error) problems.push(got.error);
+  else if (m.none) {
+    if (!got.none) problems.push("a moon is drawn");
+  } else if (got.none) problems.push("no moon");
+  else {
+    if (m.lit && (got.lit < m.lit[0] || got.lit > m.lit[1])) problems.push(`${(got.lit * 100).toFixed(1)} % lit`);
+    if (m.side && got.side !== m.side) problems.push(`lit on the ${got.side}`);
+    if (m.crescent !== undefined && got.crescent !== m.crescent) problems.push(got.crescent ? "a crescent" : "not a crescent");
+  }
+  if (problems.length) failed++;
+  const said = got.none ? "no moon" : got.error ? "?" : `${(got.lit * 100).toFixed(1)} % lit, lit on the ${got.side}, ${got.crescent ? "crescent" : "quarter to gibbous"} (k ${got.k}; picture ${got.bytes} characters)`;
+  console.log(`  ${problems.length ? "FAIL" : "ok  "} moon ${m.at.slice(0, 16)}Z, want ${m.want}: ${said}${problems.length ? `  <- ${problems.join("; ")}` : ""}`);
+}
+
+const total = CASES.length + MOONS.length + (pieces ? 1 : 0);
+console.log(failed ? `d-sky-boot: ${failed} of ${total} checks failed` : `d-sky-boot: all ${total} checks pass (${CASES.length} looks, the zone table, ${MOONS.length} moons)`);
 process.exit(failed ? 1 : 0);

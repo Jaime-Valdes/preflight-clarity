@@ -55,6 +55,9 @@ const MOONLIT = [
   ["near clouds c, d #44508C", "#44508C", 1],
   ["deck back #3A4682", "#3A4682", 1],
   ["deck front #44508C", "#44508C", 1],
+  ["the home hero's bank #44508C", "#44508C", 1, "the hero's words over its moonlit bank"],
+  // The moon's halo (app/d/d-sky.css, .d-moon): its brightest ring, cool moonlight at 16 %, outside the disc.
+  ["the moon's halo #E2E8FF at 16%", "#E2E8FF", 0.16, "words beside the moon (never on its disc)"],
 ];
 
 // ── Colour maths (sRGB, WCAG 2.x relative luminance) ────────────────────────────
@@ -358,12 +361,12 @@ for (const sky of nightSkies4) {
 }
 
 section = "At night: on the sky, other things text passes over";
-for (const [label, fill, alpha] of MOONLIT) {
+for (const [label, fill, alpha, where = "words a moonlit cloud passes behind"] of MOONLIT) {
   // The worst scene: the cloud composited over each night air's lightest point, the lightest result kept.
   const composites = nightSkies4.map((sky) => over(fill, alpha, sky.colour));
   const worst = composites.reduce((a, b) => (luminance(b) > luminance(a) ? b : a));
   const on = `${label} over the lightest air (${worst})`;
-  pair("moon", t.moon, on, worst, "words a moonlit cloud passes behind");
+  pair("moon", t.moon, on, worst, where);
   pair("moon-soft", t["moon-soft"], on, worst, "the same");
   pair("moon-mute", t["moon-mute"], on, worst, "the same");
 }

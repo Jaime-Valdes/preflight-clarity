@@ -132,8 +132,18 @@ band low down as a moonlit glow, compare's horizon is the bluest.
 | flight | #0E1838 0%, #14204D 40%, #1B285C 75%, #212D65 100% |
 | compare | #0E1838 0%, #192457 36%, #212B66 60%, #253274 80%, #203A84 100% |
 
-Moonlit clouds: far #5D69A1, mid #4B5790, near #44508C; the deck's back and front bands #3A4682 and #44508C
-(compare's butter deck has no night version). Each is lighter than the air behind it and darker than any word on it.
+Moonlit clouds: far #5D69A1, mid #4B5790, near and the home hero's bank #44508C; the deck's back and front bands
+#3A4682 and #44508C (compare's butter deck has no night version). Each is lighter than the air behind it and darker
+than any word on it.
+
+**Stars and the moon.** A star field over the top 78 % of the sky: two tiles of faint stars (0.5 to 1.3 px, at most
+0.9 opacity) in #FFF8E6, #FFEFC2 and #E9EEFF, about 45 on a phone and 180 on a laptop; eight of them, #FFF8E6 dots of
+2 to 2.6 px, twinkle now and then (section 4). The moon takes the sun's place: a cream disc (#FFFBEE at the centre,
+#FBF4DC, #F3EBCD at the edge; hues 43° to 47°) with three soft seas (#DED6BA at 55 to 75 %), lit as tonight's moon is
+lit; the rest of the disc is moon white at 8 % (earthshine). Around it a cool halo, #E2E8FF at 16 % at the disc's edge
+fading through #D6E0FF at 7 % to nothing: a pale blue glow on the night air, never grey. Text never sits on the disc
+(moon on cream is about 1.2 : 1): the sky's moon is out of the frame on phones and tablets, in a corner on laptop
+results, in the right gutter beside the boarding pass and on compare; the hero's moon has no text over it.
 
 **Only what sits directly on the sky changes; paper does not.** Cards, ratings, prices, chips and controls look
 exactly as by day (pixel-identical, checked). The mechanism is one re-point and one revert (`app/d/d-night.css`, see
@@ -153,9 +163,10 @@ needs a rule of its own. The rest, by night:
 - `html` and `body` take `midnight` (the overscroll at both ends and Safari's bar tint), and D's theme colour is
   #0E1838.
 
-Lowest night pairs (`d-contrast.mjs`, "At night"): `moon-mute` on the mid cloud over compare's horizon 4.81 : 1 and on
-the far cloud 4.82 : 1; `moon` on the highlighter 5.21 : 1; the brand ring against midnight 3.73 : 1 (a mark). The
-night airs at their lightest point give 7.05 : 1 or more for `moon-mute`.
+Lowest night pairs (`d-contrast.mjs`, "At night"): `moon-mute` beside the moon, on its halo over compare's lightest
+air, 4.71 : 1; on the mid cloud over compare's horizon 4.81 : 1 and on the far cloud 4.82 : 1; on the hero's moonlit
+bank 5.09 : 1; `moon` on the highlighter 5.21 : 1; the brand ring against midnight 3.73 : 1 (a mark). The night airs
+at their lightest point give 7.05 : 1 or more for `moon-mute`.
 
 Rulings from the foundation review:
 
@@ -365,7 +376,7 @@ flat scenery cloud.
 
 Pass 4, the owner's request: "have it be day during the day, and night-time with stars at night". This subsection
 covers when it is night, how the page knows and what changes in the sky; the night's colours are in section 2, "By
-night". (The stars and the moon follow in a later step.)
+night".
 
 - **The rule.** Night is when the sun is more than 6° below the horizon (the end of civil twilight, when the first
   stars come out) where the visitor probably is; the same line in the morning. New York on 12 November 2026: civil
@@ -384,17 +395,21 @@ night". (The stars and the moon follow in a later step.)
 - **The first frame.** The pages are static shells, so the server cannot know the visitor's clock. `DScope` (the
   root's first child, which rendered nothing before) prints the boot script while the server renders and while that
   HTML hydrates, and nothing after (`useSyncExternalStore` with a server snapshot of `true`): a script React creates
-  on the client never runs, and the 7 KB of text does not stay in the DOM. It is DScope's own output and not a new
+  on the client never runs, and the 6 KB of text does not stay in the DOM. It is DScope's own output and not a new
   child of the root, because a new sibling would renumber every server-rendered React id under the root, which
-  autocapture records. The string is built in DScope's module (`skyBootScript()`, the source of `bootSky` and
-  `skyTimeAt` with the zone table), not passed from the layout, so the HTML carries it once and not again in the RSC
-  payload. As the root's first child the script runs after the head's stylesheets and before anything of the page
+  autocapture records. The string is built in DScope's module (`skyBootScript()`, the source of `bootSky`,
+  `skyTimeAt`, the zone table and `moonPhaseCss`), not passed from the layout, so the HTML carries it once and not
+  again in the RSC payload. The table travels packed (`packZones` in `time.ts`): entries grouped under their common
+  prefix (`America/`), each place once with every other name that has exactly its coordinates after it, and the
+  printed `unpackZones` turns it back into the same table entry for entry (`d-sky-boot.mjs` checks the printed one
+  against `zones.ts`, so no answer changes); about 2 KB less than the table written out. As the root's first child the script runs after the head's stylesheets and before anything of the page
   is parsed, so before the first paint. It sets `data-d-time` on the root, inserts D's theme-color meta (section 3)
   and adds `<style id="d-time-boot">html,body{background-color:…}</style>` to `<head>` for the overscroll until
-  hydration. It never touches `<html>` or `<body>` themselves: an attribute set on either before hydration is a
+  hydration, and `<style id="d-moon-phase">` with tonight's moon (below), so the moon is right in the first frame. It never touches `<html>` or `<body>` themselves: an attribute set on either before hydration is a
   hydration error. Any exception leaves day. The root has `suppressHydrationWarning` (React then keeps the
-  attribute the script set); the root layout's `<html>` has none. `bootSky` and `skyTimeAt` are ES5 and read only
-  their arguments and browser globals, because their compiled source is what is printed;
+  attribute the script set); the root layout's `<html>` has none. `bootSky`, `skyTimeAt`, `unpackZones` and
+  `moonPhaseCss` are ES5 and read only their arguments and browser globals, because their compiled source is what is
+  printed;
   `node frontend/scripts/d-sky-boot.mjs <server>` runs the printed script in `node:vm` and checks it.
 - **The clock** (`components/d/sky/clock.ts`, `startSkyClock(root)`, started by DScope's layout effect after it sets
   `data-d-on`). On a hard load (the boot style is still there) it copies the root's value to `<html>` and the meta
@@ -402,8 +417,9 @@ night". (The stars and the moon follow in a later step.)
   a client-side arrival from another version, or a return to the kept-alive layout, it decides now and writes the
   root first, before the browser paints, with no fade. It looks again every 60 s, on `visibilitychange` to visible
   and on `pageshow` (the back-forward cache); a check is a few lines of arithmetic and writes nothing unless the
-  look changed. Its cleanup ends a fade cut short at its target, and removes `data-d-time-fade`, `html[data-d-time]`
-  and D's meta; the root keeps its value. Every write happens only when the value differs.
+  look changed. It keeps the boot's moon, draws it itself on an arrival without the boot script, and draws it again
+  only when the local date changes. Its cleanup ends a fade cut short at its target, and removes `data-d-time-fade`,
+  `html[data-d-time]`, D's meta and `#d-moon-phase`; the root keeps its value. Every write happens only when the value differs.
 - **The live flip.** A change found while the tab is hidden, or under reduced motion, is applied at once. Otherwise,
   at most once in 15 minutes (so a sky grazing −6° cannot blink): the root gets `data-d-time-fade="night" | "day"`
   (the sky's 4 s cross-fade), at 2 s its `data-d-time` changes (the words on the sky swap at the fade's steepest
@@ -414,18 +430,46 @@ night". (The stars and the moon follow in a later step.)
   way changes the root on time (the page being covered does not mind), but `html[data-d-time]` and the theme colour
   change only after the transition has ended, so the running transition's pseudo-elements are never restyled
   mid-sweep. Since `<html>` carries the mirror from hydration on, it is set before any transition can start.
-- **What changes in the sky.** The four airs, the clouds and the deck turn to moonlight and the sun (the sky's and
-  the hero's) is not drawn. No box is added for it: the server's HTML has no room left (the boot script took the
-  pass's budget), so the night lives in `app/d/d-sky.css` ("Night"). At rest by night the day's own boxes take the
-  night's colours (each air its night gradient, each cloud and deck band a night `fill`), and the butter deck and
-  the suns leave the render tree, so the night draws as many boxes as the day. Only while `data-d-time-fade` is on
-  the root (4.2 s) does each air, cloud and deck band carry a moonlit copy as its `::after` (the night gradient, or
-  the same shape as a data-URI SVG in the night fill; keep the shapes in step with `DSkyCloud.tsx`) over its day
-  drawing, which fades in over 4 s (`cubic-bezier(0.8, 0, 0.2, 1)`) going to night and out going to day; the sun
-  sets in the first 1.6 s or rises in the last. Opacity only, and animations rather than transitions, so a copy
-  that has just been made starts from its first frame. Each ends in its rest state before the mark comes off, so
-  nothing jumps. The copies travel and scale with their drawings (they are inside the same boxes) and are not
-  paused by a page transition (none starts during one). Through the fade, 12 px muted text on the sky dips under
+- **What changes in the sky.** The four airs, the clouds, the deck and the hero's bank turn to moonlight, stars
+  come out, and tonight's moon takes the place of the sun (the sky's and the hero's), which is not drawn. Few boxes
+  are added for it, because the server's HTML has a budget (the boot script took most of the pass's, section 11):
+  the night lives in `app/d/d-sky.css` ("Night"). At rest by night the day's own boxes take the night's colours (each
+  air its night gradient, each cloud, deck band and the hero's bank a night `fill`), and the butter deck and the
+  suns leave the render tree. The new elements are the moon (`.d-moon` in the sun's box in the sky,
+  `.d-home-moon` right after `.d-home-sun` in the hero) and the eight twinkles (`.d-sky-tw`, eight `<i>`, after the
+  airs); none sits under an element that holds form controls or labelled elements, and by day all are
+  `display: none`. Only while `data-d-time-fade` is on the root (4.2 s) does each air carry a night copy as its
+  `::before`, and each cloud, deck band and the hero's bank a moonlit copy as its `::after` (the same shape as a
+  data-URI SVG in the night fill; keep the shapes in step with `DSkyCloud.tsx`), over its day drawing, which fades
+  in over 4 s (`cubic-bezier(0.8, 0, 0.2, 1)`) going to night and out going to day; the sun sets in the first 1.6 s
+  or rises in the last, and the moon comes up from 1.4 s to 3 s (going to day it sets in the first 1.6 s); the stars
+  and twinkles come out from 2 s to 4 s and go with the night at dawn. Opacity only, and animations rather than
+  transitions, so a copy that has just been made starts from its first frame. Each ends in its rest state before
+  the mark comes off, so nothing jumps; the hero's sun and moon keep their sunrise first in their animation list, so
+  neither rises again then. The copies travel and scale with their drawings (they are inside the same boxes) and
+  are not paused by a page transition (none starts during one).
+- **Stars.** The field is each air's `::after` by night (two SVG tiles from the pass-4 sky designer's seeded
+  generator, `tile(360, 18, 9)` and `tile(560, 12, 21, 60)`, offset so their repeats never line up; top 78 % of the
+  sky, none near the horizon or the deck). It never moves; clouds and the moon pass in front of it.
+- **Twinkles.** Eight stars at the edges and the top (left %, top %: 3 14, 6 41, 34 4, 48 2.5, 84 9, 94 12, 97 36,
+  91 58; the third and fifth moved from the sky spec's 22 4 and 74 3.5, which touched "Cloud9" and "Compare" on a
+  phone), each at least 12 px from every header word and icon at 390 × 844, 375 × 667, 820 × 1180, 1440 × 900 and
+  1470 × 956. Each dips once, to 30 % and back over 2.3 to 3.4 s, in a long iteration of its own (23, 31, 27, 34,
+  24.5, 29, 32, 25.5 s, started 4.15 s apart), opacity only: one dips somewhere every 3 to 4 s. Long iterations on
+  purpose: each iteration boundary of a CSS animation costs Chrome a main-thread style update even when the
+  animation runs on the compositor. They pause during a page transition (the travel's rule, `.d-sky-tw > i`) and
+  do not run under reduced motion (the stars are still there, still).
+- **Tonight's moon** (`components/d/sky/moon.ts`, `moonPhaseCss(now)`). Its real phase from the date alone: the age
+  since a known new moon (2000-01-06 18:14 UTC) in mean synodic months of 29.530588853 days (up to about 0.6 day off
+  the true phase; no network, no library). Within 1.5 days of a new moon there is no moon, only stars. Otherwise the
+  lit part, in a disc of radius 1, is the half-disc on the lit side (the right while waxing, the left while waning,
+  as seen from the northern hemisphere) less or plus a half-ellipse of x-radius |cos φ| (φ the phase angle): a
+  crescent while cos φ > 0, gibbous after. It is an SVG data URI (the cream disc and its seas clipped to the lit
+  part, the rest earthshine) in a custom property, `.d-moon{--d-moon-phase:url("data:…")}`, written into
+  `<style id="d-moon-phase">` in `<head>` by the boot script and by the clock (an attribute or inline style on the
+  root would ride in every autocaptured click's `elements_chain`); near a new moon the style is
+  `.d-moon{display:none!important}` instead. `.d-moon` paints it as a centred 61 % layer over its halo. Drawn
+  statically: nothing about the moon animates except the fade at dusk and dawn and the hero's sunrise. Through the fade, 12 px muted text on the sky dips under
   4.5 : 1 for about 0.5 to 1.4 s, once at dusk and once at dawn, and only for a visitor on the page at that minute.
 - **Replay and analytics.** A flip is 5 records on 3 nodes (the fade mark on, the root, `<html>`, the meta, the fade
   mark off); an arrival is up to 3. Nothing else is written on `<html>`, and no custom property ever is. The look is
@@ -602,8 +646,10 @@ Hover styles sit inside `@media (hover: hover) and (pointer: fine)`. Press feedb
 action is never deferred. Nothing overshoots in position, nothing loops beside text, nothing shakes.
 
 At rest, the sky's travel and the clouds' blink keep the compositor drawing 60 frames a second on every screen, with no
-main-thread work (no layout, no paint). That is accepted: the sky is meant to be alive. If phone battery ever matters,
-pause both after the 6 s without input that `idle.ts` already detects.
+main-thread work (no layout, no paint). By night the eight twinkles join them (23 to 34 s iterations, opacity only;
+a Chrome trace of 3 s at rest on results and flight shows no paint and no style update). Every endless loop in the
+sky has an iteration of 20 s or more. That is accepted: the sky is meant to be alive. If phone battery ever matters,
+pause them after the 6 s without input that `idle.ts` already detects.
 
 Also in the kit: `ringFrom(el)` (the one soft royal ring that leaves a control, for pick and withdraw alike),
 `flyToTray(control)` / `flyFromTray(index, control)` in `motion/tray.ts`, the classes `.d-chip`, `.d-row` (the only
@@ -673,11 +719,16 @@ What each screen must end up with:
 
 By night (section 2, "By night"), on every screen: the header's words, the footer and every word directly on the sky
 are moonlight; the cards, the boarding pass, the table, the tray, sheets, notices and the date tiles are paper with
-the day ink. Home: the h1, the wordmark and its copy are moon and moon-soft, the swash stays gold, the progress dashes
-moon and slate, no sun. Results: the count, the date strip's caption and the sort note are moon-mute, the date tiles
+the day ink. Stars over the upper sky on every screen, eight of them twinkling at the edges and the top. Home: the
+h1, the wordmark and its copy are moon and moon-soft, the swash stays gold, the progress dashes moon and slate; in
+the hero tonight's moon (`.d-home-moon`, placed and rising exactly as the sun, the same size of box) instead of the
+sun, the laptop's bank moonlit, and the flight line's white contrail at 55 % (the ink stroke stays). Results: the count, the date strip's caption and the sort note are moon-mute, the date tiles
 paper at 90 %, "Filters" a moon outline with moon veils; loading shows "Checking the skies…" in moon. Flight: "All
 flights", "Rated for you" and "Other flights this day" in moon, the back link's highlighter butter at 30 %. Compare:
-the title and its notes in moon and moon-mute, the footnote under the table on paper at 90 %.
+the title and its notes in moon and moon-mute, the footnote under the table on paper at 90 %. The sky's moon is where
+the sun would be: out of the frame on phones and tablets and on the home, a corner on laptop results from 1200 px
+(while waxing the lit side is the one outside the frame, so the corner shows the earthshine and the halo), beside
+the boarding pass and half behind the deck on compare from 1400 px. Within 1.5 days of a new moon there is none.
 
 Accepted as built after the review (choices the screen builders made beyond this brief): on compare, the gold badge
 on the Ratings band, the proximity snap of the sideways scroll, the label column's badge stamp, the row wash under a
@@ -723,7 +774,15 @@ Run from the repo root:
   `next start` of the build: runs the boot script the server prints in `node:vm` for eight zones and moments (New
   York at night, noon and either side of dusk, UTC, an unknown zone, Anchorage's midsummer midnight, London's
   winter evening) and checks the root's attribute, D's meta and the boot style; a compiler helper in the printed
-  functions shows as a ReferenceError.
+  functions shows as a ReferenceError. It also checks that the printed, packed zone table unpacks to exactly
+  `zones.ts`, and tonight's moon at six dates (none near the new moon of 9 November 2026, a waxing crescent lit on
+  the right, a first quarter, a full moon, a last quarter lit on the left, a waning crescent), reading the lit share
+  and side back from the picture's path.
+- The HTML budget: `/d`'s server HTML (curl, `?test=1`) is at most `main`'s + 8 KB raw and + 4 KB gzip, and the zone
+  table is printed once (its packed New York entry, `New_York 40.7 -74 …`, occurs once; never again, escaped, in the
+  RSC payload). The gzip figure was + 3 KB until pass 4's night scenery (decision 15 of the pass: the zone table was
+  packed first, the stars are pseudo-elements, and the moon's picture is drawn by the boot script so it is right in
+  the first frame; that still left about 0.4 KB over).
 - `node frontend/scripts/d-hooks.mjs`: every piece of shared markup a D rule or handler finds by class string, label,
   id or nesting is still there (otherwise version C's colours come back under D without any error).
   `D_HOOKS_ROOT=<dir>` (or `--root <dir>`) reads a shared file from a copy under `<dir>` to try a change first;

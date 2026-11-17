@@ -27,7 +27,9 @@ never set the theme and must render pixel-identically after any change here.
   it for the layout's own meta; the contract's section 3) and removed when the layout is hidden or unmounted, so C
   gets its own colour back; nothing writes into the layout's or C's meta. On a hard load, until
   DScope's effect runs, also `<style id="d-time-boot">html,body{background-color:…}</style>` (the overscroll before
-  hydration; the boot script may not touch `<html>` or `<body>`).
+  hydration; the boot script may not touch `<html>` or `<body>`). And `<style id="d-moon-phase">` (tonight's moon:
+  one rule on `.d-moon`, a class only D renders, so it styles nothing outside D), written by the boot script or the
+  sky's clock and removed with D's meta.
 - **Tokens, in `frontend/app/globals.css`, in the part headed "Version D theme".**
   - A second `@theme static` block holds D-only names (`sky`, `royal`, `gold`, `butter`, `cream`, `leaf`, `sun`,
     `amber`, `ink`, `slate` and their steps) and the one D entrance, `--animate-d-rise`. `static` makes Tailwind emit

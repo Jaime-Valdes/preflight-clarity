@@ -21,6 +21,11 @@ import { skyFramesPage, skySceneFor } from "./scene";
  * The clouds and the deck travel slowly from left to right, for ever (the owner's request). The
  * sun never travels.
  *
+ * By night (data-d-time on the D root; docs/ui-d-cinematic.md, "Day and night") the same boxes are
+ * drawn in moonlight, the airs carry the star field (a pseudo-element, no element of its own), eight
+ * stars twinkle now and then, and tonight's moon (its phase is a style the boot script and the sky's
+ * clock write in <head>) takes the sun's place. By day the twinkles and the moon are not drawn.
+ *
  * The boxes around each drawing have one job each (see the stylesheet): d-sky-at (d-sky-deck for
  * the deck), a child of the root carrying the sprite's name, which the scenes place, takes the
  * scene position (translate, opacity; for the sun and the deck also scale) and the pointer
@@ -51,8 +56,21 @@ export function DSky() {
       <div className="d-sky-air d-sky-air-flight" />
       <div className="d-sky-air d-sky-air-compare" />
 
+      {/* By night: eight stars that twinkle now and then, at the edges and the top (the stylesheet places them). */}
+      <div className="d-sky-tw">
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+      </div>
+
       <div className="d-sky-at d-sky-sun">
         <div className="d-sun" />
+        <div className="d-moon" />
       </div>
 
       {/* Far, mid, then the two near clouds. */}

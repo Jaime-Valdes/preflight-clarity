@@ -101,8 +101,9 @@
    diameter. Here that is a share of the stage's width, so the sun keeps its place in the picture at
    every size; the box is 1.44 times the disc and is placed by its centre. z-index -1 puts it with the
    sky, behind every word and card on the page (the header's links, the setup card below), and after
-   the sky's clouds because it comes later in the page. */
-[data-theme="d"] .d-home-sun {
+   the sky's clouds because it comes later in the page. By night tonight's moon (.d-moon, also the sky's
+   drawing, the same size of box) takes the same place and rises the same way; one of the two is drawn. */
+[data-theme="d"] :is(.d-home-sun, .d-home-moon) {
   --d-sun: 46.94%;
   position: absolute;
   z-index: -1;
@@ -113,7 +114,7 @@
   margin: calc(var(--d-sun) * -0.72) 0 0 calc(var(--d-sun) * -0.72);
 }
 @media (min-width: 1024px) {
-  [data-theme="d"] .d-home-sun {
+  [data-theme="d"] :is(.d-home-sun, .d-home-moon) {
     --d-sun: 65.43%;
     left: 58.6%;
   }
@@ -137,7 +138,7 @@
 }
 /* A visitor's own contrast colours, and paper: the sky steps aside (d-sky.css), and so do its sun and cloud here. */
 @media (forced-colors: active), print {
-  [data-theme="d"] .d-home-sun,
+  [data-theme="d"] :is(.d-home-sun, .d-home-moon),
   [data-theme="d"] .d-home-bank {
     display: none;
   }
@@ -201,7 +202,7 @@
  * afterwards. It plays again when the kept-alive page is shown again, which is fine for scenery.
  */
 @media (prefers-reduced-motion: no-preference) {
-  [data-theme="d"] .d-home-sun {
+  [data-theme="d"] :is(.d-home-sun, .d-home-moon) {
     animation: d-home-sunrise 1400ms var(--d-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) backwards;
   }
   .d-home-cloud {
@@ -232,7 +233,7 @@
 
   /* Arriving by the plane wipe, the scene holds its first frame until the ribbon has crossed, so the
      sequence is seen whole and not half under the old page. The words are not held. */
-  html[data-d-on]:active-view-transition :is(.d-home-sun, .d-home-cloud, .d-home-route, .d-home-trail, .d-home-plane, .d-home-swash) {
+  html[data-d-on]:active-view-transition :is(.d-home-sun, .d-home-moon, .d-home-cloud, .d-home-route, .d-home-trail, .d-home-plane, .d-home-swash) {
     animation-play-state: paused;
   }
 }
