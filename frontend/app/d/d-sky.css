@@ -1,6 +1,8 @@
 /*
  * Version D — d-sky (docs/ui-d-cinematic.md, "The sky"). Plain CSS, loaded by app/d/layout.tsx.
- * Every selector starts with a .d-sky… or .d-sun class that only D renders (components/d/sky/).
+ * Every selector starts with a .d-sky… or .d-sun class that only D renders (components/d/sky/), but
+ * one: the rule that holds the travel still during a page transition starts at html[data-d-on]
+ * (DScope), like every such rule in these partials.
  *
  * One fixed sky behind every /d page. A page is a camera position in it: DSky sets
  * data-scene="home | results | flight | compare" and every sprite reads its place for that
@@ -9,28 +11,38 @@
  * Each sprite is nested boxes, one job, or one property, each, so no two effects fight over one:
  *   .d-sky-at     the scene box, a child of the root, carrying the sprite's name (.d-sky-sun,
  *                 .d-sky-a … .d-sky-d) so the scenes set their places on it: where the scene puts
- *                 it (translate, scale, opacity; a transition) and the pointer parallax (transform
- *                 from --d-sky-px / --d-sky-py; a transition). .d-sky-deck for the deck, with
- *                 .d-sky-deck-back / -front
+ *                 it (translate, opacity, and for the sun scale; a transition) and the pointer
+ *                 parallax (transform from --d-sky-px / --d-sky-py; a transition). .d-sky-deck for
+ *                 the deck, with .d-sky-deck-back / -front
  *   .d-sky-par    scroll parallax (a scroll-driven animation of translate)
- *   .d-sky-drift  the slow drift (a keyframe loop of translate), on a box around the drawing:
- *                 Chrome animates an <svg> element itself on the main thread, every frame
- * Every box is the size of its drawing; nothing is a frame-sized wrapper. WebKit pays for each of
- * the sky's boxes in every frame of a page transition, moving or not, so the sky keeps as few and as
- * small as it can: a sprite a scene does not show leaves the render tree once its fade has ended
- * ("What a scene leaves out").
+ *   .d-sky-trip   the travel: a cloud crosses the frame from left to right, for ever (a linear
+ *                 keyframe loop of transform), on a box around the drawing: Chrome animates an
+ *                 <svg> element itself on the main thread, every frame. For the deck, .d-sky-band:
+ *                 a box two decks wide that slides right by one deck
+ *   .d-sky-size   a cloud's size in the scene (scale; a transition). Innermost, so the travel is
+ *                 in frame pixels and a size change during a camera move never slides a cloud sideways
+ * Every cloud box is the size of its drawing and a deck band is two decks wide; nothing is a
+ * frame-sized wrapper. WebKit pays for each of the sky's boxes in every frame of a page transition,
+ * moving or not, so the sky keeps as few and as small as it can: a sprite a scene does not show
+ * leaves the render tree once its fade has ended ("What a scene leaves out").
  * Only opacity, translate, scale and transform ever animate (`display` and `visibility` only flip,
  * after a fade). No filters, no blur, no shadows.
  *
  * The first half of this file is the still frame of each scene, which is the whole design for
  * anyone who asked for less motion: every transition and animation lives further down, inside
- * `prefers-reduced-motion: no-preference`.
+ * `prefers-reduced-motion: no-preference`. In that still frame a scene places each cloud across
+ * the frame as well as down it. With motion a scene keeps a cloud's height, size and opacity, and
+ * the travel owns where it is across the frame.
  *
  * Where things may sit. Text that is not on a card (page headings, captions, the header, the
  * footer) scrolls over this layer, so nothing here is darker than the top of the home gradient
  * (#7ec3f4, 4.68 : 1 under ink-mute): clouds and the sun only ever raise contrast. Clutter is
- * the other half: sprites keep to the gutters beside the content column on laptops, and on
- * phones to the right-hand strip and the bottom of the frame, clear of where small captions rest.
+ * the other half. In the still frame sprites keep to the gutters beside the content column on
+ * laptops, and on phones to the right-hand strip and the bottom of the frame, clear of where small
+ * captions rest. With motion the clouds cross the whole frame, behind the column too: that is the
+ * owner's request (pass 4), and it relaxes the gutter rule for the clouds only. A white cloud behind
+ * ink text only raises its contrast (ink-mute is 6.5 to 8.8 : 1 on a cloud, 4.68 on the bare air),
+ * and the heights still keep the low clouds behind the first card on phones and tablets.
  */
 
 /* ── The frame ───────────────────────────────────────────────────────────────── */
@@ -109,7 +121,8 @@
    places a sprite with --d-sky-x / --d-sky-y: its left and top edge in hundredths of the
    sky's width and height (for the sun: its centre). Where a place has to follow the layout instead
    (a gutter, a fixed distance from an edge), --d-sky-tx / --d-sky-ty take a whole length.
-   --d-sky-s: size against its largest. --d-sky-o: opacity. */
+   --d-sky-s: size against its largest. --d-sky-o: opacity. A cloud's place across the frame
+   (--d-sky-x / --d-sky-tx) is the still frame's: with motion the cloud travels ("The trip"). */
 .d-sky-at {
   position: absolute;
   top: 0;
@@ -150,9 +163,17 @@
 }
 
 /* Clouds: each is drawn at the largest size any scene asks of it, so a scale never blurs it.
-   A shape fills the width of the box it is put in (DSkyCloud, also used outside the sky). */
+   A shape fills the width of the box it is put in (DSkyCloud, also used outside the sky).
+   A cloud's size in the scene is its innermost box's, not the scene box's, so the travel between
+   the two is measured in frame pixels whatever the size (this rule comes after .d-sky-at's). */
 .d-sky-cloud {
   width: var(--d-sky-w);
+  scale: none;
+}
+.d-sky-size {
+  position: relative;
+  transform-origin: 0 0;
+  scale: var(--d-sky-s, 1);
 }
 .d-sky-shape {
   display: block;
@@ -182,10 +203,12 @@
   }
 }
 
-/* The deck: two bands of cloud tops along the bottom edge. Wider than the frame, so their slow drift
-   never shows an end, and never narrower than 820 px, so a phone sees a few broad tops instead of a
-   row of teeth. Each band holds a daylight copy and a butter copy of the same shape; the golden
-   afternoon fades the butter one in on top. */
+/* The deck: two bands of cloud tops along the bottom edge. Wider than the frame, and never narrower
+   than 820 px, so a phone sees a few broad tops instead of a row of teeth. Each band holds a daylight
+   copy and a butter copy of the same shape; the golden afternoon fades the butter one in on top.
+   The band box is two decks wide and starts one deck to the left: each drawing is two periods of a
+   shape whose ends meet (DSkyDeck), so at rest the second period lies across the deck, and with motion
+   the band slides right by one period, for ever, without showing an end ("The trip"). */
 .d-sky-deck {
   position: absolute;
   bottom: -1px;
@@ -202,7 +225,13 @@
 .d-sky-deck.d-sky-deck-front {
   height: calc(17 * var(--d-sky-vh));
 }
-.d-sky-band,
+.d-sky-band {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 200%;
+  height: 100%;
+}
 .d-sky-band > div,
 .d-sky-band svg {
   position: absolute;
@@ -235,7 +264,9 @@
    behind the cards, between the home and the results on a laptop: the mid cloud, from the foot of the
    hero's sun to the left gutter; and below a laptop the far cloud, from the top left of the home to
    just past the right edge, from where it looks back in over the boarding pass and the compare row.
-   Phones and tablets first; the laptop rules after each scene move things into the gutters. */
+   Phones and tablets first; the laptop rules after each scene move things into the gutters.
+   (Where a cloud sits across the frame is the still frame's composition. With motion each cloud
+   travels, and a scene's camera move changes its height, size and opacity only.) */
 
 /* The sky's sun waits just outside the top right corner, glow and all, on the home (the hero has its
    own, in the page, so it scrolls away with it) and in every scene whose frame has no room for it: it
@@ -614,6 +645,15 @@
   .d-sky-deck {
     --d-sky-lag: 80ms;
   }
+  /* The travel owns a cloud's place across the frame, so with motion its scene box only goes up and down:
+     a scene keeps its height, opacity and size, and the camera move glides those while the cloud travels on.
+     The size is the innermost box's, with the camera move's clock and the cloud's lag. */
+  .d-sky-cloud {
+    translate: 0 var(--d-sky-ty, calc(var(--d-sky-y, 0) * var(--d-sky-vh)));
+  }
+  .d-sky-size {
+    transition: scale 900ms cubic-bezier(0.22, 1, 0.36, 1) var(--d-sky-lag, 0ms);
+  }
   /* The deck's lag (80 ms) as a variable: with plain values the minifier folds these longhands into a
      `transition` shorthand written after `transition-behavior`, which resets it to normal, and the butter
      copy would drop out of the render tree without its fade. */
@@ -626,31 +666,35 @@
   }
   /* Coming back: a sprite (or the butter copy) that a scene shows again starts from nothing at the place the
      scenes leave it out, and glides and fades in from there, as it did when it never left: the deck from below
-     the frame (its own fallbacks), the mid and near clouds from where they sink above the clouds and in the
-     afternoon, at full size (keep these in step with those scenes; c on a laptop and d on a tablet leave the
-     climb 4 and 6 hundredths higher, unseen at opacity 0). The places are written out as the properties
-     themselves, which no scene sets (a scene only sets the custom properties), so no scene's rule can outweigh
-     them. Only the sprites a scene can leave out, never the sun or the far cloud, and only under
-     .d-sky[data-drawn], which DSky sets once the sky has been on screen for a frame: a starting style applies
-     to whatever is drawn for the first time, and when the whole sky is (a load, a tab opened in the background,
-     an arrival from another layout, a return to a kept-alive page) it simply is where its scene puts it. */
+     the frame (its own fallbacks), the mid and near clouds from the height at which they sink above the clouds
+     and in the afternoon, at full size (keep these in step with those scenes; c on a laptop and d on a tablet
+     leave the climb 4 and 6 hundredths higher, unseen at opacity 0). Across the frame a cloud starts where its
+     travel does: a cloud that left the render tree comes back at the start of its trip's clock, as on a load.
+     The places are written out as the properties themselves, which no scene sets (a scene only sets the custom
+     properties), so no scene's rule can outweigh them. A cloud's size is its innermost box's, which has a
+     transition of its own and so a starting style of its own: a starting style inherits from the settled style
+     of the box around it, not from that box's starting style. Only the sprites a scene can leave out, never
+     the sun or the far cloud, and only under .d-sky[data-drawn], which DSky sets once the sky has been on
+     screen for a frame: a starting style applies to whatever is drawn for the first time, and when the whole
+     sky is (a load, a tab opened in the background, an arrival from another layout, a return to a kept-alive
+     page) it simply is where its scene puts it. */
   @supports (transition-behavior: allow-discrete) {
     @starting-style {
       .d-sky[data-drawn] > :is(.d-sky-b, .d-sky-c, .d-sky-d, .d-sky-deck) {
-        scale: 1;
         opacity: 0;
+      }
+      .d-sky[data-drawn] > :is(.d-sky-b, .d-sky-c, .d-sky-d) .d-sky-size,
+      .d-sky[data-drawn] > .d-sky-deck {
+        scale: 1;
       }
       .d-sky[data-drawn] > .d-sky-deck .d-sky-band-gold {
         opacity: 0;
       }
-      .d-sky[data-drawn] > .d-sky-b {
-        translate: 62vw calc(96 * var(--d-sky-vh));
-      }
-      .d-sky[data-drawn] > .d-sky-c {
-        translate: -12vw calc(96 * var(--d-sky-vh));
+      .d-sky[data-drawn] > :is(.d-sky-b, .d-sky-c) {
+        translate: 0 calc(96 * var(--d-sky-vh));
       }
       .d-sky[data-drawn] > .d-sky-d {
-        translate: 104vw calc(90 * var(--d-sky-vh));
+        translate: 0 calc(90 * var(--d-sky-vh));
       }
       .d-sky[data-drawn] > .d-sky-deck {
         translate: 0 45%;
@@ -659,13 +703,10 @@
     @media (min-width: 1024px) {
       @starting-style {
         .d-sky[data-drawn] > .d-sky-b {
-          translate: -45vw calc(44 * var(--d-sky-vh));
-        }
-        .d-sky[data-drawn] > .d-sky-c {
-          translate: -20vw calc(96 * var(--d-sky-vh));
+          translate: 0 calc(44 * var(--d-sky-vh));
         }
         .d-sky[data-drawn] > .d-sky-d {
-          translate: 62vw calc(96 * var(--d-sky-vh));
+          translate: 0 calc(96 * var(--d-sky-vh));
         }
       }
     }
@@ -684,54 +725,128 @@
     transition-delay: 0s;
   }
 
-  /* Drift: a few pixels over most of a minute, each cloud on its own clock. */
-  .d-sky-a .d-sky-drift {
-    animation: d-sky-drift-far 30s ease-in-out -7s infinite alternate;
+  /* The trip: every cloud crosses the frame from left to right at one slow, even speed, leaves past the
+     right edge and comes round again from beyond the left, the far cloud slowest. Each has its own clock
+     (--d-sky-trip, longer on wider windows so the speed stays 4 to 12 px a second) and its own start
+     (--d-sky-phase, the share of the trip already behind it when the sky is first drawn: the same frame
+     for everyone on a load). Both sit on the sprite's name class and reach the travel box by inheritance;
+     neither changes at run time except across a breakpoint. Phones show three clouds (.d-sky-d is not
+     drawn under 640 px). */
+  .d-sky-trip {
+    animation: d-sky-trip var(--d-sky-trip, 200s) linear calc(var(--d-sky-trip, 200s) * var(--d-sky-phase, 0) * -1) infinite;
   }
-  .d-sky-b .d-sky-drift {
-    animation: d-sky-drift-mid 22s ease-in-out -13s infinite alternate;
+  .d-sky-a {
+    --d-sky-trip: 130s;
+    --d-sky-phase: 0.22;
   }
-  .d-sky-c .d-sky-drift {
-    animation: d-sky-drift-near 18s ease-in-out -4s infinite alternate;
+  .d-sky-b {
+    --d-sky-trip: 100s;
+    --d-sky-phase: 0.7;
   }
-  .d-sky-d .d-sky-drift {
-    animation: d-sky-drift-near 18s ease-in-out -11s infinite alternate-reverse;
+  .d-sky-c {
+    --d-sky-trip: 80s;
+    --d-sky-phase: 0.38;
   }
-  .d-sky-deck-back .d-sky-drift {
-    animation: d-sky-drift-deck 25s ease-in-out -9s infinite alternate;
+  .d-sky-d {
+    --d-sky-trip: 90s;
+    --d-sky-phase: 0.86;
+  }
+  /* The deck slides right too, slower than any cloud, by one period of its shape. */
+  .d-sky-band {
+    animation: d-sky-deck-trip var(--d-sky-deck-trip, 200s) linear calc(var(--d-sky-deck-trip, 200s) * -0.4) infinite;
+  }
+  .d-sky-deck-back {
+    --d-sky-deck-trip: 200s;
+  }
+  .d-sky-deck-front {
+    --d-sky-deck-trip: 160s;
+  }
+  @media (min-width: 640px) {
+    .d-sky-a {
+      --d-sky-trip: 230s;
+    }
+    .d-sky-b {
+      --d-sky-trip: 165s;
+    }
+    .d-sky-c {
+      --d-sky-trip: 145s;
+    }
+    .d-sky-d {
+      --d-sky-trip: 135s;
+    }
+    .d-sky-deck-back {
+      --d-sky-deck-trip: 220s;
+    }
+    .d-sky-deck-front {
+      --d-sky-deck-trip: 175s;
+    }
+  }
+  @media (min-width: 1024px) {
+    .d-sky-a {
+      --d-sky-trip: 300s;
+    }
+    .d-sky-b {
+      --d-sky-trip: 210s;
+    }
+    .d-sky-c {
+      --d-sky-trip: 165s;
+    }
+    .d-sky-d {
+      --d-sky-trip: 180s;
+    }
+    .d-sky-deck-back {
+      --d-sky-deck-trip: 300s;
+    }
+    .d-sky-deck-front {
+      --d-sky-deck-trip: 240s;
+    }
+  }
+  @media (min-width: 1640px) {
+    .d-sky-a {
+      --d-sky-trip: 380s;
+    }
+    .d-sky-b {
+      --d-sky-trip: 265s;
+    }
+    .d-sky-c {
+      --d-sky-trip: 205s;
+    }
+    .d-sky-d {
+      --d-sky-trip: 225s;
+    }
+    .d-sky-deck-back {
+      --d-sky-deck-trip: 395s;
+    }
+    .d-sky-deck-front {
+      --d-sky-deck-trip: 315s;
+    }
   }
 }
-@keyframes d-sky-drift-far {
+/* From 24 px beyond the left edge (the box's own width, -100 %, is the cloud at its largest) to 24 px beyond
+   the right, so the wrap is never seen, even with the pointer parallax's 16 px at most. No var() in the
+   keyframes, only the box's own width and the window's: nothing to work out again while it runs. Transform,
+   not translate: the scene, the scroll parallax and the size use translate and scale on the other boxes. */
+@keyframes d-sky-trip {
   from {
-    translate: -4px 0;
+    transform: translateX(calc(-100% - 24px));
   }
   to {
-    translate: 4px -2px;
+    transform: translateX(calc(100vw + 24px));
   }
 }
-@keyframes d-sky-drift-mid {
+/* Half the band is one deck, one period of the shape. */
+@keyframes d-sky-deck-trip {
   from {
-    translate: -5px 1px;
+    transform: translateX(0);
   }
   to {
-    translate: 5px -2px;
+    transform: translateX(50%);
   }
 }
-@keyframes d-sky-drift-near {
-  from {
-    translate: -6px 0;
-  }
-  to {
-    translate: 6px -3px;
-  }
-}
-@keyframes d-sky-drift-deck {
-  from {
-    translate: -7px 0;
-  }
-  to {
-    translate: 7px 0;
-  }
+/* While a page transition runs the travel holds still, so a browser that draws the new page again in every
+   frame of the transition (Safari) draws a still sky. It carries on from where it stopped. */
+html[data-d-on]:active-view-transition :is(.d-sky-trip, .d-sky-band) {
+  animation-play-state: paused;
 }
 
 /* Scroll parallax: over the first 1200 px of a page the clouds rise, near ones most, then hold. The
@@ -784,8 +899,7 @@
     transform: translate(calc(var(--d-sky-px, 0) * var(--d-sky-depth, 0px) * -1), calc(var(--d-sky-py, 0) * var(--d-sky-depth, 0px) * -1));
   }
   /* A transform applies inside the box's scale, so the sun, scaled by every scene, divides its depth by
-     its scale to shift 2 px on screen. (A cloud on a scaled scene box, 0.85 to 1 from 1024 px and down to
-     0.6 below, shifts its depth times that, up to 3 px less, until its scale moves to a box inside it.) */
+     its scale to shift 2 px on screen. (A cloud's scene box is not scaled: its size is a box further in.) */
   .d-sky-sun {
     --d-sky-depth: calc(2px / var(--d-sky-s, 1));
   }

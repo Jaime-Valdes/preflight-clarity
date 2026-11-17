@@ -1,4 +1,4 @@
-# Version D look, pass 3 — "Window Seat"
+# Version D look, passes 3 and 4 — "Window Seat"
 
 The build contract for the cinematic pass on `/d` (branch `ui/d-cinematic`). `docs/ui-d-theme.md` describes how the
 theme is scoped (roots, sheets, shadows, layers, kept-alive pages, checks); this file holds everything else. Where this file is silent, follow the
@@ -8,6 +8,15 @@ interactions (paths at the end). Where they disagree with this file, this file w
 The owner's request: the colours should pop; the cloud should move around with the cursor and look at the flights the
 visitor looks at; moving between pages should show planes flying across; more creativity, like a movie; small
 animations on clicks and scrolls; enjoyable, warm and comforting.
+
+Pass 4 (branch `ui/d-cinematic-2`) builds on that in steps, and each step changes the sections its code changes, so
+this file describes the code at every commit. The owner's requests for it: "Have the clouds slowly move left to right
+In the background, have it be day during the day, and night-time with stars at night"; "the cloud should have face
+smile or have facial reactions when you compare, or click on stuff"; "The page transition is a bit buggy on some
+devices, make the transition more relaxed / less rapid with a bunch of clouds moving from left to right of the screen
+to the next page. It should feel smooth and not super fast"; and "I want to get rid of the paper plane sliding from
+left to right when browsing flights". Built so far: the sky's smaller boxes and the clouds' travel from left to right
+(section 4). Everything else below is still pass 3's until its step lands.
 
 ## 1. The idea
 
@@ -187,29 +196,70 @@ error page renders on one of the four routes and is not marked). Only `opacity`,
 Layers, back to front: **air** (four stacked gradient divs, the current scene's opaque, cross-fading over 700 ms);
 **sun** (hidden on home, where the hero has its own in-flow sun; a warm corner on results and flight; half behind the
 deck on compare); **far cloud**, **mid cloud**, **near clouds** (flat white / cream SVG silhouettes, no outline, no
-face, so the outlined mascot is the only character; they drift 8 to 12 px over 36 to 60 s); **cloud deck** (two wide
-scalloped bands along the bottom edge, below the frame on home and results, surfacing on flight, butter-lit on
-compare). Positions and sizes per scene: director's treatment, section 3. On a page change every sprite travels to
-its new place with 900 ms `cubic-bezier(0.22, 1, 0.36, 1)` transitions, near layers 80 ms after far ones: the camera
-climbs. Phones under 640 px use three clouds.
+face, so the outlined mascot is the only character; they travel from left to right, see "The travel" below);
+**cloud deck** (two wide scalloped bands along the bottom edge, below the frame on home and results, surfacing on
+flight, butter-lit on compare; it travels too). Positions and sizes per scene: director's treatment, section 3. On a
+page change every sprite moves to its new place with 900 ms `cubic-bezier(0.22, 1, 0.36, 1)` transitions, near layers
+80 ms after far ones: the camera climbs. Phones under 640 px use three clouds.
+
+**The travel (pass 4, the owner's request).** Every sky cloud enters from beyond the left edge, crosses the frame at
+one slow, even speed (linear, no easing), leaves past the right edge and comes round again from beyond the left, the
+far cloud slowest. The deck slides right too, slower than any cloud. The sun never travels. The wrap happens off
+screen, 24 px past each edge, so there is never a visible jump.
+
+- **Boxes.** A cloud is `.d-sky-at.d-sky-cloud.<name> > .d-sky-par > .d-sky-trip > .d-sky-size > <DSkyCloud />`. The
+  travel is `.d-sky-trip`'s `transform` (keyframes `d-sky-trip`: from `translateX(calc(-100% - 24px))` to
+  `translateX(calc(100vw + 24px))`, with no `var()` inside, so nothing is worked out again while it runs). A cloud's
+  size in the scene is `.d-sky-size`'s `scale`, innermost, so the travel is in frame pixels and a size change during
+  a camera move never slides a cloud sideways; the cloud's scene box has `scale: none`. The scroll parallax is now
+  outside the size, so the mid cloud rises 48 px whatever its size.
+- **Who owns what.** With motion the travel owns a cloud's place across the frame: its scene box's `translate` is
+  `0` and the scene's height, and a camera move glides height, size and opacity while the cloud travels on. The
+  scenes' places across the frame (`--d-sky-x`, `--d-sky-tx`) stay in `d-sky.css` and apply only under reduced
+  motion, where the composed still frame is the design.
+- **Clocks.** `--d-sky-trip` (one crossing) and `--d-sky-phase` (the share of the trip already behind the cloud when
+  the sky is first drawn: a 0.22, b 0.70, c 0.38, d 0.86, the same first frame for everyone) sit on the sprite's name
+  class. One crossing, a / b / c / d: 130 / 100 / 80 s under 640 px (d is not drawn there); 230 / 165 / 145 / 135 s
+  from 640 px; 300 / 210 / 165 / 180 s from 1024 px; 380 / 265 / 205 / 225 s from 1640 px. That is 4 to 12 px a
+  second: a near cloud crosses a laptop in about two and a half minutes, the far one in five. Within a visit the sky
+  never remounts, so a cloud keeps travelling across page changes; a cloud that a scene left out of the render tree
+  comes back at the start of its clock (its phase), as on a load.
+- **The deck.** `DSkyDeck` draws two periods of `DECK_LOOP`, a deck shape whose ends meet in a valley (`viewBox="0 0
+  2880 220"`). The band box (`.d-sky-band`) is two decks wide and starts one deck to the left, so at rest the second
+  period lies across the deck; with motion it slides right by one period, for ever (keyframes `d-sky-deck-trip`,
+  `translateX(0)` to `translateX(50%)`, starting 0.4 of the way). One period, back / front band: 200 / 160 s under
+  640 px, 220 / 175 s from 640 px, 300 / 240 s from 1024 px, 395 / 315 s from 1640 px (4 to 7 px a second). Both
+  bands travel.
+- **Held still during a page transition.** `html[data-d-on]:active-view-transition :is(.d-sky-trip, .d-sky-band) {
+  animation-play-state: paused; }` in `d-sky.css`: a browser that draws the new page again in every frame of a
+  transition (Safari) draws a still sky, and the travel carries on from where it stopped.
+- **Behind the column.** The clouds now cross the whole frame, behind the content column too. This relaxes the gutter
+  rule of "As built" below for the clouds, which is what the owner asked for. By day a white cloud behind ink text
+  only raises its contrast (`ink-mute` is 6.5 to 8.8 : 1 on a cloud, against 4.68 on the bare air). The heights are
+  unchanged, so below 1024 px the low clouds still travel behind the first card on the home and the results.
+- **Budget.** Every endless sky animation has an iteration of 20 s or more (the shortest is 80 s), all of it
+  `transform` on a box the size of its drawing or, for the deck, two decks wide. No script, nothing per frame.
 
 Depth: scroll parallax with `animation-timeline: scroll(root)` over the first 1200 px (progressive enhancement, no
 scroll listener); pointer parallax of a few pixels for fine pointers only (first thing to cut). DSky writes the
 pointer's place as one style attribute on `.d-sky` (both values in one write, at least 100 ms apart, and none while a
 page transition runs: the next move after it writes). Each sprite's scene box (`.d-sky-at`, `.d-sky-deck` for the
-deck) is a direct child of the root and carries the sprite's name class: the scene sets its `translate`, `scale` and
-`opacity`, and the pointer's offset is its `transform`, eased over 600 ms (a transform applies inside the box's
-scale, so the sun divides its depth by its scale). The boxes inside a scene box reset `--d-sky-px` / `--d-sky-py` to
-`initial`, so a write restyles only the root, its children and their children. Do not register these with
-`@property { inherits: false }`: WebKit then never restyles the scene boxes and the parallax stops. Reduced motion:
-scenes switch with no transition, nothing drifts, no parallax; the still frame is the design.
+deck) is a direct child of the root and carries the sprite's name class: the scene sets its `translate` and
+`opacity` (and the `scale` of the sun and the deck; a cloud's size is its `.d-sky-size`), and the pointer's offset is
+its `transform`, eased over 600 ms (a transform applies inside the box's scale, so the sun divides its depth by its
+scale; a cloud's scene box is not scaled, so a cloud shifts by its whole depth). The boxes inside a scene box reset
+`--d-sky-px` / `--d-sky-py` to `initial`, so a write restyles only the root, its children and their children. Do not
+register these with `@property { inherits: false }`: WebKit then never restyles the scene boxes and the parallax
+stops. Reduced motion: scenes switch with no transition, nothing travels, no parallax; the clouds sit at each scene's
+composed places and the deck shows one period across its box; the still frame is the design.
 
 The sky keeps its boxes few and small, because WebKit pays for each of them in every frame of a page transition,
 moving or not. No box is frame-sized (each sprite once had a frame-sized pointer wrapper), and a sprite a scene puts
 at opacity 0, and the deck's butter copy outside compare, leaves the render tree once its fade has ended: `display:
 none`, held back by an `allow-discrete` transition for the 900 ms fade and the sprite's lag (`visibility: hidden`
 after the fade where `transition-behavior` is unsupported). When a scene shows it again, a `@starting-style` starts
-it at opacity 0, at full size, at the place the scenes leave it out, and it glides and fades in as before. That
+it at opacity 0, at full size, at the height the scenes leave it out (a cloud's place across the frame is its
+travel's), and it glides and fades in as before. That
 starting style covers only the sprites a scene can leave out (never the sun or the far cloud) and applies only under
 `.d-sky[data-drawn]`, a mark DSky sets on the root once the sky has been on screen for a frame and takes off when
 the layout is hidden or unmounted: a starting style applies to anything drawn for the first time, so without the
@@ -217,11 +267,16 @@ mark the clouds would glide and fade in whenever the whole sky is first drawn (a
 arrival from another layout, a return to a kept-alive page). Those left-out places are written twice in `d-sky.css`
 ("What a scene leaves out" and the starting style), after the scenes' own opacity-0 places: a change to one needs
 the others. A box inside a scene box that gets a transition of its own needs its own starting style too: a starting
-style inherits from the parent's settled style, not from the parent's starting style. At rest on a laptop's flight
-page the sky is 7 boxes that may get their own layer, covering 0.8 of the viewport (25 boxes and 9 viewports
-before).
+style inherits from the parent's settled style, not from the parent's starting style. `.d-sky-size` is such a box
+(its 900 ms `scale`), and its starting style is `scale: 1` for the three clouds a scene can leave out. At rest on a
+laptop's flight page the sky is 12 boxes that may get their own layer (9 of them drawn: the other three are the size
+boxes of clouds the scene leaves out), covering 1.5 of the viewport (7 boxes and 0.8 before the travel: the size
+boxes, the front band's travel and the bands' double width are the difference; 25 boxes and 9 viewports before
+pass 4).
 
-As built (accepted departures from the director's positions, all in `d-sky.css`): the sun keeps to the right all day
+As built (accepted departures from the director's positions, all in `d-sky.css`; for the clouds, the places across
+the frame below are the still frame's, under reduced motion, and the heights hold with motion too): the sun keeps to
+the right all day
 but enters the frame only where it can show as a sun, clear of the header's links and the cards: a corner on results
 from 1200 px wide (sized by its distance to the header's last link); on flight from 1400 px, whole in the right
 gutter beside the boarding pass (its disc starting 48 px after the column's edge at 50vw + 528px, at least 24 px
@@ -411,7 +466,7 @@ speeds up nor slows down is the calmest plane there is):
 Hover styles sit inside `@media (hover: hover) and (pointer: fine)`. Press feedback starts on pointer-down and the
 action is never deferred. Nothing overshoots in position, nothing loops beside text, nothing shakes.
 
-At rest, the sky's drift and the clouds' blink keep the compositor drawing 60 frames a second on every screen, with no
+At rest, the sky's travel and the clouds' blink keep the compositor drawing 60 frames a second on every screen, with no
 main-thread work (no layout, no paint). That is accepted: the sky is meant to be alive. If phone battery ever matters,
 pause both after the 6 s without input that `idle.ts` already detects.
 

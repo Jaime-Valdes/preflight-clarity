@@ -18,13 +18,19 @@ import { skyFramesPage, skySceneFor } from "./scene";
  * the sky's root and nothing else: the pointer's place, for the mouse parallax, and a mark once
  * the sky has been drawn (`data-drawn`), which lets a sprite a scene shows again glide back in.
  *
+ * The clouds and the deck travel slowly from left to right, for ever (the owner's request). The
+ * sun never travels.
+ *
  * The boxes around each drawing have one job each (see the stylesheet): d-sky-at (d-sky-deck for
  * the deck), a child of the root carrying the sprite's name, which the scenes place, takes the
- * scene position (translate, scale, opacity) and the pointer parallax (transform); d-sky-par the
- * scroll parallax; d-sky-drift the slow drift. The scene box is outermost so that the pointer's
- * place, written on the root, reaches the boxes that read it and nothing under them. There is no
- * frame-sized wrapper: every box is the size of its drawing, because WebKit pays for each of the
- * sky's boxes in every frame of a page transition, moving or not.
+ * scene position (translate, opacity; for the sun and the deck also scale) and the pointer
+ * parallax (transform); d-sky-par the scroll parallax; d-sky-trip the travel across the frame
+ * (d-sky-band for the deck); d-sky-size a cloud's size in the scene (scale), innermost so that
+ * the travel is in frame pixels and a size change never slides a cloud sideways. The scene box is
+ * outermost so that the pointer's place, written on the root, reaches the boxes that read it and
+ * nothing under them. There is no frame-sized wrapper: every cloud's boxes are the size of its
+ * drawing, and a deck band is two decks wide, because WebKit pays for each of the sky's boxes in
+ * every frame of a page transition, moving or not.
  */
 export function DSky() {
   // The layout stays mounted across /d, so the pathname is the only thing that changes here:
@@ -65,20 +71,25 @@ function Cloud({ className, shape }: { className: string; shape?: "wide" | "roun
   return (
     <div className={`d-sky-at d-sky-cloud ${className}`}>
       <div className="d-sky-par">
-        {/* The drift is on a box around the drawing: animated on the <svg> itself it would run on the main thread. */}
-        <div className="d-sky-drift">
-          <DSkyCloud shape={shape} />
+        {/* The travel is on a box around the drawing: animated on the <svg> itself it would run on the main thread. */}
+        <div className="d-sky-trip">
+          <div className="d-sky-size">
+            <DSkyCloud shape={shape} />
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/** One band of the deck: the same shape twice, in daylight white and in butter, so the afternoon can fade one over the other. */
+/**
+ * One band of the deck: the same shape twice, in daylight white and in butter, so the afternoon can fade one
+ * over the other. The band box is two decks wide (each drawing is two periods of the shape) and travels by one.
+ */
 function DeckBand({ className, mirrored }: { className: string; mirrored?: boolean }) {
   return (
     <div className={`d-sky-deck ${className}`}>
-      <div className="d-sky-drift d-sky-band">
+      <div className="d-sky-band">
         <div className="d-sky-band-day">
           <DSkyDeck mirrored={mirrored} />
         </div>
