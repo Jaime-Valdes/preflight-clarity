@@ -15,9 +15,11 @@ In the background, have it be day during the day, and night-time with stars at n
 smile or have facial reactions when you compare, or click on stuff"; "The page transition is a bit buggy on some
 devices, make the transition more relaxed / less rapid with a bunch of clouds moving from left to right of the screen
 to the next page. It should feel smooth and not super fast"; and "I want to get rid of the paper plane sliding from
-left to right when browsing flights". Built so far: the sky's smaller boxes and the clouds' travel from left to right
-(section 4), and the cloud pass that replaces the plane wipe (section 6). Everything else below is still pass 3's
-until its step lands.
+left to right when browsing flights". Pass 4 is built: the sky's smaller boxes and the clouds' and the deck's travel
+from left to right (section 4); day and night by the real sky, with stars and tonight's moon (sections 2 and 4); the
+cloud's faces and reactions (section 5); the results cards without their sliding plane (section 9); and the cloud
+pass that replaces the plane wipe (section 6). Its last step (Z, 2026-11-18) measured everything at once on the
+finished branch; the numbers in sections 6 and 11 are from it or from the step named beside them.
 
 ## 1. The idea
 
@@ -681,7 +683,7 @@ its billows and the wall that hides the core's straight edges). No plane.
 - **Full cover everywhere.** The bank is 120lvh tall from 10lvh above the screen (phone toolbars can never show a
   strip of page) and sized in `vw` (a classic scrollbar is covered; React sizes the transition's root to nothing, so
   no `%` on a group). Its core overhangs each side of the screen by `--d-vt-m` at the cut; two interleaved chains of
-  haze-coloured discs keep it solid 33.7k px past the core's edge. The cut has 62 to 80 ms of full cover either side
+  haze-coloured discs keep it solid 33.7k px past the core's edge. The cut has 279 to 304 ms of full cover either side
   on every width from 240 to 2560 px (the generator's report; four bands, k = 1, 1.25, 1.6, 2.1 from 0, 640, 1024 and
   1640 px).
 - **The clouds are drawn with discs, no images.** Each billow is a union of circles (the design's two shapes, a and
@@ -725,8 +727,12 @@ its billows and the wall that hides the core's straight edges). No plane.
   hidden bank's group and image-pair also get `animation: none` (Safari counts their animations while the group is
   `display: none`, and the transition, and every page move and loading reveal React holds behind it, would last the
   full clock).
-- A route seen for the first time shows its loader through the reveal and its content when the pass ends (React holds
-  the reveal). Once a route's code is loaded, the content is there in the first frame.
+- A route seen for the first time: pass 3's wipe showed its loader through the reveal and its content when the wipe
+  ended (React holds the reveal). On this build, step Z's first-visit test (Chrome, prefetch blocked, 250 ms added to
+  every server response; on battery, interleaved with `main`) saw no loader: the new page committed with its content
+  about 0.3 s after the tap, its view events 21 to 25 ms after `$pageview`, and the pass ended about 1.95 s after the
+  tap (`main`: the loader, then content about 0.8 s after `$pageview`). Once a route's code is loaded, the content is
+  there in the first frame.
 
 **What holds still.** Safari draws each frame of a view transition only as fast as the live page under it commits,
 and React mounts the new page as the pass begins, so while a pass runs (`:active-view-transition`) the page under it
@@ -773,8 +779,26 @@ and its hold-aware recompute over the 1600 ms clock, which splits every gap at t
 part separately), results → flight, flight → results and flight → compare, by day and by night, interleaved with
 `main` in one session: outside the hold no gap between page frames over 35 ms and at most 40 ms lost per pass; inside
 the hold, where nothing on screen moves, longer gaps are allowed and reported (pass 3's wipe lost 140 to 180 ms of
-760). Measured in step T (AC, interleaved with `main` and the step before, 6 warm passes per cell): with the display idle (2026-11-18 00:35–01:04, the build before the snapshot fix below), outside the hold 4.5 to 20 ms lost, longest gap 19 to 30.5 ms, first frame 9.5 to 28 ms after `ready`, and the sky's late frame (78 to 130 ms) inside the hold every time; `main` lost 84 to 122 and the step before 43 to 109 over their 760 ms. On the final build with the display awake (09:00–09:30, a cadence that mixes 8 and 17 to 20 ms commits, which the loss count reads as loss), 28.5 to 56 ms lost (10.5 to 25.5 ms counting only gaps of 25 ms or more) and a first frame 25 to 36.5 ms late; the gate is not confirmed on the final build yet (step T's report). Then
-the owner's eye in Safari on the Air (Safari's "Allow remote automation" was off, so real Safari 27 was not driven).
+760). Measured in step T (AC, interleaved with `main` and the step before, 6 warm passes per cell): with the display idle (2026-11-18 00:35–01:04, the build before the snapshot fix below), outside the hold 4.5 to 20 ms lost, longest gap 19 to 30.5 ms, first frame 9.5 to 28 ms after `ready`, and the sky's late frame (78 to 130 ms) inside the hold every time; `main` lost 84 to 122 and the step before 43 to 109 over their 760 ms. On the final build with the display awake (09:00–09:30, a cadence that mixes 8 and 17 to 20 ms commits, which the loss count reads as loss), 28.5 to 56 ms lost (10.5 to 25.5 ms counting only gaps of 25 ms or more) and a first frame 25 to 36.5 ms late. The lead accepted the pass on the loss counting only gaps of 25 ms or more
+(at most 25.5 ms in every cell), with a re-run on the final build with the display idle before any preview. Step Z
+ran it (2026-11-18 09:56–10:26, AC, the display off throughout, rounds 5 and 6, 6 warm passes per cell, interleaved
+with `main` and step P), and **the lead accepted the gate on it**:
+  - the first frame after `ready` on results → flight is 31 ms late by night and 34 ms by day (medians; single passes
+    24 to 42 ms, the first warm pass of each recording the latest), within 35; flight → results 30.5 to 32 ms, flight →
+    compare 13.5 to 15 ms;
+  - counting only gaps of 25 ms or more, 0.5 to 22.5 ms lost outside the hold in every cell;
+  - the strict count is met in 2 of the 6 cells only: outside the hold 23 to 55 ms lost (over 40 in four cells), and
+    the longest gap 23 to 35.5 ms (over 35 in one cell, day results → flight);
+  - the first-frame budget's other clause, "nothing moving in the first 150 ms", does not hold: the bank moves from
+    its first frame (its leading edge travels about 360 px in the first 150 ms on the Air's 1470 px);
+  - the sky's late frame fell inside the hold every time; in the same session `main` lost 37 to 114 ms over its 760 ms
+    and step P 31.5 to 143.5.
+  - With PostHog's session recorder running (step Z, the mirror's dev server, results → flight by day, 9 warm passes
+    each, recording on and off interleaved, on battery), the recorder added no measurable loss: outside the hold 30
+    against 26 ms lost, 20 against 22 ms counting only gaps of 25 ms or more, longest gap 36 against 37 ms.
+
+Then the owner's eye in Safari on the Air: real Safari 27 was not driven (in steps T and Z `safaridriver` started but
+a session request got no reply; Safari's "Allow remote automation" was left as it was).
 
 - **The bank's sizes and drawings are generated.** `frontend/scripts/d-transition-art.mjs` writes the five marked
   blocks of `d-transition.css` (bands: `--d-vt-k`, `--d-vt-u`, `--d-vt-m`, `--d-vt-gain`, `--d-vt-near-out`,
@@ -995,3 +1019,13 @@ Run from the repo root:
 - Interaction designer's treatment (motion tokens, small interactions): `scratchpad/cine/design/interaction.md`
 - Page-transition proof and recipe files: `scratchpad/cine/vt-proof/REPORT.md`, `scratchpad/cine/vt-proof/src/recipe/`
 - Inventory of version D (selectors, layers, analytics, guards, traps): `scratchpad/cine/inventory.md`
+- Pass 4 (all under `scratchpad/cine/p4/`):
+  - the sky (drift, day and night, stars, the moon): `design2/sky.md`;
+  - the cloud's faces and reactions: `design2/face.md`;
+  - the cloud pass: `design/transition.md`, revised by the Mac diagnosis;
+  - the research, analytics and performance audit of the pass-4 designs: `design2/audit.md`;
+  - Safari's dropped frames on the owner's MacBook Air and the constraints they set: `mac/diagnosis-mac.md`;
+  - the lead's decisions, which win over the specs, and the owner's planes decision: `decisions.md`,
+    `decisions-planes.md`;
+  - the build plan, its performance budget and its integrity checklist: `plan.md`;
+  - the step reports, S0 to Z: `build/reports/`.

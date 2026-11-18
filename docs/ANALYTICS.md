@@ -80,6 +80,90 @@ the minute. Don't pool D's numbers from before and after that point:
   and `attr__for`. Don't filter insights or actions on those generated ids. (There are no saved
   actions in the project today.)
 
+**Version D's day-and-night sky, cloud pass and cloud faces** (branch `ui/d-cinematic-2`,
+`docs/ui-d-cinematic.md`) change no event, property, route or form. They reached production on
+[date and time, New York: filled in at the deploy]; the PostHog annotation "Version D: night sky,
+cloud pass and faces live" marks the minute. Don't pool D's numbers across it, and split D by look:
+
+- **Two looks, by the real sky.**
+  - **When it is night:** when the sun is more than 6° below the horizon at the principal place of
+    the visitor's browser time zone (civil twilight). That is about 13 h of night in New York in
+    November and about 8 h in June, so night's share changes with the season.
+  - **What changes:** at night only the sky and what sits directly on it change (navy, stars,
+    tonight's moon, light text). Cards, ratings, prices, chips and controls are the same; unchosen
+    date tiles are 90 % paper so their contrast matches day's.
+  - **When it changes:** at each load and, at dusk or dawn, live (a 4-second fade within about a
+    minute of the threshold). So an event's own timestamp gives its look; use the expression below.
+  - **Cross-check:** clicks inside D also carry `attr__data-d-time` (and `attr__data-d-time-fade`
+    during a fade) in `elements_chain`.
+  - **Exceptions:** a device whose clock is wrong shows its own clock's sky, and a browser reporting
+    UTC (privacy modes) always shows day.
+- **Page moves take longer.**
+  - A move is a 1.6 s cloud pass (it was a 0.76 s plane wipe): the clouds drift in, rest for a
+    moment while the page changes under them, and drift out. `$pageview` fires when it did.
+  - On a route already loaded, `d_flight_view`, `d_compare_view` and the sign-up card's
+    `interest_cta_view` observer fire about 20–27 ms after it, as before (16–19 ms on the
+    previous build in the same session; measured on battery).
+  - On a route seen for the first time they no longer wait. In a first-visit test (prefetch
+    blocked, 250 ms added to every server response; Chrome, on battery) the new page arrived with
+    its content and they fired 21–25 ms after `$pageview`, where the previous build showed a
+    loader and waited for its wipe, about 0.8 s after `$pageview`. `$pageview` itself still came
+    about 0.3 s after the tap there, on both builds.
+  - The new page first shows about 1.15 s after the tap (was about 0.3 s) and is fully shown when
+    the pass ends, about 1.7 s after the tap (was 0.87 s; on battery, interleaved, 1.69–1.72 s
+    against 0.85–0.87 s, and about 1.95 s on a first visit). Time on page now includes about
+    1.7 s per forward move (was 0.8 s; version C none): subtract it when comparing C and D.
+  - Back and Forward stay instant; reduced motion gets a 150 ms fade.
+  - `interest_cta_view` can fire up to about 1.6 s before the card is uncovered.
+- **Taps during a pass count as clicks.** `clicks_on_page` / `clicks_on_previous_page` count taps
+  that land on the pass (autocapture ignores them), so D's clicks per page rise a little for no
+  reason on the page.
+- **The cloud reacts more visibly.**
+  - "Noted" (happy eyes, a wide smile and a nod) on compare add and remove and on the priority
+    tiles, the same in both directions and for every flight.
+  - A brief brighter smile on other controls (a sort, a date tile), at most every 1.2 s, and a
+    small greeting when a page settles.
+  - The pick keeps its plain nod; the sign-up, the footer and sheets get nothing; the cloud is
+    still not tappable.
+  - `d_compare_toggle` per visitor may rise in both directions.
+
+Version D's look at an event, as the browser decided it (`frontend/components/d/sky/time.ts`).
+Replace the two `transform(zone, …)` calls with the two lines that
+`node frontend/scripts/d-sky-zones.mjs --hogql` prints (the full zone lists; they read
+`properties.$timezone`, the same as `zone`):
+
+```sql
+SELECT event, timestamp,
+  properties.$timezone AS zone,
+  coalesce(transform(zone, ['America/New_York', /* … */], [40.7, /* … */], NULL),
+           toFloat(properties.$geoip_latitude)) AS lat,
+  coalesce(transform(zone, ['America/New_York', /* … */], [-74.0, /* … */], NULL),
+           toFloat(properties.$geoip_longitude), -toFloat(properties.$timezone_offset) / 4) AS lon,
+  toHour(timestamp) * 60 + toMinute(timestamp) + toSecond(timestamp) / 60 AS utc_min,
+  2 * pi() / if((toYear(timestamp) % 4 = 0 AND toYear(timestamp) % 100 != 0) OR toYear(timestamp) % 400 = 0, 366, 365)
+    * (toDayOfYear(timestamp) - 1 + (utc_min / 60 - 12) / 24) AS g,
+  229.18 * (0.000075 + 0.001868 * cos(g) - 0.032077 * sin(g) - 0.014615 * cos(2 * g) - 0.040849 * sin(2 * g)) AS eqtime,
+  0.006918 - 0.399912 * cos(g) + 0.070257 * sin(g) - 0.006758 * cos(2 * g) + 0.000907 * sin(2 * g)
+    - 0.002697 * cos(3 * g) + 0.00148 * sin(3 * g) AS decl,
+  ((utc_min + eqtime + 4 * lon) / 4 - 180) * pi() / 180 AS ha,
+  90 - acos(greatest(-1, least(1, sin(lat * pi() / 180) * sin(decl) + cos(lat * pi() / 180) * cos(decl) * cos(ha))))
+    * 180 / pi() AS sun_alt,
+  multiIf(zone = '' OR match(zone, '^(Etc/)?(UTC|UCT|GMT|GMT[+-]?0|Greenwich|Universal|Zulu|Unknown|Factory)$') OR lat IS NULL,
+          'day', sun_alt < -6, 'night', 'day') AS d_look
+FROM events
+WHERE properties.variant = 'D' AND timestamp >= toDateTime('[ship time, UTC]')
+```
+
+- Zones outside the table use the browser's own fallback (the offset gives the longitude), so the
+  expression's geoip and offset fallback is approximate there. Nearly all of D's traffic so far
+  reports `America/New_York` (769 of 771 events from 2026-11-11 to 2026-11-18; two reported UTC).
+- The local hour, `toHour(timestamp - toIntervalMinute(toInt(properties.$timezone_offset)))`, stays
+  useful as a sanity check.
+- Events before the ship were all day.
+- Checked read-only on 2026-11-18 over D's events since 2026-11-11: the expression ran in
+  PostHog, and 10 of them (New York by day, near sunset and at night, and the two reporting UTC)
+  gave the same look, and the same sun altitude to 0.01°, as `skyTimeAt` in Node.
+
 ## Funnels to build in PostHog
 
 - **Study completion**: `study_step` step=pre → setup → dashboard → post → debrief, broken down by
