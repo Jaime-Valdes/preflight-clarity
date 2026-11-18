@@ -81,9 +81,9 @@ the minute. Don't pool D's numbers from before and after that point:
   actions in the project today.)
 
 **Version D's day-and-night sky, cloud pass and cloud faces** (branch `ui/d-cinematic-2`,
-`docs/ui-d-cinematic.md`) change no event, property, route or form. They reached production on
-[date and time, New York: filled in at the deploy]; the PostHog annotation "Version D: night sky,
-cloud pass and faces live" marks the minute. Don't pool D's numbers across it, and split D by look:
+`docs/ui-d-cinematic.md`) change no event, property, route or form. They reached production at
+5:55 pm New York time on 2026-11-18 (22:55:56 UTC); the PostHog annotation "Version D: pass 4 live"
+marks the minute. Don't pool D's numbers across it, and split D by look:
 
 - **Two looks, by the real sky.**
   - **When it is night:** when the sun is more than 6° below the horizon at the principal place of
@@ -151,7 +151,7 @@ SELECT event, timestamp,
   multiIf(zone = '' OR match(zone, '^(Etc/)?(UTC|UCT|GMT|GMT[+-]?0|Greenwich|Universal|Zulu|Unknown|Factory)$') OR lat IS NULL,
           'day', sun_alt < -6, 'night', 'day') AS d_look
 FROM events
-WHERE properties.variant = 'D' AND timestamp >= toDateTime('[ship time, UTC]')
+WHERE properties.variant = 'D' AND timestamp >= toDateTime('2026-11-18 22:55:56')
 ```
 
 - Zones outside the table use the browser's own fallback (the offset gives the longitude), so the
