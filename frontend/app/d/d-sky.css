@@ -457,6 +457,27 @@
     --d-sky-s: min(0.756, tan(atan2(2 * (hypot(3vw + var(--d-sky-nav), 5 * var(--d-sky-vh) + 20px) - 12px), 41vmin)));
   }
 }
+/* By night the corner would show only the moon's left edge, which is its dark side while it waxes, so on results
+   the moon leaves the sun's corner for the right gutter, whole: its disc is at most 16vmin, 24 px clear of the
+   column (it ends at 50vw + 528px) and of the window's edge, centred across the gutter and at 24 % of the frame's
+   height, halfway between the two twinkles on that side. It stays in the sun's box (placed in the box's own
+   units: the frame's lengths over the box's scale), so it still travels with it between scenes. From 1200 to
+   1280 px the gutter cannot hold a disc of 64 px, so the moon waits just past the right edge instead. Results only:
+   the not-found page, which borrows the scene (data-elsewhere), keeps the sun's corner. */
+@media (min-width: 1280px) {
+  .d-sky[data-scene="results"]:not([data-elsewhere]) .d-sky-sun .d-moon {
+    --d-moon-box: calc(min(16vmin, 50vw - 576px) / 0.61);
+    width: calc(var(--d-moon-box) / var(--d-sky-s));
+    height: calc(var(--d-moon-box) / var(--d-sky-s));
+    left: calc((75vw + 264px - var(--d-moon-box) / 2 - var(--d-sky-x) * 1vw) / var(--d-sky-s));
+    top: calc((24 * var(--d-sky-vh) - var(--d-moon-box) / 2 - var(--d-sky-y) * var(--d-sky-vh)) / var(--d-sky-s));
+  }
+}
+@media (min-width: 1200px) and (max-width: 1279.98px) {
+  .d-sky[data-scene="results"]:not([data-elsewhere]) .d-sky-sun .d-moon {
+    left: calc((100vw - var(--d-sky-x) * 1vw) / var(--d-sky-s));
+  }
+}
 /* From a laptop up there are gutters beside the content column (1056 px wide, centred). The far and
    the mid cloud live in the left one, their inner ends a fixed distance short of the column, so they
    slide off as the gutter narrows instead of creeping under the captions. Of the near pair, one has

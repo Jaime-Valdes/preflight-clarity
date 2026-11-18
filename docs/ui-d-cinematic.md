@@ -142,8 +142,8 @@ than any word on it.
 #FBF4DC, #F3EBCD at the edge; hues 43° to 47°) with three soft seas (#DED6BA at 55 to 75 %), lit as tonight's moon is
 lit; the rest of the disc is moon white at 8 % (earthshine). Around it a cool halo, #E2E8FF at 16 % at the disc's edge
 fading through #D6E0FF at 7 % to nothing: a pale blue glow on the night air, never grey. Text never sits on the disc
-(moon on cream is about 1.2 : 1): the sky's moon is out of the frame on phones and tablets, in a corner on laptop
-results, in the right gutter beside the boarding pass and on compare; the hero's moon has no text over it.
+(moon on cream is about 1.2 : 1): the sky's moon is out of the frame on phones and tablets, whole in the right gutter
+on laptop results (from 1280 px), beside the boarding pass and on compare; the hero's moon has no text over it.
 
 **Only what sits directly on the sky changes; paper does not.** Cards, ratings, prices, chips and controls look
 exactly as by day (pixel-identical, checked). The mechanism is one re-point and one revert (`app/d/d-night.css`, see
@@ -698,7 +698,7 @@ speeds up nor slows down is the calmest plane there is):
 | `DMotionLayer` | Client component mounted once in the layout: fixed, z 40, pointer-events none. Draws the **tap ring** (a 44 px ring, `gold` inside and white outside, growing from the tap point and fading over 420 ms; three pooled elements; on `click` with a pointer, never on scroll starts or keyboard). Sets `--d-tap-y` on a click that will change page in this tab (a form's submit button, or a plain primary click on a same-origin link to another path or query; never on pointer-down), ends a running page transition on such a click, and plays the scroll reveal for every `.d-reveal` in the layout and for the flight page's shared other-flight cards (`[data-theme="d"] #other-flights > ul > li > div`, a hook in `scripts/d-hooks.mjs`), with one IntersectionObserver, a childList observer on the layout root, a re-scan on each route change and a passive scroll listener that only notes when the page last scrolled down. Exposes `flyTo(fromRect, toRect)`: a 14 px paper plane on a shallow arc, 520 ms. |
 | `motion.ts` | `prefersReducedMotion()`; `transitionRunning()` (whether a page transition is running now: `:active-view-transition` on `<html>`, false where the browser cannot tell) and `whenTransitionEnds(fn)` (runs `fn` at once, or when the running transition's `finished` settles, or at the first 100 ms check where there is no such promise, waiting out one that starts as the last ends, and after 3 s at most; returns a cancel): script that holds still during a page transition asks and waits with these two, and CSS writes the same test as `html[data-d-on]:active-view-transition …`. Easing and duration constants, `animateOnce(el, preset)` for Web Animations API presets: `pop` (a glyph of 28 px or less arriving: scale .6 to 1, at most 8 % past), `stamp` (scale .8 to 1), `settle` (10 px rise, no fade), `reveal` (16 px rise, 360 ms, out easing; played by DMotionLayer for `.d-reveal`). |
 | `buttons.ts` | Class strings: `D_PILL_PRIMARY` (royal with the lip), `D_PILL_OUTLINE`, `D_PILL_SELECTED`, `D_LINK`. |
-| CSS classes | `.d-btn-primary`, `.d-btn-outline`, `.d-link` (a `butter` highlighter grows under the words on hover or press), `.d-lift` (card hover: 3 px up, lifted shadow, fine pointers only), `.d-reveal` (a marker class with no CSS: an element below the screen when first seen rises its last 16 px once as the page's scrolling brings it in through the bottom edge (a downward scroll in the last 250 ms, its top within max(96 px, 25 % of the screen's height, the distance the page scrolled since the last report) of the bottom, so a Tab focus move or a fling counts too); one that comes into view any other way (a sort, a filter or a date change re-dealing the list, a layout shift) is only marked seen, so a re-dealt list settles as one piece, the same for every flight. It never rises while it or an ancestor is still moving under another animation (its entrance, the list's stagger), so nothing moves more than one 16 px step. 360 ms, through the Web Animations API, nothing left on it afterwards; an element on screen or above when first seen never moves; position only; nothing under reduced motion; never on an element holding a combobox or on the sign-up card. Not scroll-driven: a `view()` timeline keeps every card a compositor layer for the page's life, up to six times the phone memory), `.d-route-plane` (the small plane on a card's time line travels along it as the card crosses the screen; scroll-driven; the same for every card. Each plane holds a small compositor layer for the page's life, 14 on a results page: accepted for the effect), `.d-pop`. |
+| CSS classes | `.d-btn-primary`, `.d-btn-outline`, `.d-link` (a `butter` highlighter grows under the words on hover or press), `.d-lift` (card hover: 3 px up, lifted shadow, fine pointers only), `.d-reveal` (a marker class with no CSS: an element below the screen when first seen rises its last 16 px once as the page's scrolling brings it in through the bottom edge (a downward scroll in the last 250 ms, its top within max(96 px, 25 % of the screen's height, the distance the page scrolled since the last report) of the bottom, so a Tab focus move or a fling counts too); one that comes into view any other way (a sort, a filter or a date change re-dealing the list, a layout shift) is only marked seen, so a re-dealt list settles as one piece, the same for every flight. It never rises while it or an ancestor is still moving under another animation (its entrance, the list's stagger), so nothing moves more than one 16 px step. 360 ms, through the Web Animations API, nothing left on it afterwards; an element on screen or above when first seen never moves; position only; nothing under reduced motion; never on an element holding a combobox or on the sign-up card. Not scroll-driven: a `view()` timeline keeps every card a compositor layer for the page's life, up to six times the phone memory), `.d-pop`. |
 | Shared controls | Scoped CSS gives shared primaries (`:is(button, a).bg-night-900`) the same lip, hover and press; fields the focus halo; date tiles, sort pills, chips and rating rows their hover and press. |
 
 Hover styles sit inside `@media (hover: hover) and (pointer: fine)`. Press feedback starts on pointer-down and the
@@ -759,8 +759,9 @@ What each screen must end up with:
   answered and the generic tap for "Skip for now"; "Next" is the royal pill
   (disabled: `sky-deep`). The setup card and the search card are seats.
 - **Results.** At least 24 px between cards and 30 px (32 px from 640 px) between the first card and the row above it.
-  Cards lift on hover and rise their last 16 px as they scroll in; the small plane on each time line travels with
-  the scroll. That plane is D's outlined paper plane (`PaperPlane`), like every other plane in D. Compare: the pill swaps outline for selected, the plus becomes a check, a small plane flies to the tray
+  Cards lift on hover and rise their last 16 px as they scroll in. The time line is a line between two stops and
+  nothing moves along it (the owner removed the small plane that travelled it with the scroll, 2026-11-13; with it
+  went the kit's `.d-route-plane` and its `view()` timeline, one compositor layer per card). Compare: the pill swaps outline for selected, the plus becomes a check, a small plane flies to the tray
   chip (and back from it on remove), the cloud's "noted" both ways. "Why?" opened makes the cloud curious (bright +
   tilt); closed, the generic tap. "Details" and
   "Choose what matters" are `D_LINK`. The date strip is filled in the first frame of an arrival.
@@ -789,9 +790,12 @@ sun, the laptop's bank moonlit, and the flight line's white contrail at 55 % (th
 paper at 90 %, "Filters" a moon outline with moon veils; loading shows "Checking the skies…" in moon. Flight: "All
 flights", "Rated for you" and "Other flights this day" in moon, the back link's highlighter butter at 30 %. Compare:
 the title and its notes in moon and moon-mute, the footnote under the table on paper at 90 %. The sky's moon is where
-the sun would be: out of the frame on phones and tablets and on the home, a corner on laptop results from 1200 px
-(while waxing the lit side is the one outside the frame, so the corner shows the earthshine and the halo), beside
-the boarding pass and half behind the deck on compare from 1400 px. Within 1.5 days of a new moon there is none.
+the sun would be: out of the frame on phones and tablets and on the home, beside the boarding pass and half behind
+the deck on compare from 1400 px. On laptop results it leaves the sun's corner (there only its left edge showed,
+the dark side while it waxes) for the right gutter, whole whatever the phase: a disc of at most 16vmin, 24 px clear
+of the column and of the window's edge, at 24 % of the frame's height between the two right-hand twinkles, from
+1280 px; from 1200 to 1280 px it waits just past the right edge (`d-sky.css`, 2026-11-17). The not-found page, which
+borrows the results scene, keeps the corner. Within 1.5 days of a new moon there is none.
 
 Accepted as built after the review (choices the screen builders made beyond this brief): on compare, the gold badge
 on the Ratings band, the proximity snap of the sideways scroll, the label column's badge stamp, the row wash under a

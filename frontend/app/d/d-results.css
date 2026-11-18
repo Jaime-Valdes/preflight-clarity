@@ -5,27 +5,9 @@
  * keyframes and custom properties are prefixed d-results- / --d-results-.
  *
  * Most of the page is utilities in components/d/search and the kit's classes (.d-lift, .d-reveal,
- * .d-route-plane, .d-btn-*, .d-link, .d-chip, .d-pop). What is here is what those cannot say.
+ * .d-btn-*, .d-link, .d-chip, .d-pop). What is here is what those cannot say.
  * Nothing in this file reads what a card shows: every rule is the same for every flight.
  */
-
-/* ── The time line ───────────────────────────────────────────────────────────────────────── */
-
-/*
- * The small plane crosses its line with the scroll (the kit's .d-route-plane, inside this wrapper).
- * Under a mouse it also glides 10 px further along while the pointer is on its card, and back when
- * the pointer leaves: the wrapper moves, so the two motions add up instead of fighting over one
- * property. 10 px keeps it inside the 11 px the wrapper is inset from each stop.
- */
-.d-results-plane {
-  transition: translate 600ms var(--d-ease-out);
-}
-
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .d-lift:hover .d-results-plane {
-    translate: 10px 0;
-  }
-}
 
 /* ── "Why?" and the reasons it opens ─────────────────────────────────────────────────────── */
 

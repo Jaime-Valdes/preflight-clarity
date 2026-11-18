@@ -10,7 +10,6 @@ import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { useHrefs } from "@/components/c/shell/ToolContext";
 import { D_LINK, D_PILL_OUTLINE, D_PILL_SELECTED } from "@/components/d/brand/buttons";
 import { CategoryIcon } from "@/components/d/brand/CategoryIcon";
-import { PaperPlane } from "@/components/d/brand/FlightPath";
 import { cloudReact } from "@/components/d/cloud/react";
 import { D_MOVE_MS, EASE_OUT, prefersReducedMotion } from "@/components/d/motion/motion";
 import { RatingPill } from "@/components/d/ratings/RatingPill";
@@ -89,9 +88,9 @@ function riseInTurn(panel: HTMLElement | null) {
  *
  * Everything that decorates or moves is the same on every card, whatever it
  * shows: the lift under a mouse, the last few pixels of rise as the card scrolls
- * in, the small plane that crosses the time line with the scroll, the pop of the
- * compare icon, the cloud's reactions. Only the rating block's tint says
- * anything about the flight. The card is a seat for the companion cloud, which
+ * in, the pop of the compare icon, the cloud's reactions. The time line is still:
+ * a line between two stops (the owner removed its travelling plane, 2026-11-13).
+ * Only the rating block's tint says anything about the flight. The card is a seat for the companion cloud, which
  * perches on its top edge: the first 9 px of the card stay empty padding.
  */
 export function DResultCard({
@@ -234,7 +233,7 @@ export function DResultCard({
         </div>
       </div>
 
-      {/* The times, quietly: a route between two stops, and a small plane that crosses it as the card crosses the screen. */}
+      {/* The times, quietly: a route between two stops. */}
       <div className="@container mt-4 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-1">
         <p>
           <span className="block whitespace-nowrap text-[17px] font-bold leading-none text-ink tabular-nums">{depart}</span>
@@ -247,20 +246,9 @@ export function DResultCard({
           </p>
           <div aria-hidden className="pointer-events-none relative mt-1 h-3.5 text-ink">
             <span className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-slate/70" />
-            {/* A stop at each end of the line. The plane flies the stretch between them (the kit's scroll-driven
-                plane, inset so it never half-covers a stop), and under a mouse it glides a little further. */}
+            {/* A stop at each end of the line, and nothing moves along it. */}
             <span className="absolute left-0 top-1/2 size-[7px] -translate-y-1/2 rounded-full bg-surface ring-2 ring-inset ring-ink" />
             <span className="absolute right-0 top-1/2 size-[7px] -translate-y-1/2 rounded-full bg-surface ring-2 ring-inset ring-ink" />
-            <span className="d-results-plane absolute inset-x-[11px] inset-y-0">
-              <span className="d-route-plane absolute inset-0">
-                <span className="bg-surface px-1.5">
-                  {/* D's one plane: the outlined paper plane of the hero, the wipe and the boarding pass, nose to the arrival. */}
-                  <svg aria-hidden viewBox="-10.6 -8.4 23.2 16.8" className="block h-[11px] w-[15px] overflow-visible">
-                    <PaperPlane />
-                  </svg>
-                </span>
-              </span>
-            </span>
           </div>
         </div>
         <p className="text-right">

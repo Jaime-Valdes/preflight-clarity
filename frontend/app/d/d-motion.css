@@ -9,7 +9,7 @@
  *   3. D's buttons and links (.d-btn-primary, .d-btn-outline, .d-btn-selected, .d-link) and the
  *      shared primaries D shows, which take the same look without their files changing.
  *   4. Fields and the shared small controls: press and hover only, colours stay the theme's.
- *   5. Utilities for D's own markup (.d-lift, .d-route-plane, .d-pop, .d-settle; .d-reveal is played by
+ *   5. Utilities for D's own markup (.d-lift, .d-pop, .d-settle; .d-reveal is played by
  *      script, components/d/motion/DMotionLayer.tsx).
  *      .d-chip and .d-row, for D's own chips and tappable rows, sit with the shared controls they match.
  *
@@ -639,35 +639,6 @@ html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origi
  */
 
 /*
- * .d-route-plane — a full-width wrapper laid over a card's time line, with one child (the
- * plane, on a patch of the card's colour) centred in it. Where scroll-driven animations
- * exist, the child travels from the departure end to the arrival end as the card crosses the
- * screen; elsewhere, and under reduced motion, it rests mid-line. The same for every card:
- * the only input is the scroll position. The child moves with `translate`, so a rotated
- * icon keeps flying level.
- */
-.d-route-plane {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  pointer-events: none;
-}
-
-@supports (animation-timeline: view()) and (width: 1cqi) {
-  @media (prefers-reduced-motion: no-preference) {
-    .d-route-plane {
-      container-type: inline-size;
-    }
-    .d-route-plane > * {
-      animation: d-kit-route 1ms linear;
-      animation-timeline: view();
-      animation-range: cover 0% cover 100%;
-    }
-  }
-}
-
-/*
  * .d-pop, .d-settle — two of the presets animateOnce() in motion.ts plays, for an element that
  * mounts in its arrived state (a check that replaces a plus, a rank number, a block of
  * content). The third preset, stamp, is script only. Transform only; opacity stays put. They are added to the
@@ -690,15 +661,6 @@ html[data-d-on] [role="dialog"][aria-modal="true"] button[aria-label="Swap origi
 @keyframes d-kit-bar {
   from {
     transform: scaleX(0);
-  }
-}
-
-@keyframes d-kit-route {
-  from {
-    translate: calc(-50cqi + 50%) 0;
-  }
-  to {
-    translate: calc(50cqi - 50%) 0;
   }
 }
 
