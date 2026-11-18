@@ -1,97 +1,94 @@
 /*
  * Version D — d-transition (docs/ui-d-cinematic.md, "The page transition"). Plain CSS, loaded by
  * app/d/layout.tsx. Every selector starts with html[data-d-on] or a .d-… class only D renders.
- * The two blocks marked "generated" (the travel table and the drawings) are written by
- * frontend/scripts/d-transition-art.mjs: to change them, edit that script and run it.
+ * The five blocks marked "generated" (the bands, the paints, the far and the near cloud layers, and the motion's
+ * keyframes) are written by frontend/scripts/d-transition-art.mjs: to change them, edit that script and run it.
  *
  * Goes with components/d/brand/DPageTransition.tsx (the 1×1 px stage each /d page renders) and
  * components/d/brand/DScope.tsx (sets html[data-d-on] while /d is mounted: the ::view-transition-*
- * pseudo-elements hang off <html>, where [data-theme="d"] cannot reach them).
+ * pseudo-elements hang off <html>, where [data-theme="d"] cannot reach them). The night drawings follow
+ * html[data-d-time="night"], which DScope sets from hydration on, before any transition can start (and the sky's
+ * clock never changes it while one runs).
  *
- * The picture is a wipe on one clock (--d-vt), everything linear:
- *   - a seam travels from --d-vt-from to --d-vt-to, both just off screen; the old page shows
- *     right of it, the live new page left;
- *   - the old page is the browser's snapshot of the viewport. Its group is a clip box whose left
- *     edge is the seam: the box slides right with the seam while the image inside slides left by
- *     the same amount, so the picture stands still and only its left edge travels;
- *   - a ribbon of cloud rides on the seam and hides the join; a paper plane flies ahead of it.
- * The clip box and the ribbon move by the same two numbers over the same clock, so the join is
- * under the ribbon at every moment on every screen, with nothing to keep in step by hand. Only
- * `translate` animates, so it stays on time when the page is busy. No script drives it: React
- * names the stage just before the first frame and clears that a few milliseconds after it, and
- * from then on nothing in the DOM changes for the transition's sake.
+ * The picture is a cloud pass on one clock (--d-vt):
+ *   - a bank of cloud drifts in from the left, slowing, covers the whole screen and rests there a moment (the
+ *     hold, 200 ms), then drifts out to the right, gathering pace and slowing again as it leaves;
+ *   - the old page is the browser's snapshot of the viewport. It never moves and is never clipped: it is held
+ *     whole and cut with an opacity step at half the clock, in the middle of the hold;
+ *   - two depths on the one stage: the far clouds (the stage's group) and the near bank (its image-pair, the core,
+ *     one flat colour; its new image, the near clouds and the tap blocker), which travels a little further than
+ *     the far clouds over the same clock (parallax).
+ * Only translate and opacity animate (and visibility flips once, for taps): no mask, clip-path, filter or overflow
+ * clip. No script runs while it plays. While it plays the live page underneath holds still (section 8).
  *
  * Three things to keep true:
- *   - The travel fits the art: the plane's nose is just left of the screen when the clock starts
- *     and the last puff just right of it when it stops, so nobody waits on an empty screen. The
- *     art is sized in px and the travel in vw, which is why there is a band of numbers per range
- *     of widths. After changing a size, run the script; it works the bands out again.
- *   - The stage is D's only <ViewTransition>. The rules for the root below apply to every view
- *     transition started under /d, so another boundary would get the wipe without the ribbon.
- *   - It leans on React taking the root out of the new state (19.3 does). After a React or Next
- *     upgrade, look at a slowed transition again before shipping.
+ *   - The cut (50 % of the clock) must fall inside the window in which the near bank's solid part covers the
+ *     screen. The script checks every width from 240 to 2560 px for at least 60 ms either side: after changing the
+ *     clock, a size or a box below, run it (it writes the keyframes for the clock).
+ *   - The stage is D's only <ViewTransition>. The root rules apply to every view transition started under /d.
+ *   - It leans on React taking the root out of the new state (19.3 does). After a React or Next upgrade, run the
+ *     transition checks again before shipping.
  */
 
 html[data-d-on] {
-  --d-vt: 760ms;
+  --d-vt: 1600ms;
 }
 
-/* The travel, per screen width, on <html> so that script can read it (the cloud's eyes follow
-   the plane: components/d/cloud/gaze.ts). All plain values:
-     --d-vt-from, --d-vt-to   where the seam starts and ends, in vw from the screen's left edge;
-     --d-vt-lead              how far the middle of the plane flies ahead of the seam;
-     --d-vt-ribbon            the ribbon's width;
-     --d-vt-plane             the plane's length, nose to tail, without its contrail. */
-/* generated:travel — by frontend/scripts/d-transition-art.mjs; change the sizes there and run it */
+/* The bank's sizes per screen width, on <html> so that the pseudo-elements inherit them. All plain values:
+     --d-vt-k           the drawings' scale (1 on phones);
+     --d-vt-m           how far the core overhangs each side of the screen at the cut;
+     --d-vt-gain        how much further the near bank travels than the far clouds (the parallax);
+     --d-vt-near-out    how far the near clouds reach past the core's edges;
+     --d-vt-reach       how far the whole bank reaches past the core's edges (the far clouds reach further);
+     --d-vt-far-line    where the far clouds' centre line sits, in from the bank's ends. */
+/* generated:bands — by frontend/scripts/d-transition-art.mjs; change the sizes there and run it */
 html[data-d-on] {
-  --d-vt-ribbon: 30vw;
-  --d-vt-plane: 52px;
-  --d-vt-lead: 30vw;
-  --d-vt-from: -39.3vw;
-  --d-vt-to: 123.8vw;
+  --d-vt-k: 1;
+  --d-vt-u: 1px;
+  --d-vt-m: calc(8px + 9vw);
+  --d-vt-gain: 64px;
+  --d-vt-near-out: 123px;
+  --d-vt-reach: 131px;
+  --d-vt-far-line: 97px;
 }
-@media (min-width: 400px) {
+@media (min-width: 640px) {
   html[data-d-on] {
-    --d-vt-ribbon: 120px;
-    --d-vt-plane: 52px;
-    --d-vt-lead: 120px;
-    --d-vt-from: -37.4vw;
-    --d-vt-to: 123.7vw;
-  }
-}
-@media (min-width: 530px) {
-  html[data-d-on] {
-    --d-vt-from: -28.3vw;
-    --d-vt-to: 117.9vw;
-  }
-}
-@media (min-width: 750px) {
-  html[data-d-on] {
-    --d-vt-from: -20vw;
-    --d-vt-to: 112.7vw;
+    --d-vt-k: 1.25;
+    --d-vt-u: 1.25px;
+    --d-vt-m: calc(8px + 10vw);
+    --d-vt-gain: 80px;
+    --d-vt-near-out: 153.75px;
+    --d-vt-reach: 163.75px;
+    --d-vt-far-line: 121.25px;
   }
 }
 @media (min-width: 1024px) {
   html[data-d-on] {
-    --d-vt-ribbon: 176px;
-    --d-vt-plane: 72px;
-    --d-vt-lead: 171px;
-    --d-vt-from: -20.7vw;
-    --d-vt-to: 113.5vw;
+    --d-vt-k: 1.6;
+    --d-vt-u: 1.6px;
+    --d-vt-m: calc(8px + 11vw);
+    --d-vt-gain: 102.4px;
+    --d-vt-near-out: 196.8px;
+    --d-vt-reach: 209.6px;
+    --d-vt-far-line: 155.2px;
   }
 }
 @media (min-width: 1640px) {
   html[data-d-on] {
-    --d-vt-from: -12.9vw;
-    --d-vt-to: 108.5vw;
+    --d-vt-k: 2.1;
+    --d-vt-u: 2.1px;
+    --d-vt-m: calc(8px + 12vw);
+    --d-vt-gain: 134.4px;
+    --d-vt-near-out: 258.3px;
+    --d-vt-reach: 275.1px;
+    --d-vt-far-line: 203.7px;
   }
 }
-/* generated:travel end */
+/* generated:bands end */
 
-/* The stage element itself: 1×1 px, pinned to the screen's top-left corner, paints nothing,
-   takes no input. The browser lays the ribbon out from where this element is, so nothing may
-   move it: the !important flags keep a broad rule for main's children (an entrance animation,
-   a scroll reveal) from shifting the ribbon off the join by accident. */
+/* The stage element itself: 1×1 px, pinned to the top-left corner, paints nothing, takes no input. The browser lays
+   the bank out from where this element is, so nothing may move it: the !important flags keep a broad rule for
+   main's children (an entrance animation, a scroll reveal) from moving the whole bank by accident. */
 .d-vt-stage {
   position: fixed !important;
   top: 0 !important;
@@ -108,140 +105,238 @@ html[data-d-on]::view-transition {
   pointer-events: none;
 }
 
-/* 2. The old page. React takes the root out of the new state (the new page is never captured:
-      it stays live underneath) and hides the root's group with a script animation; !important
-      outranks that animation, so the old snapshot stays up. The group clips, and its left edge
-      is the seam. It is padded a screen's width to the right, so that while the seam is still
-      left of the screen the box reaches past the right edge and the whole page shows; the
-      image-pair gives that width back, so the picture keeps its size. While a part of the old
-      page is on screen it swallows taps, which would otherwise land on the new page hidden under
-      it; the clipped-away part cannot be hit, so everything the ribbon has passed is live at once. */
+/* 2. The old page. React takes the root out of the new state (the new page is never captured: it stays live
+      underneath) and hides the root's group with a script animation; !important outranks it, so the old snapshot
+      stays up, whole and still, until the cut. Two animations on purpose: the opacity step runs on the compositor,
+      in step with the bank, while the visibility flip (which only decides what a tap hits) may run late on a busy
+      main thread. Before the cut the snapshot swallows taps (they would land on the hidden new page); after it, it
+      cannot be hit. */
 html[data-d-on]::view-transition-group(root) {
-  box-sizing: content-box;
-  padding-right: 100vw;
   opacity: 1 !important;
-  overflow: clip;
-  animation: d-vt-clip var(--d-vt) linear both;
-}
-html[data-d-on]::view-transition-image-pair(root) {
-  right: 100vw;
 }
 html[data-d-on]::view-transition-old(root) {
-  animation: d-vt-hold var(--d-vt) linear both;
+  animation:
+    d-vt-cut var(--d-vt) linear both,
+    d-vt-cut-hit var(--d-vt) linear both;
   mix-blend-mode: normal;
   pointer-events: auto;
 }
-@keyframes d-vt-clip {
-  from {
-    translate: var(--d-vt-from) 0;
+@keyframes d-vt-cut {
+  0%,
+  50% {
+    opacity: 1;
   }
-  to {
-    translate: var(--d-vt-to) 0;
+  50.01%,
+  100% {
+    opacity: 0;
   }
 }
-@keyframes d-vt-hold {
-  from {
-    translate: calc(-1 * var(--d-vt-from)) 0;
+@keyframes d-vt-cut-hit {
+  0%,
+  50% {
+    visibility: visible;
   }
-  to {
-    translate: calc(-1 * var(--d-vt-to)) 0;
+  50.01%,
+  100% {
+    visibility: hidden;
   }
 }
 
-/* 3. The ribbon: the stage's group, a box centred on the seam and just wide enough for the plane
-      ahead of it (--d-vt-reach is half the box). It moves exactly as the clip box does. It
-      reaches 10lvh past the top and the bottom on purpose (a phone's snapshot area can be taller
-      than what its toolbars leave visible). Three paint layers, front to back, each tile as wide
-      as the ribbon: the scalloped column (white lobes, a cream lee side behind, a pale sky rim
-      in front so it keeps an edge over paper cards), a solid white band that hides the join
-      whatever the tiling does, and a few loose cloudlets trailing behind (their tile ends on the
-      seam). Inline SVG, tiled downwards; no image files. The box itself takes no taps: see 5. */
-html[data-d-on]::view-transition-group(.d-plane) {
-  --d-vt-reach: calc(var(--d-vt-lead) + var(--d-vt-plane));
-  /* generated:art — by frontend/scripts/d-transition-art.mjs; redraw there and run it */
-  --d-vt-art-ribbon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 176 528'%3E%3Cg fill='%23E3F1FC'%3E%3Ccircle cx='125.3' cy='24.8' r='38'/%3E%3Ccircle cx='125.3' cy='552.8' r='38'/%3E%3Ccircle cx='126.7' cy='92.6' r='48'/%3E%3Ccircle cx='123.9' cy='155' r='28'/%3E%3Ccircle cx='127.6' cy='207.2' r='40'/%3E%3Ccircle cx='124.8' cy='274.1' r='34'/%3E%3Ccircle cx='126.7' cy='338.6' r='48'/%3E%3Ccircle cx='124.2' cy='407.4' r='30'/%3E%3Ccircle cx='127.9' cy='463.6' r='42'/%3E%3Ccircle cx='125.9' cy='513' r='28'/%3E%3Ccircle cx='125.9' cy='-15' r='28'/%3E%3C/g%3E%3Cg fill='%23FFEFC8'%3E%3Ccircle cx='47.2' cy='47.5' r='44'/%3E%3Ccircle cx='52' cy='113.1' r='30'/%3E%3Ccircle cx='48' cy='168.8' r='40'/%3E%3Ccircle cx='48.4' cy='240.2' r='48'/%3E%3Ccircle cx='52.4' cy='306.8' r='28'/%3E%3Ccircle cx='48.4' cy='358.5' r='38'/%3E%3Ccircle cx='48.8' cy='427.8' r='46'/%3E%3Ccircle cx='53.2' cy='499.8' r='34'/%3E%3Ccircle cx='53.2' cy='-28.2' r='34'/%3E%3C/g%3E%3Cg fill='%23fff'%3E%3Crect x='58' y='-1' width='60' height='530'/%3E%3Ccircle cx='120' cy='18' r='38'/%3E%3Ccircle cx='120' cy='546' r='38'/%3E%3Ccircle cx='120' cy='84' r='48'/%3E%3Ccircle cx='120' cy='150' r='28'/%3E%3Ccircle cx='122' cy='200' r='40'/%3E%3Ccircle cx='120' cy='268' r='34'/%3E%3Ccircle cx='120' cy='330' r='48'/%3E%3Ccircle cx='120' cy='402' r='30'/%3E%3Ccircle cx='122' cy='456' r='42'/%3E%3Ccircle cx='122' cy='508' r='28'/%3E%3Ccircle cx='122' cy='-20' r='28'/%3E%3Ccircle cx='56' cy='40' r='44'/%3E%3Ccircle cx='56' cy='568' r='44'/%3E%3Ccircle cx='58' cy='108' r='30'/%3E%3Ccircle cx='56' cy='162' r='40'/%3E%3Ccircle cx='58' cy='232' r='48'/%3E%3Ccircle cx='58' cy='302' r='28'/%3E%3Ccircle cx='56' cy='352' r='38'/%3E%3Ccircle cx='58' cy='420' r='46'/%3E%3Ccircle cx='60' cy='494' r='34'/%3E%3C/g%3E%3C/svg%3E");
-  --d-vt-art-puffs: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 176 704'%3E%3Cg fill='%23FFEFC8'%3E%3Ccircle cx='76.8' cy='72.2' r='11'/%3E%3Ccircle cx='65.9' cy='75.1' r='7.3'/%3E%3Ccircle cx='51.7' cy='251.4' r='7'/%3E%3Ccircle cx='44.7' cy='253.2' r='4.6'/%3E%3Ccircle cx='71.1' cy='541.9' r='9.5'/%3E%3Ccircle cx='61.7' cy='544.4' r='6.3'/%3E%3C/g%3E%3Cg fill='%23fff'%3E%3Ccircle cx='79.2' cy='70' r='11'/%3E%3Ccircle cx='67.7' cy='73.3' r='7.3'/%3E%3Ccircle cx='53.2' cy='250' r='7'/%3E%3Ccircle cx='45.9' cy='252.1' r='4.6'/%3E%3Ccircle cx='73.2' cy='540' r='9.5'/%3E%3Ccircle cx='63.2' cy='542.9' r='6.3'/%3E%3C/g%3E%3C/svg%3E");
-  --d-vt-art-plane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-34 -10 50 20'%3E%3Cg transform='rotate(-5 1 0)'%3E%3Cpath d='M-12.5 0L-21 0M-25 0L-28.5 0' fill='none' stroke='%23FFC53D' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M11 0L-9 -7L-5 0L-9 7Z' fill='%23fff' stroke='%2314213D' stroke-width='1.3' stroke-linejoin='round'/%3E%3Cpath d='M-5 0L3.5 0' fill='none' stroke='%2314213D' stroke-width='1.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  /* generated:art end */
+/* 3. The drawings: D's billows as inline SVG, by day and by night, and the haze (the core's colour). Defined on the
+      group; the image-pair and the new image inherit them. */
+/* generated:art — by frontend/scripts/d-transition-art.mjs; redraw there and run it */
+html[data-d-on]::view-transition-group(.d-cloud-pass) {
+  --d-vt-haze: #E9F4FD;
+  --d-vt-w: radial-gradient(circle closest-side, #E9F4FD calc(100% - 1px), #0000);
+  --d-vt-nb: radial-gradient(circle closest-side, #FFFFFF 45%, #F4F9FE calc(100% - 1px), #0000);
+  --d-vt-nu: radial-gradient(circle closest-side, #FCE7B4 calc(100% - 1px), #0000);
+  --d-vt-ne: radial-gradient(circle closest-side, #CFE5F8 calc(100% - 1px), #0000);
+  --d-vt-fb: radial-gradient(circle closest-side, #EDF6FD 45%, #E4F0FB calc(100% - 1px), #0000);
+  --d-vt-fu: radial-gradient(circle closest-side, #D8E8F6 calc(100% - 1px), #0000);
+}
+html[data-d-on][data-d-time="night"]::view-transition-group(.d-cloud-pass) {
+  --d-vt-haze: #303D63;
+  --d-vt-w: radial-gradient(circle closest-side, #303D63 calc(100% - 1px), #0000);
+  --d-vt-nb: radial-gradient(circle closest-side, #53649A 45%, #41507E calc(100% - 1px), #0000);
+  --d-vt-nu: radial-gradient(circle closest-side, #2B3657 calc(100% - 1px), #0000);
+  --d-vt-ne: radial-gradient(circle closest-side, #A9BCE2 calc(100% - 1px), #0000);
+  --d-vt-fb: radial-gradient(circle closest-side, #37446C 45%, #323E66 calc(100% - 1px), #0000);
+  --d-vt-fu: radial-gradient(circle closest-side, #273152 calc(100% - 1px), #0000);
+}
+/* generated:art end */
+
+/* 4. The far clouds: the stage's group, whose box is the whole bank (the core plus the bank's reach either side),
+      120lvh tall from 10lvh above the screen. It travels from just off the left edge to just off the right one. It
+      takes no taps: the far clouds are pale and broken, and the page shows between them. Sizes in vw and lvh only:
+      React sizes the transition's root pseudo-element to nothing, so a percentage here would resolve against 0. */
+html[data-d-on]::view-transition-group(.d-cloud-pass) {
+  --d-vt-core: calc(100vw + 2 * var(--d-vt-m));
+  --d-vt-g: calc(var(--d-vt-core) + 2 * var(--d-vt-reach));
   z-index: 100;
   top: -10lvh;
-  left: calc(-1 * var(--d-vt-reach));
-  width: calc(2 * var(--d-vt-reach));
+  left: 0;
+  width: var(--d-vt-g);
   height: 120lvh;
+  /* generated:far — by frontend/scripts/d-transition-art.mjs */
   background:
-    var(--d-vt-art-ribbon) repeat-y 50% 0 / var(--d-vt-ribbon) auto,
-    linear-gradient(#fff, #fff) no-repeat 50% 0 / calc(var(--d-vt-ribbon) * 0.34) 100%,
-    var(--d-vt-art-puffs) repeat-y calc(var(--d-vt-reach) - var(--d-vt-ribbon)) 0 / var(--d-vt-ribbon) auto;
-  animation: d-vt-ribbon var(--d-vt) linear both;
+    var(--d-vt-fb) right calc(64*var(--d-vt-u)) top calc(75*var(--d-vt-u))/calc(78*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fb) right calc(101.4*var(--d-vt-u)) top calc(107.7*var(--d-vt-u))/calc(65.5*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fb) right calc(35.9*var(--d-vt-u)) top calc(98.4*var(--d-vt-u))/calc(65.5*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fb) right calc(74.9*var(--d-vt-u)) top calc(120.2*var(--d-vt-u))/calc(56.2*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fu) right calc(101.4*var(--d-vt-u)) top calc(114*var(--d-vt-u))/calc(65.5*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fu) right calc(35.9*var(--d-vt-u)) top calc(104.6*var(--d-vt-u))/calc(65.5*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fu) right calc(74.9*var(--d-vt-u)) top calc(126.4*var(--d-vt-u))/calc(56.2*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fb) right calc(68.2*var(--d-vt-u)) top calc(-115.4*var(--d-vt-u))/calc(74.2*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) right calc(34.1*var(--d-vt-u)) top calc(-119.8*var(--d-vt-u))/calc(68.2*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) right calc(109.8*var(--d-vt-u)) top calc(-90.2*var(--d-vt-u))/calc(59.3*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) right calc(7.4*var(--d-vt-u)) top calc(-94.6*var(--d-vt-u))/calc(56.4*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) right calc(57.9*var(--d-vt-u)) top calc(-84.2*var(--d-vt-u))/calc(59.3*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fu) right calc(109.8*var(--d-vt-u)) top calc(-84.2*var(--d-vt-u))/calc(59.3*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fu) right calc(7.4*var(--d-vt-u)) top calc(-88.7*var(--d-vt-u))/calc(56.4*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fu) right calc(57.9*var(--d-vt-u)) top calc(-78.3*var(--d-vt-u))/calc(59.3*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(64*var(--d-vt-u)) top calc(195*var(--d-vt-u))/calc(78*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(39*var(--d-vt-u)) top calc(227.7*var(--d-vt-u))/calc(65.5*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(104.6*var(--d-vt-u)) top calc(218.4*var(--d-vt-u))/calc(65.5*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(74.9*var(--d-vt-u)) top calc(240.2*var(--d-vt-u))/calc(56.2*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fu) left calc(39*var(--d-vt-u)) top calc(234*var(--d-vt-u))/calc(65.5*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fu) left calc(104.6*var(--d-vt-u)) top calc(224.6*var(--d-vt-u))/calc(65.5*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fu) left calc(74.9*var(--d-vt-u)) top calc(246.4*var(--d-vt-u))/calc(56.2*var(--d-vt-u)) calc(282*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(35.6*var(--d-vt-u)) top calc(84.6*var(--d-vt-u))/calc(74.2*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(75.7*var(--d-vt-u)) top calc(80.2*var(--d-vt-u))/calc(68.2*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(8.9*var(--d-vt-u)) top calc(109.8*var(--d-vt-u))/calc(59.3*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(114.2*var(--d-vt-u)) top calc(105.4*var(--d-vt-u))/calc(56.4*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fb) left calc(60.8*var(--d-vt-u)) top calc(115.8*var(--d-vt-u))/calc(59.3*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fu) left calc(8.9*var(--d-vt-u)) top calc(115.8*var(--d-vt-u))/calc(59.3*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fu) left calc(114.2*var(--d-vt-u)) top calc(111.3*var(--d-vt-u))/calc(56.4*var(--d-vt-u)) calc(330*var(--d-vt-u)),
+    var(--d-vt-fu) left calc(60.8*var(--d-vt-u)) top calc(121.7*var(--d-vt-u))/calc(59.3*var(--d-vt-u)) calc(330*var(--d-vt-u));
+  background-repeat: repeat-y;
+  /* generated:far end */
+  animation: d-vt-far var(--d-vt) linear both;
   pointer-events: none;
 }
-@keyframes d-vt-ribbon {
-  from {
-    translate: var(--d-vt-from) 0;
-  }
-  to {
-    translate: var(--d-vt-to) 0;
-  }
+
+/* 5. The near bank's core: the image-pair, one flat colour (a solid layer the browser draws without a texture),
+      riding the group with its own small extra travel (the parallax). */
+html[data-d-on]::view-transition-image-pair(.d-cloud-pass) {
+  inset: 0 auto 0 var(--d-vt-reach);
+  width: var(--d-vt-core);
+  background-color: var(--d-vt-haze);
+  animation: d-vt-near var(--d-vt) linear both;
 }
 
-/* 4. The plane: the image-pair, a child of the group, so it rides along; its own animation is the
-      gentle climb. D's paper plane (white, ink outline, nose up 5°) with a short gold contrail,
-      its middle --d-vt-lead ahead of the seam, in clear air. The drawing is 2.5 plane lengths
-      wide and 1 tall, with the middle of the plane 1.75 lengths from its left edge and half a
-      length from its top. It flies at the height of the tap that caused the move: --d-tap-y on
-      <html>, a length, written by the motion layer on the click that starts a page move. */
-html[data-d-on]::view-transition-image-pair(.d-plane) {
-  background: var(--d-vt-art-plane) no-repeat
-    calc(var(--d-vt-reach) + var(--d-vt-lead) - var(--d-vt-plane) * 1.75)
-    calc(10lvh + clamp(18vh, var(--d-tap-y, 42vh), 72vh) - var(--d-vt-plane) * 0.5) / calc(var(--d-vt-plane) * 2.5) auto;
-  animation: d-vt-climb var(--d-vt) linear both;
-}
-@keyframes d-vt-climb {
-  from {
-    translate: 0 0;
-  }
-  to {
-    translate: 0 -3vh;
-  }
-}
-
-/* 5. The stage's own snapshot is an empty 1 px image. Stretched over the ribbon's trailing half
-      it paints nothing and swallows taps there: under the cloud the new page cannot be seen, so
-      a tap must not reach it. (The leading half lies over the old page, which already does.) */
-html[data-d-on]::view-transition-new(.d-plane) {
-  left: calc(50% - var(--d-vt-ribbon) * 0.45);
-  width: calc(var(--d-vt-ribbon) * 0.5);
+/* 6. The near clouds and the tap blocker: the stage's new image (an empty 1 px picture) stretched over the core and
+      the cloud columns either side. It paints the near billows and the wall that hides the core's straight edges,
+      and it swallows taps wherever the near bank is: the new page under it cannot be seen. */
+html[data-d-on]::view-transition-new(.d-cloud-pass) {
+  inset: 0 auto 0 calc(-1 * var(--d-vt-near-out));
+  width: calc(100% + 2 * var(--d-vt-near-out));
   height: 100%;
-  opacity: 0;
+  /* generated:near — by frontend/scripts/d-transition-art.mjs */
+  background:
+    var(--d-vt-nb) left calc(50% + -21.6*var(--d-vt-u)) top calc(60.2*var(--d-vt-u))/calc(98.3*var(--d-vt-u)) calc(452*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(50% + 27.5*var(--d-vt-u)) top calc(54.3*var(--d-vt-u))/calc(90.5*var(--d-vt-u)) calc(452*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(50% + -66.9*var(--d-vt-u)) top calc(93.7*var(--d-vt-u))/calc(78.7*var(--d-vt-u)) calc(452*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(50% + 70.8*var(--d-vt-u)) top calc(87.8*var(--d-vt-u))/calc(74.7*var(--d-vt-u)) calc(452*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(50% + 2*var(--d-vt-u)) top calc(101.5*var(--d-vt-u))/calc(78.7*var(--d-vt-u)) calc(452*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(79*var(--d-vt-u)) top calc(-151*var(--d-vt-u))/calc(85.8*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(39.5*var(--d-vt-u)) top calc(-156.2*var(--d-vt-u))/calc(79*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(127*var(--d-vt-u)) top calc(-121.8*var(--d-vt-u))/calc(68.7*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(8.6*var(--d-vt-u)) top calc(-127*var(--d-vt-u))/calc(65.2*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(67*var(--d-vt-u)) top calc(-115*var(--d-vt-u))/calc(68.7*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(127*var(--d-vt-u)) top calc(-115*var(--d-vt-u))/calc(68.7*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(8.6*var(--d-vt-u)) top calc(-120.1*var(--d-vt-u))/calc(65.2*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(67*var(--d-vt-u)) top calc(-108.1*var(--d-vt-u))/calc(68.7*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(76.8*var(--d-vt-u)) top calc(-153.2*var(--d-vt-u))/calc(90.1*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(37.3*var(--d-vt-u)) top calc(-158.3*var(--d-vt-u))/calc(83.3*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(124.9*var(--d-vt-u)) top calc(-124*var(--d-vt-u))/calc(73*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(6.4*var(--d-vt-u)) top calc(-129.1*var(--d-vt-u))/calc(69.5*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(64.8*var(--d-vt-u)) top calc(-117.1*var(--d-vt-u))/calc(73*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(42*var(--d-vt-u)) top calc(20.2*var(--d-vt-u))/calc(82*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(81.4*var(--d-vt-u)) top calc(54.7*var(--d-vt-u))/calc(68.9*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(12.5*var(--d-vt-u)) top calc(44.8*var(--d-vt-u))/calc(68.9*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(53.5*var(--d-vt-u)) top calc(67.8*var(--d-vt-u))/calc(59*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(81.4*var(--d-vt-u)) top calc(61.2*var(--d-vt-u))/calc(68.9*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(12.5*var(--d-vt-u)) top calc(51.4*var(--d-vt-u))/calc(68.9*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(53.5*var(--d-vt-u)) top calc(74.4*var(--d-vt-u))/calc(59*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(40*var(--d-vt-u)) top calc(18.2*var(--d-vt-u))/calc(86.1*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(79.3*var(--d-vt-u)) top calc(52.6*var(--d-vt-u))/calc(73*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(10.4*var(--d-vt-u)) top calc(42.8*var(--d-vt-u))/calc(73*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(51.4*var(--d-vt-u)) top calc(65.8*var(--d-vt-u))/calc(63.1*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(109.5*var(--d-vt-u)) top calc(71.3*var(--d-vt-u))/calc(76.7*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(74.3*var(--d-vt-u)) top calc(66.7*var(--d-vt-u))/calc(70.5*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(152.5*var(--d-vt-u)) top calc(97.3*var(--d-vt-u))/calc(61.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(46.7*var(--d-vt-u)) top calc(92.7*var(--d-vt-u))/calc(58.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) right calc(98.8*var(--d-vt-u)) top calc(103.5*var(--d-vt-u))/calc(61.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(152.5*var(--d-vt-u)) top calc(103.5*var(--d-vt-u))/calc(61.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(46.7*var(--d-vt-u)) top calc(98.9*var(--d-vt-u))/calc(58.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nu) right calc(98.8*var(--d-vt-u)) top calc(109.6*var(--d-vt-u))/calc(61.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(107.6*var(--d-vt-u)) top calc(69.4*var(--d-vt-u))/calc(80.5*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(72.4*var(--d-vt-u)) top calc(64.8*var(--d-vt-u))/calc(74.4*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(150.5*var(--d-vt-u)) top calc(95.4*var(--d-vt-u))/calc(65.2*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(44.8*var(--d-vt-u)) top calc(90.8*var(--d-vt-u))/calc(62.1*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) right calc(96.9*var(--d-vt-u)) top calc(101.6*var(--d-vt-u))/calc(65.2*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(41.2*var(--d-vt-u)) top calc(-11*var(--d-vt-u))/calc(85.8*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(87.6*var(--d-vt-u)) top calc(-16.2*var(--d-vt-u))/calc(79*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(10.3*var(--d-vt-u)) top calc(18.2*var(--d-vt-u))/calc(68.7*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(132.2*var(--d-vt-u)) top calc(13*var(--d-vt-u))/calc(65.2*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(70.4*var(--d-vt-u)) top calc(25*var(--d-vt-u))/calc(68.7*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(10.3*var(--d-vt-u)) top calc(25*var(--d-vt-u))/calc(68.7*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(132.2*var(--d-vt-u)) top calc(19.9*var(--d-vt-u))/calc(65.2*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(70.4*var(--d-vt-u)) top calc(31.9*var(--d-vt-u))/calc(68.7*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(39.1*var(--d-vt-u)) top calc(-13.2*var(--d-vt-u))/calc(90.1*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(85.4*var(--d-vt-u)) top calc(-18.3*var(--d-vt-u))/calc(83.3*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(8.2*var(--d-vt-u)) top calc(16*var(--d-vt-u))/calc(73*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(130*var(--d-vt-u)) top calc(10.9*var(--d-vt-u))/calc(69.5*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(68.2*var(--d-vt-u)) top calc(22.9*var(--d-vt-u))/calc(73*var(--d-vt-u)) calc(318*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(42*var(--d-vt-u)) top calc(80.2*var(--d-vt-u))/calc(82*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(15.8*var(--d-vt-u)) top calc(114.7*var(--d-vt-u))/calc(68.9*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(84.6*var(--d-vt-u)) top calc(104.8*var(--d-vt-u))/calc(68.9*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(53.5*var(--d-vt-u)) top calc(127.8*var(--d-vt-u))/calc(59*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(15.8*var(--d-vt-u)) top calc(121.2*var(--d-vt-u))/calc(68.9*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(84.6*var(--d-vt-u)) top calc(111.4*var(--d-vt-u))/calc(68.9*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(53.5*var(--d-vt-u)) top calc(134.4*var(--d-vt-u))/calc(59*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(40*var(--d-vt-u)) top calc(78.2*var(--d-vt-u))/calc(86.1*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(13.7*var(--d-vt-u)) top calc(112.6*var(--d-vt-u))/calc(73*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(82.6*var(--d-vt-u)) top calc(102.8*var(--d-vt-u))/calc(73*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(51.4*var(--d-vt-u)) top calc(125.8*var(--d-vt-u))/calc(63.1*var(--d-vt-u)) calc(270*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(75.8*var(--d-vt-u)) top calc(271.3*var(--d-vt-u))/calc(76.7*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(117.2*var(--d-vt-u)) top calc(266.7*var(--d-vt-u))/calc(70.5*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(48.2*var(--d-vt-u)) top calc(297.3*var(--d-vt-u))/calc(61.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(157.1*var(--d-vt-u)) top calc(292.7*var(--d-vt-u))/calc(58.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nb) left calc(101.9*var(--d-vt-u)) top calc(303.5*var(--d-vt-u))/calc(61.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(48.2*var(--d-vt-u)) top calc(303.5*var(--d-vt-u))/calc(61.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(157.1*var(--d-vt-u)) top calc(298.9*var(--d-vt-u))/calc(58.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-nu) left calc(101.9*var(--d-vt-u)) top calc(309.6*var(--d-vt-u))/calc(61.3*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(73.9*var(--d-vt-u)) top calc(269.4*var(--d-vt-u))/calc(80.5*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(115.3*var(--d-vt-u)) top calc(264.8*var(--d-vt-u))/calc(74.4*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(46.3*var(--d-vt-u)) top calc(295.4*var(--d-vt-u))/calc(65.2*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(155.1*var(--d-vt-u)) top calc(290.8*var(--d-vt-u))/calc(62.1*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-ne) left calc(99.9*var(--d-vt-u)) top calc(301.6*var(--d-vt-u))/calc(65.2*var(--d-vt-u)) calc(356*var(--d-vt-u)),
+    var(--d-vt-w) right calc(77*var(--d-vt-u)) top calc(-70*var(--d-vt-u))/calc(112*var(--d-vt-u)) calc(140*var(--d-vt-u)),
+    var(--d-vt-w) right calc(77*var(--d-vt-u)) top 0/calc(112*var(--d-vt-u)) calc(140*var(--d-vt-u)),
+    var(--d-vt-w) left calc(77*var(--d-vt-u)) top calc(-70*var(--d-vt-u))/calc(112*var(--d-vt-u)) calc(140*var(--d-vt-u)),
+    var(--d-vt-w) left calc(77*var(--d-vt-u)) top 0/calc(112*var(--d-vt-u)) calc(140*var(--d-vt-u));
+  background-repeat: repeat-y;
+  /* generated:near end */
   animation: none;
   mix-blend-mode: normal;
   pointer-events: auto;
 }
-html[data-d-on]::view-transition-old(.d-plane) {
+html[data-d-on]::view-transition-old(.d-cloud-pass) {
   display: none;
 }
 
-/* 6. Reduced motion: no ribbon, no plane, no wipe; the old page fades into the live one in
-      150 ms and takes no taps while it does. The app's global reduced-motion rule does not
-      reach these pseudo-elements, so this block is required. The hidden plane's animations are
-      switched off as well: Safari still counts them while the group is not displayed, and the
-      transition (and every page move and loading reveal React holds behind it) would last the
-      full 760 ms instead of 150. */
+/* 7. Reduced motion: no clouds; the old page fades into the live one in 150 ms and takes no taps while it does.
+      The app's global reduced-motion rule does not reach these pseudo-elements, so this block is required. The
+      hidden bank's animations are switched off as well: Safari still counts them while the group is not displayed,
+      and the transition (and every page move and loading reveal React holds behind it) would last the full clock. */
 @media (prefers-reduced-motion: reduce) {
-  html[data-d-on]::view-transition-group(.d-plane) {
+  html[data-d-on]::view-transition-group(.d-cloud-pass) {
     display: none;
     animation: none;
   }
-  html[data-d-on]::view-transition-image-pair(.d-plane) {
+  html[data-d-on]::view-transition-image-pair(.d-cloud-pass) {
     animation: none;
-  }
-  html[data-d-on]::view-transition-group(root) {
-    padding-right: 0;
-    overflow: visible;
-    animation: none;
-  }
-  html[data-d-on]::view-transition-image-pair(root) {
-    right: 0;
   }
   html[data-d-on]::view-transition-old(root) {
     animation: d-vt-fade-out 150ms linear both;
@@ -253,3 +348,86 @@ html[data-d-on]::view-transition-old(.d-plane) {
     opacity: 0;
   }
 }
+
+/* 8. Holding still. Safari draws each frame of a view transition only as fast as the live page under it commits,
+      and React mounts the new page as the pass begins; so while the pass runs, the page under it does as little as
+      it can. Each feature's own pause stays in its partial (the sky's travel and twinkles in d-sky.css, the clouds
+      in d-cloud.css, the home's title sequence in d-home.css, the boarding pass in d-flight.css); these are the
+      pass's own:
+        - the new page's own animations wait (paused: an entrance holds its first frame, and plays once the pass is
+          over) and its transitions are off (a hover-out or a colour change lands at once), the loader's dashes and
+          the skeleton's pulse included;
+        - the sky changes scene at once, without its camera move, its light's cross-fade or the pointer's ease: the
+          old page still covers it then, and the bank uncovers the new scene at rest;
+        - the sky is drawn for the old page's capture, then leaves the render tree while the old page and the
+          bank cover it, and comes back as the bank comes to rest at full cover (the hold, d-vt-sky in the motion
+          block below; DPageTransition starts the lever's clock with the bank's). Safari pays for the sky's boxes in
+          every frame even while nothing of them shows (measured: half of what the page costs a pass), and drawing
+          it again costs one late frame (80 to 170 ms): that frame falls inside the hold, where nothing moves. A
+          loop in the sky may start again from where a load starts it after a page move. Not under reduced motion
+          (the old page fades into the live page, sky and all) and not in forced colours (no sky there). */
+html[data-d-on]:active-view-transition [data-theme="d"] :is(header, main, footer) *,
+html[data-d-on]:active-view-transition [data-theme="d"] :is(header, main, footer) *::before,
+html[data-d-on]:active-view-transition [data-theme="d"] :is(header, main, footer) *::after {
+  animation-play-state: paused !important;
+  transition: none !important;
+}
+html[data-d-on]:active-view-transition :is(.d-sky, .d-sky *) {
+  transition: none !important;
+}
+@media (prefers-reduced-motion: no-preference) and (not (forced-colors: active)) {
+  html[data-d-on]:active-view-transition .d-sky {
+    animation: d-vt-sky var(--d-vt) linear both;
+  }
+}
+
+/* The motion: the far clouds' travel (d-vt-far), the near bank's extra travel (d-vt-near) and the sky's lever
+   (d-vt-sky), each over the whole clock with its easing per stretch: in, slowing to rest at full cover; held; out,
+   gathering pace and slowing as it leaves. Worked out from the clock. */
+/* generated:motion — by frontend/scripts/d-transition-art.mjs; it follows --d-vt and the hold set there */
+@keyframes d-vt-far {
+  0% {
+    translate: calc(-1 * var(--d-vt-g) - 2px) 0;
+    animation-timing-function: cubic-bezier(0.3, 0.13, 0.6, 1);
+  }
+  43.75% {
+    translate: calc((100vw - var(--d-vt-g)) / 2) 0;
+  }
+  56.25% {
+    translate: calc((100vw - var(--d-vt-g)) / 2) 0;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.7, 0.87);
+  }
+  100% {
+    translate: calc(100vw + 2px) 0;
+  }
+}
+@keyframes d-vt-near {
+  0% {
+    translate: calc(var(--d-vt-gain) / -2) 0;
+    animation-timing-function: cubic-bezier(0.3, 0.13, 0.6, 1);
+  }
+  43.75% {
+    translate: 0 0;
+  }
+  56.25% {
+    translate: 0 0;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.7, 0.87);
+  }
+  100% {
+    translate: calc(var(--d-vt-gain) / 2) 0;
+  }
+}
+@keyframes d-vt-sky {
+  0% {
+    display: block;
+  }
+  0.01%,
+  43.75% {
+    display: none;
+  }
+  43.76%,
+  100% {
+    display: block;
+  }
+}
+/* generated:motion end */

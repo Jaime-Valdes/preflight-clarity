@@ -991,7 +991,10 @@
   }
 }
 /* While a page transition runs the travel and the twinkles hold still, so a browser that draws the new page again
-   in every frame of the transition (Safari) draws a still sky. They carry on from where they stopped. */
+   in every frame of the transition (Safari) draws a still sky. A page move's cloud pass also takes the whole sky
+   out of the render tree while the old page covers it (d-transition.css, "Holding still"), so after a page move
+   they start again from where a load starts them; a transition that keeps the sky drawn lets them carry on from
+   where they stopped. */
 html[data-d-on]:active-view-transition :is(.d-sky-trip, .d-sky-band, .d-sky-tw > i) {
   animation-play-state: paused;
 }

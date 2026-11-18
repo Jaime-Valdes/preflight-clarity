@@ -16,7 +16,8 @@ smile or have facial reactions when you compare, or click on stuff"; "The page t
 devices, make the transition more relaxed / less rapid with a bunch of clouds moving from left to right of the screen
 to the next page. It should feel smooth and not super fast"; and "I want to get rid of the paper plane sliding from
 left to right when browsing flights". Built so far: the sky's smaller boxes and the clouds' travel from left to right
-(section 4). Everything else below is still pass 3's until its step lands.
+(section 4), and the cloud pass that replaces the plane wipe (section 6). Everything else below is still pass 3's
+until its step lands.
 
 ## 1. The idea
 
@@ -26,8 +27,9 @@ One visit is one calm flight through a fair-weather day, seen from the window se
   position in that sky (four lit scenes). The backdrop is never swapped, it moves.
 - **Inside and outside.** Everything you read sits on warm paper cards (the cabin). Everything that glows or moves is
   outside the window: sky, sun, clouds, planes, the companion. Scenery never competes with text.
-- **The cut is a plane.** A paper plane crosses left to right towing a ribbon of cloud, and the ribbon wipes the old
-  page away. Most of the screen always shows a page.
+- **The cut is a cloud pass.** A bank of cloud drifts in from the left, covers the screen for a moment, and drifts
+  out to the right; the page changes under it while it rests a moment. Calm and unhurried (1.6 s), with nothing
+  that races.
 - **A character with eye-lines.** The Cloud9 cloud sits on the edge of whatever the visitor attends to and looks where
   they look. It treats every flight identically.
 
@@ -307,7 +309,9 @@ screen, 24 px past each edge, so there is never a visible jump.
   bands travel.
 - **Held still during a page transition.** `html[data-d-on]:active-view-transition :is(.d-sky-trip, .d-sky-band) {
   animation-play-state: paused; }` in `d-sky.css`: a browser that draws the new page again in every frame of a
-  transition (Safari) draws a still sky, and the travel carries on from where it stopped.
+  transition (Safari) draws a still sky, and the travel carries on from where it stopped. A page move's cloud pass
+  also takes the whole sky out of the render tree while the old page covers it (section 6, "What holds still"), so
+  after a page move the travel and the twinkles may start again from where a load starts them.
 - **Behind the column.** The clouds now cross the whole frame, behind the content column too. This relaxes the gutter
   rule of "As built" below for the clouds, which is what the owner asked for. By day a white cloud behind ink text
   only raises its contrast (`ink-mute` is 6.5 to 8.8 : 1 on a cloud, against 4.68 on the bare air). The heights are
@@ -636,57 +640,156 @@ written.
 
 ## 6. The page transition
 
-Mechanics: the proven recipe in the proof report (React's `<ViewTransition enter="d-plane" default="none">` around a
-1 x 1 px fixed stage, rendered as the **first child of each `/d` page's fragment, outside its Suspense boundary**;
-the root's old snapshot held by CSS; the artwork painted as backgrounds on the stage's `::view-transition-group` and
-`::view-transition-image-pair`; rules scoped to `html[data-d-on]`). It fires for page-to-page moves by link or
-`router.push`, never for sort, filter or date changes, Suspense reveals, the first load or browser Back / Forward
-(which stay instant). Nothing shared is edited.
+Mechanics: the proven recipe in the proof report (React's `<ViewTransition enter="d-cloud-pass" default="none">`
+around a 1 x 1 px fixed stage, rendered as the **first child of each `/d` page's fragment, outside its Suspense
+boundary**; the root's old snapshot held by CSS; the clouds painted as backgrounds on the stage's
+`::view-transition-group`, `::view-transition-image-pair` and `::view-transition-new`; rules scoped to
+`html[data-d-on]`). It fires for page-to-page moves by link or `router.push`, never for sort, filter or date changes,
+Suspense reveals, the first load or browser Back / Forward (which stay instant). Nothing shared is edited.
+(Pass 4 replaced pass 3's plane wipe at the owner's request: "make the transition more relaxed / less rapid with a
+bunch of clouds moving from left to right of the screen to the next page. It should feel smooth and not super fast";
+design: `scratchpad/cine/p4/design/transition.md`.)
 
-The picture is a **wipe**, not a white-out. One clock, `--d-vt: 760ms`, everything linear (a plane that neither
-speeds up nor slows down is the calmest plane there is):
+**The picture: a cloud pass.** A bank of D-style cumulus drifts in from the left, fills the screen for a moment and
+drifts out to the right, uncovering the new page. Two depths: pale far clouds that lead in and trail out (the stage's
+group), and the bright near bank (white billows with warm cream undersides by day; moonlit blue-grey billows at
+night) that travels a little further over the same clock (parallax: the image-pair, a flat core, and the new image,
+its billows and the wall that hides the core's straight edges). No plane.
 
-- The **seam** travels left to right, from `--d-vt-from` to `--d-vt-to`. Old page right of it, live new page left of
-  it.
-- The **old page**: `::view-transition-group(root)` gets `overflow: clip` and travels with the seam on the same
-  clock, while `::view-transition-old(root)` counter-moves by the same amount, so the image stands still and its clip
-  edge travels. The group is padded 100vw to the right (and its image-pair gives that width back), so the clip box
-  and the ribbon share one start, one end and one linear clock and cannot fall out of step: there are no keyframe
-  percentages to keep in sync. Transform only: it stays on time when the main thread is busy.
-- The **ribbon**: a tall, soft column of cumulus centred on the seam (white core, cream lee side, scalloped on both
-  edges, a few loose puffs trailing): 30vw wide on phones (120 px at most), 176 px from 1024 px. It hides the join.
-- The **plane**: the outlined paper plane (white fill, `ink` outline, a short `gold` contrail), 52 px on phones,
-  72 px on laptops, nose up about 5°, flying ahead of the ribbon in clear air and climbing about 3vh over the
-  crossing. It enters at the height of the tap that caused the move (`--d-tap-y` on `<html>`, written by the motion
-  layer only on a click that will change page, see below, and never on a bare press, see section 3; clamped to
-  18vh to 72vh; 42vh by default).
-- Taps on the still-visible old page are swallowed (they would land on things not on screen); everything left of the
-  ribbon is live at once.
-- If the wipe cannot be made solid in Chrome (seam visible, mistimed, wrong hit-testing), fall back to the proof's
-  verified full-cover bank and say so.
-- Reduced motion: no plane, no ribbon; the old page fades into the new one in 150 ms. The hidden plane's group and
-  image-pair also get `animation: none`: Safari counts their 760 ms animations while the group is `display: none`,
-  and the transition (and the page React holds behind it) would last 760 ms instead of 150.
-- A tap that will change page in this tab while a wipe is still running ends that wipe at once
-  (`document.activeViewTransition.skipTransition()`, from the motion layer): a form's submit button, or a plain
-  primary click on a same-origin link to another path or query. A Cmd, Ctrl, Shift, Alt or middle click, a link with
-  another target or a download, a hash link (the skip link) and a link to the page already showing leave it running.
-  React holds the next page until the running transition has finished, so without this the new move would queue
-  behind the old one (house rule 4).
-- **No dead time at either end.** The travel is fitted to the artwork in six width bands (from 0, 400, 530, 750,
-  1024 and 1640 px), so on every width the plane's nose is on screen within 45 ms of the first frame and the last
-  puff leaves within 30 ms of the end (at 1440 px: 35 ms and 23 ms). The travel is published per band as plain custom
-  properties on `html[data-d-on]`: `--d-vt-from` and `--d-vt-to` (the seam's start and end, in vw) and `--d-vt-lead`
-  (how far the plane's middle flies ahead of the seam). The cloud's eyes no longer follow the plane: every cloud holds
-  still while a transition runs (section 5, "Reactions").
-- **The artwork and the travel table are generated.** `frontend/scripts/d-transition-art.mjs` writes the two marked
-  blocks of `d-transition.css` (the drawings as data URIs, the bands); `--check` exits 1 when the stylesheet is
-  stale. Change a size or a drawing there, not in the CSS.
-- A route seen for the first time shows its loader through the wipe and its content when the wipe ends (React holds
+| Time (phone; other widths within ±20 ms) | On screen |
+| --- | --- |
+| 0–90 ms | The old page, as it was at the tap; the tips of the far clouds slide in at the left. |
+| 90–500 ms | The near bank rolls in over them and covers the old page from left to right, slowing as it comes. |
+| 500–1100 ms | The whole screen is cloud. From 700 to 900 ms the bank rests (the hold): the sky comes back underneath as it starts, and at 800 ms, mid-hold, the old page goes (an opacity step). |
+| 1100–1510 ms | The bank moves off to the right and uncovers the new page from the left, slowing as it leaves. |
+| 1510–1600 ms | The last far clouds drift off the right edge. |
+
+- **Clock, easing and the hold.** `--d-vt: 1600ms`: in over 700 ms, held for 200 ms at full cover (the bank's middle
+  on the screen's middle), out over 700 ms. Both depths share the keyframes' easing per stretch: in
+  `cubic-bezier(0.3, 0.13, 0.6, 1)` (from 0.43x the stretch's mean speed, so a cloud is on screen at once, to rest),
+  out its mirror image `cubic-bezier(0.4, 0, 0.7, 0.87)`; the animations themselves are linear. The hold is where the
+  live page's remaining costly frame goes (the sky's return, below): a late frame in a still picture shows nothing.
+  The edges' mean speed is unchanged from a 1.4 s pass; the peak, mid-way through each stretch, is 1.47x it (it was
+  1.28x). The cut has 279 to 304 ms of full cover either side on every width. The new page starts to show
+  about 1.15 s after the tap and is fully shown at about 1.7 s (measured on a phone: the pass ends 1.72 s after the
+  tap, against 0.87 s for pass 3's wipe; `$pageview` and the view events land when they did, 43 and 70 ms after it). `--d-vt` is the one knob if the owner wants it calmer
+  or quicker: the generator writes the keyframes for the clock (the hold stays 200 ms) and re-checks every margin.
+- **The old page** is the browser's snapshot of the viewport, held whole and still (`opacity: 1 !important` on the
+  root's group outranks React's script animation). Two animations on `::view-transition-old(root)`: `d-vt-cut`
+  (opacity, `0%, 50%` 1, `50.01%, 100%` 0) runs on the compositor in step with the bank; `d-vt-cut-hit` flips
+  `visibility` for hit-testing. Nothing clips, masks or filters; only `translate` and `opacity` animate.
+- **Full cover everywhere.** The bank is 120lvh tall from 10lvh above the screen (phone toolbars can never show a
+  strip of page) and sized in `vw` (a classic scrollbar is covered; React sizes the transition's root to nothing, so
+  no `%` on a group). Its core overhangs each side of the screen by `--d-vt-m` at the cut; two interleaved chains of
+  haze-coloured discs keep it solid 33.7k px past the core's edge. The cut has 62 to 80 ms of full cover either side
+  on every width from 240 to 2560 px (the generator's report; four bands, k = 1, 1.25, 1.6, 2.1 from 0, 640, 1024 and
+  1640 px).
+- **The clouds are drawn with discs, no images.** Each billow is a union of circles (the design's two shapes, a and
+  b), drawn as one radial-gradient layer per circle and copy: the edge behind (2.5 units larger and 2.5 higher: a soft
+  outline by day, moonlit tops by night; near clouds only), the underside (8 lower, warm cream by day) and the body on
+  top (shaded from the top colour at its middle to the bottom colour at its rim). About a hundred layers, each a tile
+  as wide as its disc and as tall as its chain's period, repeated down the box. Why not SVG: WebKit paints the bank's
+  backgrounds again in every frame of the pass, and an SVG image costs it a whole frame or more each time (measured:
+  the design's eight SVG billows lost about 600 ms of a 1.4 s pass in WebKit, 815 ms on a static page; the same bank
+  in gradients loses nothing measurable). The owner approved the disc clouds' look on 2026-11-18.
+- **Day and night.** `html[data-d-on][data-d-time="night"]` swaps the paints (seven custom properties on the group);
+  geometry, timing and taps do not change. `<html>` carries `data-d-time` from hydration on, before any transition can
+  start, and the sky's clock never changes it while one runs, so the paints never swap mid-pass. Colours (every hue
+  32° to 290°):
+
+  | | Day | Night |
+  | --- | --- | --- |
+  | Haze (core, wall) | `#E9F4FD` | `#303D63` |
+  | Near body, middle → rim | `#FFFFFF` → `#F4F9FE` | `#53649A` → `#41507E` |
+  | Near edge | `#CFE5F8` | `#A9BCE2` (moonlit tops) |
+  | Near underside | `#FCE7B4` (`cream-deep`) | `#2B3657` |
+  | Far body, middle → rim | `#EDF6FD` → `#E4F0FB` | `#37446C` → `#323E66` |
+  | Far underside | `#D8E8F6` | `#273152` |
+
+  Night against the final night stops (`d-contrast.mjs`'s `NIGHT_SKY`; no text sits on the bank, so these show
+  definition, not compliance): the haze (relative luminance 0.049) is 1.64 : 1 on the sky's top (#0E1838) and 1.01 to
+  1.21 : 1 on the horizons (it sits between them, so covering a night page dims it gently); the near billows' tops
+  (#53649A) are 1.85 : 1 on the haze and 1.83 to 3.03 : 1 on the sky; the moonlit edges (#A9BCE2, the brightest night
+  colour, luminance 0.499) are 3.00 : 1 on the billows and 5.5 to 9.1 : 1 on the sky. No night colour is above
+  luminance 0.5 and no frame flashes bright.
+- **Taps during the pass.** Before the cut the old snapshot (`pointer-events: auto`) swallows every tap: under it is
+  the new page, which nobody can see yet. After the cut it cannot be hit; the near layer's new image (a transparent
+  1 px picture stretched over the core and both cloud columns) swallows taps wherever the near bank is, and uncovered
+  parts of the new page are live at once. The far clouds (`pointer-events: none`) never block. A tap that will change
+  page in this tab while a pass runs ends it at once (`document.activeViewTransition.skipTransition()`, from the
+  motion layer): a form's submit button, or a plain primary click on a same-origin link to another path or query. A
+  Cmd, Ctrl, Shift, Alt or middle click, a link with another target or a download, a hash link (the skip link) and a
+  link to the page already showing leave it running. React holds the next page until the running transition has
+  finished, so without this the new move would queue behind the old one (house rule 4).
+- **Reduced motion:** no clouds; the old page fades into the live page in 150 ms and takes no taps while it does. The
+  hidden bank's group and image-pair also get `animation: none` (Safari counts their animations while the group is
+  `display: none`, and the transition, and every page move and loading reveal React holds behind it, would last the
+  full clock).
+- A route seen for the first time shows its loader through the reveal and its content when the pass ends (React holds
   the reveal). Once a route's code is loaded, the content is there in the first frame.
+
+**What holds still.** Safari draws each frame of a view transition only as fast as the live page under it commits,
+and React mounts the new page as the pass begins, so while a pass runs (`:active-view-transition`) the page under it
+does as little as it can. Every CSS hold is written `html[data-d-on]:active-view-transition …` (so `grep -n
+"active-view-transition" frontend/app/d/*.css` lists them all); script asks `transitionRunning()` and waits with
+`whenTransitionEnds()` (`motion.ts`).
+
+| What | During the pass | Where |
+| --- | --- | --- |
+| The new page's own animations (entrances, the card stagger, the loader's dashes, the skeleton's pulse) | paused: an entrance holds its first frame and plays once the pass is over | `d-transition.css`, "Holding still" |
+| The new page's transitions (hover-outs, colour changes) | off (land at once) | `d-transition.css` |
+| The sky's camera move, light cross-fade and pointer ease | off: the scene switches at once under the old page | `d-transition.css` |
+| The sky's boxes | out of the render tree until the hold begins, back at rest before the cut (below) | `d-transition.css`, `DPageTransition.tsx` |
+| Cloud travel, deck travel, twinkles | paused | `d-sky.css` |
+| Home title sequence, boarding-pass line and plane | paused | `d-home.css`, `d-flight.css` |
+| The clouds' blinks and art; pose; their boxes' transitions | removed; paused; off | `d-cloud.css` |
+| Gaze, idle glance, companion seat moves, reactions, the greeting | no writes after the commit; the greeting waits for the end | `cloud/*.ts` |
+| Pointer parallax writes | none | `DSky.tsx` |
+| The night clock (`<html>` mirror, theme colour, the 4 s flip) | wait for the end | `sky/clock.ts` |
+| The scroll reveal | none starts, nothing is marked seen; the observer is asked again at the end | `DMotionLayer.tsx` |
+| Tap ring, fly-to plane, ring-from | run (finite, inside the old snapshot) | — |
+
+**The sky lever.** `.d-sky` takes `animation: d-vt-sky var(--d-vt) linear both` while a pass runs: `block` at 0 %
+(the old page is captured in that first frame, sky and all; a first version left the sky out of the capture, and the
+old page lost its moon, clouds and stars at the tap), `display: none` from 0.01 % until the hold begins (700 ms of
+1600, 43.75 %), `block` from then on (generated with the motion). WebKit pays for
+the sky's boxes in every frame of a transition even while nothing of them shows (hiding them with `visibility` does
+not help; leaving the render tree does), and drawing the sky again costs one late frame: 80 to 95 ms for the flight
+scene and 90 to 170 ms for the results scene (measured). So it comes back as the bank comes to rest, and the hold is
+200 ms long so that frame ends while it still rests (a first, 150 ms hold with the sky back 20 ms in let the results
+scene's frame run 21 to 57 ms into the bank's departure). The cut at 800 ms is mid-hold, and nothing is uncovered
+before 1079 ms. The animation starts with the transition (at `startViewTransition`), 0 to 140 ms before the bank's
+clock (`ready`, once the new page is committed and laid out); `DPageTransition`'s `onEnter` (React calls it at
+`ready`, once per pass) gives the sky's animation the bank's start time less half a millisecond (past the 0 % keyframe), so the
+return lands at the same point of the bank's clock on every move (measured: 0 ms apart, the sky drawn again 724 to 733 ms into the bank's clock). It writes
+nothing to the DOM. Where it cannot run, the sky comes back up to 140 ms early, still under the old page.
+Coming back, a loop in the sky may start again from where a load starts it (each cloud where its trip begins, the
+twinkles at their first frame; WebKit was seen carrying them on), so the clouds' travel need not carry over from one
+page to the next. Not under reduced
+motion (the old page fades into the live page, sky and all) and not in forced colours (there is no sky there).
+
+**Smooth in Safari (the gate).** WebKit, 1470 × 956 at 2x, commit cadence (`scratchpad/cine/p4/mac/scripts/cac.mjs`
+and its hold-aware recompute over the 1600 ms clock, which splits every gap at the hold's edges and reports the held
+part separately), results → flight, flight → results and flight → compare, by day and by night, interleaved with
+`main` in one session: outside the hold no gap between page frames over 35 ms and at most 40 ms lost per pass; inside
+the hold, where nothing on screen moves, longer gaps are allowed and reported (pass 3's wipe lost 140 to 180 ms of
+760). Measured in step T (AC, interleaved with `main` and the step before, 6 warm passes per cell): with the display idle (2026-11-18 00:35–01:04, the build before the snapshot fix below), outside the hold 4.5 to 20 ms lost, longest gap 19 to 30.5 ms, first frame 9.5 to 28 ms after `ready`, and the sky's late frame (78 to 130 ms) inside the hold every time; `main` lost 84 to 122 and the step before 43 to 109 over their 760 ms. On the final build with the display awake (09:00–09:30, a cadence that mixes 8 and 17 to 20 ms commits, which the loss count reads as loss), 28.5 to 56 ms lost (10.5 to 25.5 ms counting only gaps of 25 ms or more) and a first frame 25 to 36.5 ms late; the gate is not confirmed on the final build yet (step T's report). Then
+the owner's eye in Safari on the Air (Safari's "Allow remote automation" was off, so real Safari 27 was not driven).
+
+- **The bank's sizes and drawings are generated.** `frontend/scripts/d-transition-art.mjs` writes the five marked
+  blocks of `d-transition.css` (bands: `--d-vt-k`, `--d-vt-u`, `--d-vt-m`, `--d-vt-gain`, `--d-vt-near-out`,
+  `--d-vt-reach`, `--d-vt-far-line` per band; art: the haze and the six disc paints by day and by night; far and near:
+  the disc layers; motion: the keyframes `d-vt-far`, `d-vt-near` and `d-vt-sky`) from its tables (the shapes, the
+  colours, the chains, the wall, the bands, the hold and the two easings), reads the clock from the stylesheet, checks everything section 11 lists and prints a report per band; `--check` exits 1
+  when the stylesheet is stale, and either run exits 2 and writes nothing when a check fails. Change a size, a chain
+  or a colour there, not in the CSS. Gone with the plane: `--d-tap-y` (nothing writes on `<html>` at a tap any more),
+  `--d-vt-from`, `--d-vt-to`, `--d-vt-lead`, the design's `--d-vt-ease` (each stretch has its own easing now), the clip box and the keyframes `d-vt-clip`, `d-vt-hold`, `d-vt-ribbon`
+  and `d-vt-climb`.
 - Testing note: do not take a screenshot between the tap and the transition's first frame. A capture in flight while
-  the browser pictures the old page makes that picture blank (a white field for the whole wipe), which no visitor
-  ever sees. Use a screencast, or slow the clock (`html[data-d-on]:root{--d-vt:4000ms}`) and wait a moment.
+  the browser pictures the old page makes that picture blank, which no visitor ever sees. Use a screencast, or slow
+  the clock (`html[data-d-on]:root{--d-vt:6000ms}`) and wait a moment. In headless WebKit, pausing the transition's
+  animations does not hold what a screenshot shows (it keeps the compositor's own time): take scrubbed stills in
+  Chrome.
 
 ## 7. Motion kit
 
@@ -695,7 +798,7 @@ speeds up nor slows down is the calmest plane there is):
 
 | Piece | What it is |
 | --- | --- |
-| `DMotionLayer` | Client component mounted once in the layout: fixed, z 40, pointer-events none. Draws the **tap ring** (a 44 px ring, `gold` inside and white outside, growing from the tap point and fading over 420 ms; three pooled elements; on `click` with a pointer, never on scroll starts or keyboard). Sets `--d-tap-y` on a click that will change page in this tab (a form's submit button, or a plain primary click on a same-origin link to another path or query; never on pointer-down), ends a running page transition on such a click, and plays the scroll reveal for every `.d-reveal` in the layout and for the flight page's shared other-flight cards (`[data-theme="d"] #other-flights > ul > li > div`, a hook in `scripts/d-hooks.mjs`), with one IntersectionObserver, a childList observer on the layout root, a re-scan on each route change and a passive scroll listener that only notes when the page last scrolled down. Exposes `flyTo(fromRect, toRect)`: a 14 px paper plane on a shallow arc, 520 ms. |
+| `DMotionLayer` | Client component mounted once in the layout: fixed, z 40, pointer-events none. Draws the **tap ring** (a 44 px ring, `gold` inside and white outside, growing from the tap point and fading over 420 ms; three pooled elements; on `click` with a pointer, never on scroll starts or keyboard). Ends a running page transition on a click that will change page in this tab (a form's submit button, or a plain primary click on a same-origin link to another path or query; never on pointer-down), writes nothing on `<html>`, and plays the scroll reveal for every `.d-reveal` in the layout and for the flight page's shared other-flight cards (`[data-theme="d"] #other-flights > ul > li > div`, a hook in `scripts/d-hooks.mjs`), with one IntersectionObserver, a childList observer on the layout root, a re-scan on each route change and a passive scroll listener that only notes when the page last scrolled down; while a page transition runs no reveal starts and nothing is marked seen (a report that arrives then waits, and the observer is asked again when the transition ends, `whenTransitionEnds`). Exposes `flyTo(fromRect, toRect)`: a 14 px paper plane on a shallow arc, 520 ms. |
 | `motion.ts` | `prefersReducedMotion()`; `transitionRunning()` (whether a page transition is running now: `:active-view-transition` on `<html>`, false where the browser cannot tell) and `whenTransitionEnds(fn)` (runs `fn` at once, or when the running transition's `finished` settles, or at the first 100 ms check where there is no such promise, waiting out one that starts as the last ends, and after 3 s at most; returns a cancel): script that holds still during a page transition asks and waits with these two, and CSS writes the same test as `html[data-d-on]:active-view-transition …`. Easing and duration constants, `animateOnce(el, preset)` for Web Animations API presets: `pop` (a glyph of 28 px or less arriving: scale .6 to 1, at most 8 % past), `stamp` (scale .8 to 1), `settle` (10 px rise, no fade), `reveal` (16 px rise, 360 ms, out easing; played by DMotionLayer for `.d-reveal`). |
 | `buttons.ts` | Class strings: `D_PILL_PRIMARY` (royal with the lip), `D_PILL_OUTLINE`, `D_PILL_SELECTED`, `D_LINK`. |
 | CSS classes | `.d-btn-primary`, `.d-btn-outline`, `.d-link` (a `butter` highlighter grows under the words on hover or press), `.d-lift` (card hover: 3 px up, lifted shadow, fine pointers only), `.d-reveal` (a marker class with no CSS: an element below the screen when first seen rises its last 16 px once as the page's scrolling brings it in through the bottom edge (a downward scroll in the last 250 ms, its top within max(96 px, 25 % of the screen's height, the distance the page scrolled since the last report) of the bottom, so a Tab focus move or a fling counts too); one that comes into view any other way (a sort, a filter or a date change re-dealing the list, a layout shift) is only marked seen, so a re-dealt list settles as one piece, the same for every flight. It never rises while it or an ancestor is still moving under another animation (its entrance, the list's stagger), so nothing moves more than one 16 px step. 360 ms, through the Web Animations API, nothing left on it afterwards; an element on screen or above when first seen never moves; position only; nothing under reduced motion; never on an element holding a combobox or on the sign-up card. Not scroll-driven: a `view()` timeline keeps every card a compositor layer for the page's life, up to six times the phone memory), `.d-pop`. |
@@ -816,8 +919,12 @@ cloud on laptops. Each is the same for every flight.
   other controls the same rate-capped tap; the sign-up card, the footer, dialogs and sheets, page-changing links and
   submit buttons nothing. Nothing about a flight reaches the cloud, and the cloud is never tappable.
 - Copy is frozen, including screen-reader text and status announcements.
-- Nothing delays a participant: no splash, no blocked tap beyond the old page's half of a 760 ms transition, a still
-  version of everything under reduced motion.
+- Nothing delays a participant: no splash, and a still version of everything under reduced motion. During a page
+  move's 1.6 s cloud pass taps are swallowed only where nothing of the new page shows yet: everywhere for about
+  1.15 s, then under the bank as it uncovers the page from the left (each point is live once the bank has passed it;
+  the right edge by about 1.55 s); a page-changing tap on an uncovered part ends the pass at once. (Amended in pass 4
+  at the owner's request for a "more relaxed / less rapid" transition; before it the rule read "no blocked tap beyond
+  the old page's half of a 760 ms transition".)
 - Event names, routes, query parameters, forms, the sign-up and the compare list do not change. Versions A, B and C
   render pixel-identically (checked by screenshot hash before and after).
 - Night changes only the sky and the words directly on it: every card's interior (cards, the pass, ratings, prices,
@@ -837,7 +944,18 @@ Run from the repo root:
   deck composited over it, the highlighter, the veils, the brand ring, focus rings and the two on-sky marks, the
   night date tile and footnote strip); the date tiles' night ratios within 0.6 of the day's; and a hue scan of every
   colour written out in `app/d/d-*.css`, data URIs decoded.
-- `node frontend/scripts/d-transition-art.mjs --check`: the transition's generated blocks match the generator.
+- `node frontend/scripts/d-transition-art.mjs --check`: the transition's generated blocks match the generator, and
+  its checks hold: on every width from 240 to 2560 px the cut has at least 60 ms of full cover on either side, the
+  first cloud is on screen within 20 ms and the last leaves within 20 ms of the end; the wall is solid at least 24 px
+  (×k) past the core's edge; no tile can show a seam; every colour is in the hue rule; nothing at night is brighter
+  than luminance 0.5 (the haze 0.06); the sky comes back inside the hold with at least 180 ms of it left, and at least 60 ms
+  before the bank uncovers anything; the hand-written rules still say what the model assumes; the stylesheet ships at most 19 KB minified and
+  2.5 KB gzipped.
+- **The WebKit gate**, for any change to the pass or to what the live page does under it (section 6, "Smooth in
+  Safari"): the commit cadence (`cac.mjs`, then its hold-aware recompute: the clock at 1600 ms, the hold at 700–900 ms) at 1470 × 956 at 2x,
+  results → flight, flight → results and flight → compare, by day and by night, against `main` in the same session:
+  outside the hold no gap between page frames over 35 ms and at most 40 ms lost per pass. Then Safari on the Air,
+  by eye.
 - `node frontend/scripts/d-sky-zones.mjs --check`: the sky clock's zone table (`components/d/sky/zones.ts`) matches
   this machine's tz database (exit 1 when stale, 2 when `/usr/share/zoneinfo/zone.tab` is missing); `--ts` rewrites
   it, `--hogql` prints it for HogQL.

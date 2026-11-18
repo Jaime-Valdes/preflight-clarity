@@ -14,6 +14,8 @@ import {
   EASE_OUT,
   type FlyDetail,
   type RingFromDetail,
+  transitionRunning,
+  whenTransitionEnds,
 } from "./motion";
 
 /** The ring starts at 12 px and ends at its full 44 px. */
@@ -24,7 +26,8 @@ const TAP_SLOP = 12;
 const RELEASE_WINDOW_MS = 700;
 /**
  * What can start a page move: a link, or a form's submit button (the search form pushes a route on submit;
- * pressing Enter in a field clicks its submit button too). Only a click on one of these writes --d-tap-y.
+ * pressing Enter in a field clicks its submit button too). A click on one of these ends a page transition still
+ * running.
  */
 const NAVIGATES = 'a[href], form button:not([type="button"]):not([type="reset"]), form input[type="submit"]';
 /** The plane's place is sampled this many times along its arc; the browser interpolates between the samples. */
@@ -130,6 +133,10 @@ interface Reveals {
  *
  * An element is "seen" when the observer first reports it with a box: a kept-alive page is display: none, and
  * its elements wait (unseen) until it shows again and rescan() asks the observer for a fresh report.
+ *
+ * While a page transition runs nothing rises and nothing is marked seen (Safari draws each frame of the transition
+ * only as fast as the page under it commits, and the new page is not on screen yet): a report that comes in then
+ * waits, and the observer is asked again once the transition is over (whenTransitionEnds).
  */
 function watchReveals(root: Element): Reveals | null {
   if (typeof IntersectionObserver !== "function" || typeof MutationObserver !== "function") return null;
@@ -138,6 +145,8 @@ function watchReveals(root: Element): Reveals | null {
   let lastY = window.scrollY;
   let reportedY = window.scrollY;
   let scrolledDownAt = -Infinity;
+  /** The wait for the running page transition to end, while one is pending. */
+  let afterPass: (() => void) | null = null;
   // Writes nothing: a scroll up (or a page that got shorter and pulled the scroll back) is not a reveal's scroll.
   const onScroll = () => {
     const y = window.scrollY;
@@ -146,6 +155,13 @@ function watchReveals(root: Element): Reveals | null {
   };
   window.addEventListener("scroll", onScroll, { passive: true });
   const io = new IntersectionObserver((entries) => {
+    if (transitionRunning()) {
+      afterPass ??= whenTransitionEnds(() => {
+        afterPass = null;
+        rescan();
+      });
+      return;
+    }
     const scrolling = performance.now() - scrolledDownAt <= REVEAL_SCROLL_MS;
     const moved = Math.max(0, window.scrollY - reportedY);
     reportedY = window.scrollY;
@@ -181,17 +197,20 @@ function watchReveals(root: Element): Reveals | null {
       for (const node of record.addedNodes) if (node instanceof Element) scan(node);
     }
   });
+  function rescan() {
+    for (const el of root.querySelectorAll(REVEAL)) {
+      if (done.has(el)) continue;
+      io.unobserve(el);
+      io.observe(el);
+    }
+  }
   mo.observe(root, { childList: true, subtree: true });
   scan(root);
   return {
-    rescan() {
-      for (const el of root.querySelectorAll(REVEAL)) {
-        if (done.has(el)) continue;
-        io.unobserve(el);
-        io.observe(el);
-      }
-    },
+    rescan,
     stop() {
+      afterPass?.();
+      afterPass = null;
       window.removeEventListener("scroll", onScroll);
       mo.disconnect();
       io.disconnect();
@@ -206,12 +225,7 @@ function watchReveals(root: Element): Reveals | null {
  *  - The tap ring: every click made with a pointer leaves one soft gold ring at the tap
  *    point. Three pooled elements restarted with the Web Animations API, so a tap adds no
  *    DOM node and writes no attribute (session replay records both).
- *  - `--d-tap-y` on <html>: the height of the press behind the last click that changes page
- *    (a plain click on a link to another page, or a submit button: changesPage), which the
- *    page transition's plane enters at; the same click ends a wipe still running. Written on that click and
- *    only when it changed, never on a bare press: any custom property changed on <html>
- *    restyles the whole document (in Chrome, registered as not inherited or not), and every
- *    scroll on a phone starts with a press.
+ *  - A click that changes page in this tab ends a page transition still running (changesPage).
  *  - The fly-to plane and the soft ring around a control: flyTo() and ringFrom() in
  *    ./motion ask for them with a window event that carries geometry and nothing else.
  *  - The scroll reveal for every .d-reveal in the layout, and for the flight page's shared
@@ -220,8 +234,7 @@ function watchReveals(root: Element): Reveals | null {
  * Decoration only: aria-hidden, no pointer events, nothing focusable, no analytics. Its
  * listeners are passive, sit on the window (the pointer and click ones in the capture
  * phase) and never stop or cancel an event, so no tap is delayed and no click is renamed.
- * The rings and the plane are off under reduced motion; the custom property is still
- * written, since nothing moves by it.
+ * The rings, the plane and the reveal are off under reduced motion. It writes nothing on <html>.
  */
 export function DMotionLayer() {
   const layerRef = useRef<HTMLDivElement>(null);
@@ -248,7 +261,6 @@ export function DMotionLayer() {
   useEffect(() => {
     const layer = layerRef.current;
     if (!layer) return;
-    const html = document.documentElement;
     const rings = Array.from(layer.querySelectorAll<HTMLElement>(".d-tap-ring"));
     const planes = Array.from(layer.querySelectorAll<HTMLElement>(".d-fly-plane"));
     const halos = Array.from(layer.querySelectorAll<HTMLElement>(".d-ring-from"));
@@ -263,17 +275,6 @@ export function DMotionLayer() {
     let upX = 0;
     let upY = 0;
     let upAt = -Infinity;
-    let tapY: number | null = null;
-
-    // The transition's plane stays between 18 % and 72 % of the screen's height, wherever the press was.
-    function setTapY(y: number) {
-      const height = window.innerHeight;
-      if (!height || !Number.isFinite(y)) return;
-      const next = Math.round(clamp(y, height * 0.18, height * 0.72));
-      if (next === tapY) return;
-      tapY = next;
-      html.style.setProperty("--d-tap-y", `${next}px`);
-    }
 
     function onPointerDown(event: PointerEvent) {
       if (!event.isPrimary) return;
@@ -301,28 +302,17 @@ export function DMotionLayer() {
     }
 
     function onClick(event: MouseEvent) {
+      // A second page move asked for while a pass still runs: React holds the next page until the running
+      // transition has finished, so the new tap would wait out the old pass. Finish that pass now instead. A click
+      // that moves nowhere in this tab (changesPage) leaves the pass alone.
+      if (changesPage(event)) (document as ActiveViewTransitionDocument).activeViewTransition?.skipTransition();
       // A keyboard activation (and element.click()) is a click with no pointer: detail 0, and an empty
-      // pointerType where click is a PointerEvent. It gets no ring; the transition's plane enters level
-      // with the focused control instead.
+      // pointerType where click is a PointerEvent. It gets no ring.
       const pointerType = (event as PointerEvent).pointerType;
-      const navigates = changesPage(event);
-      // A second page move asked for while a wipe still runs: React holds the next page until the running
-      // transition has finished, so the new tap would wait out the old wipe. Finish that wipe now instead. A click
-      // that moves nowhere in this tab (changesPage) leaves the wipe, and --d-tap-y, alone.
-      if (navigates) (document as ActiveViewTransitionDocument).activeViewTransition?.skipTransition();
-      if (event.detail === 0 || pointerType === "") {
-        const focused = document.activeElement;
-        const el = focused instanceof Element && focused !== document.body ? focused : event.target;
-        if (navigates && el instanceof Element) {
-          const box = el.getBoundingClientRect();
-          if (box.width > 0 || box.height > 0) setTapY(box.top + box.height / 2);
-        }
-        return;
-      }
+      if (event.detail === 0 || pointerType === "") return;
       // The ring grows from where the finger lifted. A touch browser may nudge the click itself onto the
-      // nearest control, so the click's own point is only the fallback; the plane enters where it pressed.
+      // nearest control, so the click's own point is only the fallback.
       const released = event.timeStamp - upAt < RELEASE_WINDOW_MS;
-      if (navigates) setTapY(released ? downY : event.clientY);
       if (!canAnimate || reduced.matches) return;
       // A label passes its click on to its control: one tap, one ring.
       if (event.timeStamp - lastRingAt < 40) return;
@@ -412,7 +402,6 @@ export function DMotionLayer() {
       window.removeEventListener(D_FLY_EVENT, onFly);
       window.removeEventListener(D_RING_FROM_EVENT, onRingFrom);
       for (const el of [...rings, ...planes, ...halos]) cancelAll(el);
-      html.style.removeProperty("--d-tap-y");
     };
   }, []);
 
