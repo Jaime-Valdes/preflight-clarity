@@ -45,7 +45,9 @@ House rules (they settle most decisions):
 3. **Feedback is symmetric and blind.** Adding and removing, picking and withdrawing get the same response, and no
    animation, colour or mascot behaviour ever reads a flight's rating, price, airline or place in the list.
 4. **What you see is what you can tap.** Motion never queues, delays or hides a tap target.
-5. **Fair weather only: a clear day, or a clear, starry night (navy, never black or grey).** No grey or overcast
+5. **Fair weather only: a clear day, or a clear, starry night (navy, never black or grey).** (Exception, at the
+   owner's request of 2026-11-19: the Flight Day Pack's pop-in and dialogs may pop up over the page, and are a
+   light sunset orange, `app/d/d-offer-sunset.css` only; docs/FLIGHT_DAY_PACK.md, iteration 2.) No grey or overcast
    sky, no rain, no lightning. Planes fly level or climb a few degrees: no dives, banks, shakes or wobble. Nothing
    bounces. Never red, rose, coral, pink or orange. (Amended in pass 4 at the owner's request for night "with stars";
    before it the rule read "No grey or dark sky".)

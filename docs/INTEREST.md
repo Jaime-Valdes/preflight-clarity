@@ -13,6 +13,7 @@ sign-up, shown at the same point to everyone, measured as a rate.
 | Version C | A card at the **bottom of every page** (home, results, flight, compare) and a "Get early access" link in the footer; tapping opens a sign-up sheet. | Interest peaks right after comparing flights; the card never covers content (the compare tray stays sticky). |
 | Version D (2026-10-28, docs/ITERATION_2.md) | The same card on every /d page (placements `d_home`, `d_results`, `d_flight`, `d_compare`, source `d`); on the flight page it carries a more concrete ask — **Get smoothness ratings for your real trip** — with the same form and storage. | Sprint 2: everyone saw the generic card, nobody signed up; the ask on the flight page says what they would get. |
 | Version D — the Flight Day Pack (2026-11-18, docs/FLIGHT_DAY_PACK.md) | Placement `d_addon`, source `d`: the form behind "Add for $X" on the Flight Day Pack card — *The Flight Day Pack isn't ready yet. Leave your email and you'll get it free at launch.* Email (prefilled with this browser's latest sign-up), optional first name, the same 15-minute-chat checkbox, and an optional "Have a real flight coming up? When?". Inline in the card, never a sheet. | A pricing test, so the ask says plainly that nothing exists to buy yet; nothing is charged and no payment is asked for. It does not mark the browser as signed up (`pfc.interest.v1`), so D's own cards keep asking as before. |
+| Version D — the waitlist dialog (2026-11-19, docs/FLIGHT_DAY_PACK.md, iteration 2) | Placement `d_popup`, source `d`: the same card, copy and form, as a centred dialog over a dimmed page after 30 s of the tab's visible time on D's pages. Sign up or "No thanks" (Escape = No thanks), no ✕. Once per browser, never for a browser already signed up, never over a Flight Day Pack pop-in or dialog, a page transition or a focused field. "No thanks" sends `interest_dismiss` `{ placement: "d_popup" }`. The inline cards stay as they are. | The owner wants interest in the product itself measured more prominently (2026-11-19); a forced choice, so read sign-ups per `interest_cta_view` for `d_popup`, separately from the inline cards. |
 
 The study's existing "open to a 15-minute chat" email form becomes part of this: one form, the product
 sign-up as the primary action, the interview as an optional checkbox.
@@ -37,7 +38,7 @@ sign-up on the briefing card marks the session (`emailSent`) and the debrief sho
 ## Data
 
 - `Signup` (shared/src/types.ts): `id` (browser UUID), `createdAt`, `source` (`study` | `c` | `d`),
-  `placement` (`dashboard` | `debrief` | `c_home` | `c_results` | `c_flight` | `c_compare` | `d_home` | `d_results` | `d_flight` | `d_compare` | `d_addon`), `email`, `firstName`,
+  `placement` (`dashboard` | `debrief` | `c_home` | `c_results` | `c_flight` | `c_compare` | `d_home` | `d_results` | `d_flight` | `d_compare` | `d_addon` | `d_popup`), `email`, `firstName`,
   `waitlist` (true), `interview`, `sessionId` + `variant` + `isTest` + `participant` (study), `context`
   (what they were looking at, e.g. `JFK → LAX · Nov 26 · 2 flights in compare`), `page`.
 - `d_addon` sign-ups only (2026-11-18, optional and absent on every other sign-up, so A, B, C and D's other cards

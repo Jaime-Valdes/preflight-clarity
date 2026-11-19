@@ -10,8 +10,12 @@ Would people pay for a per-trip add-on, and at which price? The **Flight Day Pac
 contains:
 
 - an airport walkthrough for your departure airport (security, your terminal, finding your gate);
-- your airline, explained (boarding, what to expect on board);
-- a "landed safely" text to someone you choose.
+- Flight Forecast updates and alerts;
+- letting loved ones know you've landed;
+- and more.
+
+(Iteration 1, 2026-11-18, listed "your airline, explained" in the second place, with the item key `airline`;
+iteration 2 replaced it with `forecast_alerts`. No real answers used the old key.)
 
 The pack doesn't exist yet. "Add" opens an honest fake door: *The Flight Day Pack isn't ready yet. Leave your
 email and you'll get it free at launch.* Nothing is ever charged and no payment is ever asked for.
@@ -20,7 +24,40 @@ email and you'll get it free at launch.* Nothing is ever charged and no payment 
 - **Also:** which items people would use, why people say no, the Van Westendorp price range, and per trip
   vs. $29.99 a year.
 
-## The flows
+## Iteration 2 (2026-11-19, the owner's request)
+
+The owner lifted two of D's rules, "never a pop-up" and "never orange", for the offer and the waitlist dialog
+only. Everything else stands: no fear framing or anxiety claims, no urgency, countdowns or timers shown, the
+banned words, nothing typed or answered sent to PostHog, A/B/C pixel-identical.
+
+- **`results` becomes a pop-in.** No longer a list item after the 3rd result: a panel slides in from the
+  right 5 s after the visitor's first scroll of the results (once the flights are on screen), fixed to the
+  screen over the list. Phone: about 88 % of the width from the right edge, low on the screen, above the compare
+  tray when it shows. Laptop: 392 px wide, 24 px from the right edge. It is not modal: the page stays usable.
+  It closes only through its own steps ("Add to flight – $X" or "No thanks", then the steps, then the
+  thank-you's Close), or when the visitor leaves the page. It never starts during a page transition; under
+  reduced motion it fades in. `d_addon_view` fires once it has finished arriving.
+- **`after_pick` becomes a forced-choice dialog.** Right after "I'd pick this flight" (flight and compare
+  pages): a centred dialog over a dimmed page (`role="dialog"`, `aria-modal`, the focus starts on the heading,
+  stays inside and returns to the pick button; the page doesn't scroll). No ✕, the backdrop does nothing; the
+  visitor chooses "Add to flight – $X" or "No thanks", and **Escape counts as "No thanks"** (to the reasons step).
+  The follow-up steps continue inside, all skippable; the last one closes it. It opens only from a pick on that
+  page load (a reload never reopens it).
+- **Sunset look.** Both surfaces are a light peach-to-apricot gradient (#FFEBD6 → #FFD3AE) with D's navy ink;
+  by night a muted dusk (#ECD2BC → #D9B597) with the day ink. `app/d/d-offer-sunset.css` is the only D file
+  allowed hues from 18° to 32° (`scripts/d-contrast.mjs`, which also checks the ink on every stop). The Add
+  pill stays D's royal blue; "No thanks" is a quiet link, 44 px tall.
+- **Copy.** "Add to flight – $4.99" / "– $14.99" (an en dash); items as listed above, the last a lighter
+  "And more!" with a plus.
+- **The waitlist as a dialog** (placement `d_popup`, docs/INTEREST.md): D's "Want this for your real
+  flights?" card, same copy and form, centred over a dimmed page after 30 s of the tab's visible time on D's
+  pages (counted across page moves, `pfc.d.visible.v1`). Sign up or "No thanks" (Escape = No thanks); no ✕.
+  Once per browser (`pfc.d.popup.v1`, marked when it opens), never for a browser already signed up, and never
+  on top of an offer pop-in or dialog, during a page transition or while a form field has the focus (it waits).
+  Events: `interest_cta_view`, `interest_signup` and `interest_dismiss`, all with placement `d_popup`.
+- **Hero:** "Tell us what matters to you. We'll show you the flights that fit you best."
+
+## The flows (iteration 1; see above for what iteration 2 changed)
 
 1. **Price arm** (`frontend/lib/d/priceArm.ts`, the only place it lives, so it can become a PostHog flag
    later).

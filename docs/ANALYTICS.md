@@ -35,8 +35,9 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 | `c_compare_view` | the compare page is shown | `flights`, `from_link` |
 | `dashboard_section_open` | a participant expands a dashboard section (not a section that only comes back into view on a flight switch or a reload) | `section` (turbulence, aircraft, seat, airline, pilot, weather, sounds, compare, alerts), `variant` |
 | `score_factors_open` | the "What goes into this score" panel under the smoothness score is expanded | `variant` |
-| `interest_cta_view` | the "notify me when it's live" card scrolls into view (once per page view; study placements count a view when 40% of the card is on screen, versions C and D from the first visible pixel) | `source` (study, c, d), `placement` (dashboard, debrief, c_home, c_results, c_flight, c_compare, d_home, d_results, d_flight, d_compare) |
+| `interest_cta_view` | the "notify me when it's live" card scrolls into view (once per page view; study placements count a view when 40% of the card is on screen, versions C and D from the first visible pixel) | `source` (study, c, d), `placement` (dashboard, debrief, c_home, c_results, c_flight, c_compare, d_home, d_results, d_flight, d_compare; `d_popup` from 2026-11-19, when D's waitlist dialog opens) |
 | `interest_signup` | a sign-up is submitted successfully | `source`, `placement`, `interview` (ticked the interview box), `is_test` |
+| `interest_dismiss` | "No thanks" (or Escape) on version D's waitlist dialog (from 2026-11-19) | `placement` (d_popup) |
 | `d_setup` | the "What matters to you" setup on /d is answered | `completed` (false = skipped), `order` ("cruise,takeoff_landing,aircraft,space" — the four categories, most important first), `changed` (an earlier answer was replaced) |
 | `d_search`, `d_results_view`, `d_compare_toggle`, `d_compare_view` | version D's counterparts of the `c_*` events above (same properties; `d_results_view` has no `min_score`, D has no score filter) | |
 | `d_sort` | a sort tab is picked on /d/search | `sort` (foryou, cheapest, fastest, departure), `from` |
@@ -47,7 +48,7 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 | `d_addon_click` | "Add for $X" on the offer card | `placement`, `price_arm`, `variant`, `is_test` |
 | `d_addon_waitlist` | the "not ready yet" form is submitted with an email (the `d_addon` sign-up is saved) | `placement`, `price_arm`, `variant`, `is_test` |
 | `d_addon_dismiss` | "No thanks", when its reason is sent ("Done"), or when the visitor leaves the page without answering | `placement`, `price_arm`, `variant`, `is_test`, `reason` (too_expensive, wouldnt_use, not_sure, something_else, prefer_not, none_given) |
-| `d_addon_items` | "Which of these would you actually use?" is sent with at least one box ticked | `placement`, `price_arm`, `variant`, `is_test`, `items` (comma list of walkthrough, airline, landed_text, none) |
+| `d_addon_items` | "Which of these would you actually use?" is sent with at least one box ticked | `placement`, `price_arm`, `variant`, `is_test`, `items` (comma list of walkthrough, forecast_alerts, landed_text, none; `airline` instead of `forecast_alerts` before iteration 2) |
 | `d_pricing_answered` | the pricing questions are sent (once per browser) | `placement`, `price_arm`, `variant`, `is_test`, `questions_answered` (0–5; no amounts, no plan answer) |
 | `d_feedback_open` | "Tell us what you think" is opened on a /d flight or compare page | `placement` (flight, compare), `price_arm`, `variant`, `is_test` |
 | `d_feedback_submitted` | that feedback is sent | `placement`, `price_arm`, `variant`, `is_test` (no answers) |
@@ -79,6 +80,15 @@ with `?arm=p499` or `?arm=p1499` forces that arm for the tab's session and adds 
   visitor can see the card in two tab sessions.
 - **Why not**: `d_addon_dismiss` by `reason`; **what they'd use**: `d_addon_items` by `items`. The amounts, the
   plan answer and every typed answer are only in Supabase (`d_feedback`, `signups`), never in PostHog.
+
+**Flight Day Pack, iteration 2** (docs/FLIGHT_DAY_PACK.md, branch `test/flight-day-pack-2`; ship time: to be
+filled in at deploy). The offer stopped being inline: the `results` card became a pop-in 5 s after the first
+scroll, and `after_pick` a dialog that must be answered. So `d_addon_view`, `d_addon_click` and
+`d_addon_dismiss` from before and after that point are not comparable; split by time. The forced choice also
+raises dismiss counts (every after-pick view ends in Add or No thanks, and Escape counts as No thanks), so read
+`d_addon_click` per `d_addon_view`, by arm, as the price signal, not the dismiss rate. The item key `airline`
+became `forecast_alerts`. D's waitlist also opens as a dialog after 30 s of visible time (`d_popup`):
+`interest_signup` by `placement` keeps it separable from the inline cards.
 
 Version D (docs/ITERATION_2.md) funnel: `$pageview` /d → `d_setup` → `d_search` → `d_flight_view` →
 `d_flight_chosen`, broken down by `priorities`; `d_rating_open` by `category` shows which ratings
