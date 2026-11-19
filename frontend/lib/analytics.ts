@@ -21,6 +21,18 @@ const DEBUG = process.env.NEXT_PUBLIC_POSTHOG_DEBUG === "1";
 
 let started = false;
 /**
+ * Properties version D adds to every event sent from a /d page (its Flight Day Pack price arm,
+ * frontend/lib/d/priceArm.ts). Registered by D's layout (components/d/offer/DPackBoot.tsx) in an
+ * effect, which runs before the root layout's startAnalytics, so D's first pageview has it too.
+ * Kept out of this file so the study's and version C's bundles carry none of D's code.
+ */
+let dStamp: (() => EventProps) | null = null;
+
+/** From version D's layout: the properties to add to each /d event (computed when the event is sent). */
+export function stampDEvents(stamp: () => EventProps): void {
+  dStamp = stamp;
+}
+/**
  * Set when this is a team test (?test=1 now, or the browser's test mode): the session is not
  * recorded. Events still go out, flagged is_test, so a test run can be checked in PostHog; a
  * replay of a team member clicking around would only be noise among the recordings the team watches.
@@ -70,6 +82,9 @@ export function startAnalytics(): void {
       if (!event) return event;
       const tool = toolContext(event.properties?.$current_url);
       if (tool) event.properties = { ...event.properties, ...tool };
+      // Version D's own stamp (its Flight Day Pack price arm, docs/FLIGHT_DAY_PACK.md), by URL like `variant`,
+      // so the study's and version C's events never get it.
+      if (tool?.variant === "D" && dStamp) event.properties = { ...event.properties, ...dStamp() };
       if (tool?.is_test) {
         // A test run in progress: keep its mark alive, and make sure none of it is recorded.
         touchTestMode();

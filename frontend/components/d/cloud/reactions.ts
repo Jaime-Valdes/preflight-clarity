@@ -25,7 +25,7 @@
  * equal or higher one replaces it, except that a tap during a tap extends the hold (to 1.8 s after
  * that face began at most) and a nod during a nod's first 600 ms extends it with no second dip. A
  * new tap face starts at most once every 1.2 s, and not within 0.6 s of the last one ending. Never
- * for the sign-up card, the footer, a sheet opener, anything in a dialog, a disabled control, a
+ * for the sign-up card, the Flight Day Pack card and the general feedback, the footer, a sheet opener, anything in a dialog, a disabled control, a
  * form's submit button, a link to another page or a hash link; nothing behind an open sheet or
  * while a page transition runs. Under reduced motion the faces still change and nothing moves.
  */
@@ -78,10 +78,12 @@ const CONTROL =
   '[role="menuitemcheckbox"], input[type="checkbox"], input[type="radio"]';
 /**
  * What never gets a reaction (shared markup pinned in scripts/d-hooks.mjs): the sign-up card, the
- * footer, sheet openers, dialogs, disabled controls, the skip link and form submit buttons.
+ * footer, sheet openers, dialogs, disabled controls, the skip link and form submit buttons. And the
+ * Flight Day Pack's offer card and the general feedback (docs/FLIGHT_DAY_PACK.md): a price test, so
+ * "Add" and "No thanks" must get exactly the same from the cloud, which is nothing.
  */
 const NEVER =
-  '[aria-labelledby^="c-interest-"], [data-theme="d"] > footer, [aria-haspopup="dialog"], ' +
+  '[aria-labelledby^="c-interest-"], [data-theme="d"] > footer, [aria-haspopup="dialog"], [data-d-offer], [data-d-feedback], ' +
   '[role="dialog"], :disabled, [aria-disabled="true"], a[href^="#"], ' +
   'form button:not([type="button"]):not([type="reset"]), form input[type="submit"]';
 /** The compare tray's buttons: a chip's remove and "Clear" change the compare list, so they get "noted". */

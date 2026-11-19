@@ -8,6 +8,7 @@ import { TestFlag } from "@/components/c/interest/TestFlag";
 import { DScope } from "@/components/d/brand/DScope";
 import { DCompanion } from "@/components/d/cloud/DCompanion";
 import { DMotionLayer } from "@/components/d/motion/DMotionLayer";
+import { DPackBoot } from "@/components/d/offer/DPackBoot";
 import { DSky } from "@/components/d/sky/DSky";
 import "./d-sky.css";
 import "./d-transition.css";
@@ -62,6 +63,7 @@ export default function DLayout({ children }: { children: ReactNode }) {
         <DScope />
         <DSky />
         <TestFlag />
+        <DPackBoot />
         <Header />
         <main
           id="c-main"

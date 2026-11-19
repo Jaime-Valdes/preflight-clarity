@@ -10,6 +10,7 @@ import { ringFrom } from "@/components/d/motion/motion";
 import { track } from "@/lib/analytics";
 import { itemId, parseItemId, type CompareItem } from "@/lib/c/model";
 import { chooseFlight, clearChoice, useChoice } from "@/lib/d/choice";
+import { notePick } from "@/lib/d/flightDayPack";
 import { orderKey } from "@/lib/d/priorities";
 import { cn } from "@/lib/cn";
 
@@ -90,6 +91,9 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
     const replaced = next && current ? (parseItemId(current)?.key ?? null) : null;
     if (next) chooseFlight(item);
     else clearChoice(item);
+    // The Flight Day Pack's after_pick card (docs/FLIGHT_DAY_PACK.md) appears below the pick, the same for
+    // every flight: it is told only which page this is (one flight's page, or the compare page).
+    if (next) notePick(from === "compare" ? "compare" : `flight:${itemId(item)}`);
     const price = fareAt(option, daysUntil);
     track("d_flight_chosen", {
       key: item.key,

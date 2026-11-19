@@ -23,6 +23,9 @@ import { possessive } from "@/components/dashboard/trust/format";
 import { D_LINK } from "@/components/d/brand/buttons";
 import { cloudReact } from "@/components/d/cloud/react";
 import { flyFromTray, flyToTray } from "@/components/d/motion/tray";
+import { DFeedbackLink } from "@/components/d/offer/DFeedbackLink";
+import { FlightDayPackOffer } from "@/components/d/offer/FlightDayPackOffer";
+import { useWide } from "@/components/d/offer/useWide";
 import { RatingPill } from "@/components/d/ratings/RatingPill";
 import { RatingRows } from "@/components/d/ratings/RatingRows";
 import { track } from "@/lib/analytics";
@@ -251,6 +254,11 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
     />
   );
 
+  // The Flight Day Pack's after_pick card (docs/FLIGHT_DAY_PACK.md): one card, right below whichever pick is on
+  // screen (phones: the pick card under the header; laptops: the sticky column's). Nothing until the layout is known.
+  const wide = useWide();
+  const offer = <FlightDayPackOffer placement="after_pick" context={`flight:${itemId(item)}`} className="min-w-0" />;
+
   /** The other flights' top rating in the visitor's order, as a plain pill where version C shows the score. */
   const badge = (o: FlightOption) => {
     const top = orderByPriorities(allRatings.get(o.key) ?? [], priorities.order)[0];
@@ -297,6 +305,8 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
             </div>
             {chooseButton("mt-4")}
           </div>
+
+          {wide === false ? offer : null}
 
           {/* Reassurance first: four plain cards, each a glance. */}
           <section aria-labelledby={reassureId} className="min-w-0 animate-d-rise [animation-delay:120ms] lg:col-start-1">
@@ -405,13 +415,16 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
 
           {/* The fare (and, on laptops, the pick) after the ratings on phones; a sticky column on laptops. */}
           <div className="min-w-0 lg:col-start-2 lg:row-span-6 lg:row-start-1">
-            <div className="flex flex-col gap-4 lg:sticky lg:top-6">
+            {/* d-flight-aside: the column stops being sticky while it holds the Flight Day Pack card (app/d/d-flight.css),
+                so a long card is never cut off below the screen. */}
+            <div className="d-flight-aside flex flex-col gap-4 lg:sticky lg:top-6">
               {/* Phones have the pick under the header instead (one control, in sync through the choice store). */}
               <div className={cn(CARD, "hidden animate-d-rise p-5 [animation-delay:60ms] lg:block")}>
                 <h2 className="text-[12px] font-bold uppercase tracking-[0.08em] text-ink-mute">Your pick</h2>
                 <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{PICK_QUESTION}</p>
                 {chooseButton("mt-4")}
               </div>
+              {wide === true ? offer : null}
               {/* The on-time and fleet-age facts are left out: the reassurance cards above already state them. The compare
                   controls take the outline look, so the pick stays the column's one royal pill. d-flight-fare is the
                   hook acknowledgeCompare finds this card's controls by; d-reveal gives it the kit's scroll reveal (on
@@ -450,6 +463,9 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
             badge={badge}
             className="mt-2 min-w-0 lg:col-start-1"
           />
+
+          {/* The general feedback (docs/FLIGHT_DAY_PACK.md): a quiet link under the page's content. */}
+          <DFeedbackLink placement="flight" className="min-w-0 lg:col-start-1" />
         </div>
       </ExploreContext.Provider>
     </div>
