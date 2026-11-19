@@ -31,7 +31,7 @@ import { CloudMascot } from "@/components/d/brand/CloudMascot";
 import { cloudReact } from "@/components/d/cloud/react";
 import { ChooseButton } from "@/components/d/flight/ChooseButton";
 import { DFeedbackLink } from "@/components/d/offer/DFeedbackLink";
-import { FlightDayPackOffer } from "@/components/d/offer/FlightDayPackOffer";
+import { FlightDayPackModal } from "@/components/d/offer/FlightDayPackOffer";
 import { animateOnce } from "@/components/d/motion/motion";
 import { RatingButton } from "@/components/d/ratings/RatingSheet";
 import { CATEGORY_SHORT } from "@/components/d/ratings/tone";
@@ -530,9 +530,9 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
           )}
         />
       </div>
-      {/* The Flight Day Pack (docs/FLIGHT_DAY_PACK.md): its after_pick card right under the table's last row, the pick
-          (the same card whichever flight was picked), and the general feedback link. */}
-      <FlightDayPackOffer placement="after_pick" context="compare" className="mt-4" />
+      {/* The Flight Day Pack (docs/FLIGHT_DAY_PACK.md): its after_pick dialog, opened by a pick in the table (the same
+          dialog whichever flight was picked), and the general feedback link. */}
+      <FlightDayPackModal context="compare" />
       <DFeedbackLink placement="compare" className="mt-4" />
     </>
   );

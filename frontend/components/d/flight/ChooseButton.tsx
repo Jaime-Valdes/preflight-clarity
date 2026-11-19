@@ -84,16 +84,16 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
   const chosen = current === itemId(item);
   const [announcement, setAnnouncement] = useState("");
 
-  const toggle = () => {
+  const toggle = (button: HTMLElement) => {
     const next = !chosen;
     // A pick replaces any earlier pick for the same route and day; the event names it, so the funnel can
     // count one pick per route and day (the last event per browser) instead of two.
     const replaced = next && current ? (parseItemId(current)?.key ?? null) : null;
     if (next) chooseFlight(item);
     else clearChoice(item);
-    // The Flight Day Pack's after_pick card (docs/FLIGHT_DAY_PACK.md) appears below the pick, the same for
-    // every flight: it is told only which page this is (one flight's page, or the compare page).
-    if (next) notePick(from === "compare" ? "compare" : `flight:${itemId(item)}`);
+    // The Flight Day Pack's after_pick dialog (docs/FLIGHT_DAY_PACK.md) opens now, the same for every flight:
+    // it is told only which page this is (one flight's page, or the compare page), and the button for the focus.
+    if (next) notePick(from === "compare" ? "compare" : `flight:${itemId(item)}`, button);
     const price = fareAt(option, daysUntil);
     track("d_flight_chosen", {
       key: item.key,
@@ -125,7 +125,7 @@ export function ChooseButton({ item, option, options, daysUntil, ratings, order,
         type="button"
         aria-pressed={chosen}
         onClick={(event) => {
-          toggle();
+          toggle(event.currentTarget);
           // The same for a pick and for a withdrawal.
           ringFrom(event.currentTarget);
           cloudReact("nod");

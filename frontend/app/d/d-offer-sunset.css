@@ -1,0 +1,80 @@
+/*
+ * Version D's Flight Day Pack surfaces, iteration 2 (docs/FLIGHT_DAY_PACK.md): the results pop-in and the after-pick
+ * dialog, and the waitlist dialog's frame.
+ *
+ * THE OWNER'S EXCEPTION (2026-11-19): "Make it a light shade of orange, sunset color." D's house rule 5 keeps red,
+ * pink and orange out of the look; for the offer's two surfaces only, the owner lifted it. This file is the only
+ * one allowed a hue under 32° (scripts/d-contrast.mjs: from 18° to 32°, orange only, never red or pink), and only
+ * on `.d-offer-sunset` and the offer dialog's scrim. Text on it stays D's navy ink, checked by d-contrast.
+ * By night the same surface is a muted dusk, with no glare against the night sky, and it keeps the day ink.
+ */
+
+[data-theme="d"] .d-offer-sunset {
+  background: linear-gradient(160deg, #ffebd6 0%, #ffe0c2 55%, #ffd3ae 100%);
+  color: #14213d;
+  box-shadow: 0 2px 6px rgb(22 60 120 / 0.08), 0 24px 48px -18px rgb(20 33 61 / 0.45);
+}
+
+/* By night: muted dusk, and the day ink (like paper, d-night.css). */
+@media screen {
+  [data-theme="d"][data-d-time="night"] .d-offer-sunset {
+    background: linear-gradient(160deg, #ecd2bc 0%, #e3c3a8 55%, #d9b597 100%);
+    --color-ink: #14213d;
+    --color-ink-soft: #27344f;
+    --color-ink-mute: #3a4a66;
+    --color-ink-900: var(--color-ink);
+    --color-ink-700: var(--color-ink-soft);
+    --color-ink-500: var(--color-ink-mute);
+    --color-ink-400: var(--color-ink-mute);
+    --d-hl: var(--color-butter);
+    --d-veil: rgb(20 33 61 / 0.06);
+    --d-veil-press: rgb(20 33 61 / 0.1);
+    color: #14213d;
+  }
+  [data-theme="d"][data-d-time="night"] .d-modal-box {
+    color: #14213d;
+  }
+}
+
+/* The pop-in: it slides in from the right edge (reduced motion: it fades in). Fixed over the results. */
+[data-theme="d"] .d-offer-popin {
+  max-height: calc(100dvh - 7rem);
+  display: flex;
+  flex-direction: column;
+  animation: d-offer-slide 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+[data-theme="d"] .d-offer-popin > section {
+  max-height: calc(100dvh - 7rem);
+}
+@keyframes d-offer-slide {
+  from {
+    transform: translateX(110%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes d-offer-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="d"] .d-offer-popin {
+    animation: d-offer-fade 0.2s linear both;
+  }
+}
+
+/* The dialogs' scrim: D's sheet scrim; the offer's takes a dusk tint. */
+[data-theme="d"] .d-modal-scrim {
+  background: rgb(22 58 154 / 0.38);
+}
+[data-theme="d"] .d-modal-scrim-sunset {
+  background: rgb(20 33 61 / 0.5);
+}
+[data-theme="d"] .d-modal-box {
+  animation: d-offer-fade 0.18s linear both;
+}

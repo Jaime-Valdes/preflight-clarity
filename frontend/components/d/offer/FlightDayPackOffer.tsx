@@ -1,7 +1,7 @@
 "use client";
 
-import { MapPinned, MessageSquareText, Plane, Sparkles } from "lucide-react";
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Bell, MapPinned, MessageSquareText, Plus, Sparkles } from "lucide-react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { addDays } from "@preflight/shared/dates";
 import type { DismissReason, OfferPlacement, PackItem, PlanChoice, Signup } from "@preflight/shared/types";
 import { INTEREST_INTERVIEW } from "@/components/c/interest/InterestSheet";
@@ -11,40 +11,44 @@ import { cn } from "@/lib/cn";
 import {
   claimResults,
   closeOffer,
+  isTestRun,
   markPricingAsked,
   markViewed,
+  newUuid,
   noteOpenAnswer,
+  noteSurface,
+  pickButton,
+  pickedOnThisLoad,
   pricingAsked,
   resultsCardAllowed,
   savePackRow,
   sessionUtms,
   trackPack,
   usePackSession,
-  isTestRun,
-  newUuid,
 } from "@/lib/d/flightDayPack";
 import { ARM_PRICE, useArm, type ArmState } from "@/lib/d/priceArm";
 import { loadLocalSignups, saveSignup } from "@/lib/storage";
 import { useTodayISO } from "@/lib/hooks";
 import * as copy from "./copy";
+import { DModal } from "./DModal";
 import { ChoiceGroup, FIELD, LABEL, Optional, TextAnswer } from "./fields";
 
 /*
- * The Flight Day Pack offer (docs/FLIGHT_DAY_PACK.md): an inline card in D's paper look, never a
- * pop-up. Two placements: `after_pick`, right below "I'd pick this flight" once a flight is picked
- * (flight page and compare page), and `results`, after the 3rd result. Once per placement per
- * session, and gone for the session after "No thanks" or "Add"; the results card never shows once
- * the after_pick card has.
+ * The Flight Day Pack offer (docs/FLIGHT_DAY_PACK.md), iteration 2 (2026-11-19, the owner's request): two
+ * surfaces in a light sunset orange (app/d/d-offer-sunset.css; the owner lifted D's "never a pop-up" and
+ * "never orange" rules for these two only).
  *
- * The card is the same for every flight and every search: it is given only its placement and which
- * page it is on, never a flight, a rating or a fare. It exists only on the client (the price arm has
- * no server value), so the server and hydration render nothing and the price can't flash from one
- * value to the other. The cloud gives it no reaction at all, "Add" and "No thanks" alike
- * (components/d/cloud/reactions.ts, `[data-d-offer]`).
+ * - `results`: a panel that slides in from the right 5 s after the visitor first scrolls the results, fixed
+ *   to the screen over the list. Not modal: the page stays usable. It closes only through its own steps.
+ * - `after_pick`: a dialog over a dimmed page right after "I'd pick this flight" (flight and compare pages).
+ *   It must be answered: "Add to flight – $X" or "No thanks" (Escape counts as "No thanks"); no ✕, and the
+ *   backdrop does nothing.
  *
- * "Add for $X" is an honest fake door: the pack isn't ready, the visitor can leave an email to get it
- * free at launch, and nothing is ever charged or asked for payment. Every step after it is optional
- * and skippable, inline, with no modal and no route change.
+ * Once per placement per session, the results panel never after the after_pick dialog, and gone for the
+ * session after either choice. The card is the same for every flight and every search: it is given only its
+ * placement and which page it is on. It exists only on the client (the price arm has no server value). The
+ * cloud gives it no reaction (`[data-d-offer]` in components/d/cloud/reactions.ts), "Add" and "No thanks"
+ * alike. "Add" is an honest fake door: nothing is ever charged or asked for.
  */
 
 type Stage = "offer" | "join" | "items" | "dismiss" | "pricing" | "thanks";
@@ -53,94 +57,159 @@ type Path = "join" | "dismiss" | "skip";
 /** Same rule as the sign-up sheet's. */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MAX_FIRST_NAME = 60;
+/** The results panel waits this long after the visitor's first scroll of the results. */
+export const POP_IN_DELAY_MS = 5000;
 
-interface OfferProps {
-  placement: OfferPlacement;
-  /**
-   * Which page it is on, e.g. "flight:JFK.LAX.2026-11-26.DL1423", "compare", "results:JFK.LAX.2026-11-26":
-   * the card shows on the page that claimed it, never on another one. Says nothing to the card's look.
-   */
-  context: string;
-  /** Wraps the card when it shows (the results list puts it in an <li>); nothing is rendered otherwise. */
-  wrap?: (card: ReactNode) => ReactNode;
-  className?: string;
-}
+// ── results: the pop-in ─────────────────────────────────────────────────────
 
-export function FlightDayPackOffer({ placement, context, wrap, className }: OfferProps) {
+/**
+ * The results panel. `ready`: the day's flights are on screen. `context`: which search it is for
+ * ("results:JFK.LAX.2026-11-26"); it never shows on another one in the same session.
+ */
+export function FlightDayPackPopIn({ context, ready }: { context: string; ready: boolean }) {
   const session = usePackSession();
   const arm = useArm();
-  /** The visitor has answered the card on this page (Add or No thanks): it stays, through to the thank-you. */
   const [engaged, setEngaged] = useState(false);
+  const [due, setDue] = useState(false);
+  const [closed, setClosed] = useState(false);
+  const allowed = session !== null && arm !== null && (engaged || resultsCardAllowed(session, context));
 
-  const allowed =
-    session !== null &&
-    arm !== null &&
-    (engaged ||
-      (placement === "results" ? resultsCardAllowed(session, context) : session.shown.after_pick === context && !session.closed));
-
-  // The results card takes its placement for this page the first time it shows.
+  // 5 s after the first scroll (once the flights are there), and never during a page transition.
   useEffect(() => {
-    if (allowed && placement === "results") claimResults(context);
-  }, [allowed, placement, context]);
+    if (!ready || !allowed || due) return;
+    let timer: number | undefined;
+    let cancelWait: (() => void) | undefined;
+    const start = () => {
+      window.removeEventListener("scroll", start);
+      timer = window.setTimeout(() => {
+        cancelWait = whenTransitionEnds(() => setDue(true));
+      }, POP_IN_DELAY_MS);
+    };
+    window.addEventListener("scroll", start, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", start);
+      window.clearTimeout(timer);
+      cancelWait?.();
+    };
+  }, [ready, allowed, due]);
 
-  if (!allowed || !arm) return null;
-  const card = <OfferCard placement={placement} arm={arm} onEngage={() => setEngaged(true)} className={className} />;
-  return <>{wrap ? wrap(card) : card}</>;
+  useEffect(() => {
+    if (due && allowed && !closed) claimResults(context);
+  }, [due, allowed, closed, context]);
+
+  if (!due || !allowed || closed || !arm) return null;
+  return (
+    <PopInPanel>
+      <OfferFlow placement="results" arm={arm} onEngage={() => setEngaged(true)} onClose={() => setClosed(true)} />
+    </PopInPanel>
+  );
 }
 
-function OfferCard({
+/** Fixed over the results, from the right; clear of the header and of the compare tray. */
+function PopInPanel({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [bottom, setBottom] = useState(16);
+  useEffect(() => {
+    noteSurface(true);
+    return () => noteSurface(false);
+  }, []);
+  // Above the compare tray when it shows (it is sticky at the bottom of the screen).
+  useEffect(() => {
+    const measure = () => {
+      const tray = document.getElementById("c-compare-tray");
+      const box = tray?.getBoundingClientRect();
+      const covered = box && box.height > 0 && box.top < window.innerHeight ? window.innerHeight - box.top : 0;
+      setBottom(Math.max(16, Math.round(covered) + 12));
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    const tray = document.getElementById("c-compare-tray");
+    if (tray && observer) observer.observe(tray);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure);
+    };
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className="d-offer-popin fixed right-0 z-[45] w-[88vw] max-w-[400px] sm:right-6 sm:w-[392px]"
+      style={{ bottom }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ── after_pick: the dialog ──────────────────────────────────────────────────
+
+/** The after_pick dialog for this page ("flight:JFK.LAX.2026-11-26.DL1423" or "compare"). */
+export function FlightDayPackModal({ context }: { context: string }) {
+  const session = usePackSession();
+  const arm = useArm();
+  const [engaged, setEngaged] = useState(false);
+  const [closed, setClosed] = useState(false);
+  const open =
+    session !== null &&
+    arm !== null &&
+    !closed &&
+    session.shown.after_pick === context &&
+    pickedOnThisLoad(context) &&
+    (engaged || !session.closed);
+  if (!open || !arm) return null;
+  return (
+    <DModal sunset label={copy.OFFER_DIALOG_LABEL} onReturnFocus={pickButton}>
+      <OfferFlow placement="after_pick" arm={arm} onEngage={() => setEngaged(true)} onClose={() => setClosed(true)} />
+    </DModal>
+  );
+}
+
+// ── The flow, the same on both surfaces ─────────────────────────────────────
+
+function OfferFlow({
   placement,
   arm,
   onEngage,
-  className,
+  onClose,
 }: {
   placement: OfferPlacement;
   arm: ArmState;
   onEngage: () => void;
-  className?: string;
+  onClose: () => void;
 }) {
   const price = ARM_PRICE[arm.arm].label;
   const titleId = useId();
   const rootRef = useRef<HTMLElement>(null);
   const [stage, setStage] = useState<Stage>("offer");
   const [path, setPath] = useState<Path>("skip");
-  /** "No thanks" was tapped and its answer isn't sent yet (sent on Done, or when the visitor leaves). */
+  /** "No thanks" was chosen and its answer isn't sent yet (sent on Done, or when the visitor leaves). */
   const dismissRef = useRef<{ reason: DismissReason | null; text: string } | null>(null);
   const [reason, setReason] = useState<DismissReason | null>(null);
   const [anythingElse, setAnythingElse] = useState("");
 
-  // Seen: half the card on screen, once per placement per session; never while a page transition covers it.
+  // Seen once it has finished arriving (the pop-in's slide or fade; the dialog's open), once per placement
+  // per session, and never while a page transition covers it.
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-    let visible = typeof IntersectionObserver === "undefined";
-    let done = false;
     let cancelWait: (() => void) | undefined;
     const seen = () => {
-      if (!visible || done) return;
       if (transitionRunning()) {
-        cancelWait?.();
         cancelWait = whenTransitionEnds(seen);
         return;
       }
-      done = true;
       if (markViewed(placement)) trackPack("d_addon_view", placement);
     };
-    if (visible) {
-      seen();
-      return () => cancelWait?.();
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        visible = entries.some((e) => e.isIntersecting);
-        if (visible) seen();
-        if (done) observer.disconnect();
-      },
-      { threshold: 0.5 },
-    );
-    observer.observe(el);
+    const host = el.closest(".d-offer-popin");
+    const animating = host?.getAnimations?.().filter((a) => a.playState === "running") ?? [];
+    let gone = false;
+    if (animating.length) void Promise.all(animating.map((a) => a.finished)).then(() => !gone && seen(), () => !gone && seen());
+    else seen();
     return () => {
-      observer.disconnect();
+      gone = true;
       cancelWait?.();
     };
   }, [placement]);
@@ -176,8 +245,7 @@ function OfferCard({
     requestAnimationFrame(() => {
       const root = rootRef.current;
       root?.querySelector<HTMLElement>("[data-step-title]")?.focus({ preventScroll: true });
-      const top = root?.getBoundingClientRect().top ?? 0;
-      if (root && top < 0) root.scrollIntoView({ block: "start", behavior: "auto" });
+      root?.closest<HTMLElement>("[data-d-offer-scroll]")?.scrollTo({ top: 0 });
     });
   };
   const afterAnswers = () => go(pricingAsked() ? "thanks" : "pricing");
@@ -196,13 +264,32 @@ function OfferCard({
     setPath("dismiss");
     go("dismiss");
   };
+  const doneDismiss = () => {
+    finishDismiss();
+    afterAnswers();
+  };
+
+  // Escape: "No thanks" at the choice, and the step's own way on (Skip, Done, Close) after it.
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (stage === "offer") noThanks();
+    else if (stage === "join") afterAnswers();
+    else if (stage === "items") afterAnswers();
+    else if (stage === "dismiss") doneDismiss();
+    else if (stage === "pricing") go("thanks");
+    else onClose();
+  };
 
   return (
     <section
       ref={rootRef}
       data-d-offer
       aria-labelledby={titleId}
-      className={cn("animate-d-rise rounded-[24px] bg-surface p-5 shadow-soft sm:p-6", className)}
+      onKeyDown={onKeyDown}
+      className="d-offer-sunset max-h-[inherit] overflow-y-auto overscroll-contain rounded-[24px] p-5 shadow-lift sm:p-6"
+      data-d-offer-scroll
     >
       {stage === "offer" ? (
         <Offer titleId={titleId} price={price} onAdd={add} onNoThanks={noThanks} />
@@ -232,15 +319,12 @@ function OfferCard({
             setAnythingElse(t);
             if (dismissRef.current) dismissRef.current.text = t;
           }}
-          onDone={() => {
-            finishDismiss();
-            afterAnswers();
-          }}
+          onDone={doneDismiss}
         />
       ) : stage === "pricing" ? (
         <Pricing titleId={titleId} placement={placement} onDone={() => go("thanks")} />
       ) : (
-        <Thanks titleId={titleId} joined={path === "join"} />
+        <Thanks titleId={titleId} joined={path === "join"} onClose={onClose} />
       )}
     </section>
   );
@@ -248,7 +332,7 @@ function OfferCard({
 
 // ── The steps ───────────────────────────────────────────────────────────────
 
-const ITEM_ICONS = { walkthrough: <MapPinned />, airline: <Plane />, landed_text: <MessageSquareText /> } as const;
+const ITEM_ICONS = { walkthrough: <MapPinned />, forecast_alerts: <Bell />, landed_text: <MessageSquareText /> } as const;
 
 function StepTitle({ id, children }: { id: string; children: ReactNode }) {
   return (
@@ -290,6 +374,12 @@ function Offer({ titleId, price, onAdd, onNoThanks }: { titleId: string; price: 
             </span>
           </li>
         ))}
+        <li className="flex items-center gap-3">
+          <span aria-hidden className="flex size-8 shrink-0 items-center justify-center text-ink-soft [&_svg]:size-4">
+            <Plus />
+          </span>
+          <span className="text-[15px] font-semibold leading-snug text-ink-soft">{copy.AND_MORE}</span>
+        </li>
       </ul>
       <Actions>
         <button type="button" onClick={onAdd} className={PRIMARY}>
@@ -491,7 +581,7 @@ function Items({ titleId, placement, onDone }: { titleId: string; placement: Off
         legend={<span className="sr-only">{copy.ITEMS_QUESTION}</span>}
         help={copy.ITEMS_HELP}
         multiple
-        options={(["walkthrough", "airline", "landed_text", "none"] as const).map((key) => ({ key, label: copy.ITEM_LABELS[key] }))}
+        options={(["walkthrough", "forecast_alerts", "landed_text", "none"] as const).map((key) => ({ key, label: copy.ITEM_LABELS[key] }))}
         value={items}
         onChange={choose}
         className="mt-1"
@@ -647,8 +737,9 @@ function Pricing({ titleId, placement, onDone }: { titleId: string; placement: O
   );
 }
 
-function Thanks({ titleId, joined }: { titleId: string; joined: boolean }) {
+function Thanks({ titleId, joined, onClose }: { titleId: string; joined: boolean; onClose: () => void }) {
   return (
+    <>
     <div className="flex items-start gap-3" role="status">
       <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-sky text-ink ring-2 ring-ink [&_svg]:size-5">
         <Sparkles />
@@ -658,5 +749,11 @@ function Thanks({ titleId, joined }: { titleId: string; joined: boolean }) {
         <p className="mt-0.5 text-[15px] leading-relaxed text-ink-soft">{joined ? copy.THANKS_JOINED : copy.THANKS_OTHER}</p>
       </div>
     </div>
+    <Actions>
+      <button type="button" onClick={onClose} className={PRIMARY}>
+        {copy.CLOSE}
+      </button>
+    </Actions>
+    </>
   );
 }

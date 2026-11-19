@@ -499,10 +499,29 @@ for (const name of readdirSync(dDir).filter((f) => /^d-.*\.css$/.test(f)).sort()
     literals.push({ name, colour: hex([m[1], m[2], m[3]].map(Number)) });
   }
 }
+// THE OWNER'S EXCEPTION (2026-11-19, docs/FLIGHT_DAY_PACK.md, iteration 2): "Make it a light shade of orange, sunset
+// color." for the Flight Day Pack's pop-in and dialog only. One file, app/d/d-offer-sunset.css, may use hues from
+// SUNSET_MIN to HUE_MIN (light orange; never red or pink); every other file and every token stays under the rule.
+const SUNSET_FILE = "d-offer-sunset.css";
+const SUNSET_MIN = 18;
+const sunsetLiterals = literals.filter((l) => l.name === SUNSET_FILE && (hue(l.colour) ?? 0) >= SUNSET_MIN && (hue(l.colour) ?? 0) < HUE_MIN);
 const offLiteral = literals.filter((l) => {
   const h = hue(l.colour);
+  if (sunsetLiterals.includes(l)) return false;
   return h !== null && (h < HUE_MIN || h > HUE_MAX);
 });
+// Text on the sunset: D's navy ink on every light stop of the surface, by day and by night (the darkest stop is
+// the hardest for dark text). Checked here, after the main table, against the text threshold.
+console.log("\nThe Flight Day Pack's sunset surfaces (the owner's exception, app/d/d-offer-sunset.css):");
+for (const l of sunsetLiterals.filter((x) => luminance(x.colour) > 0.3)) {
+  for (const [label, fg] of [["ink", t.ink], ["ink-soft", t["ink-soft"]], ["ink-mute", t["ink-mute"]]]) {
+    const ratio = contrast(fg, l.colour);
+    const ok = ratio >= TEXT;
+    if (!ok) failed++;
+    console.log(`  ${label} on ${l.colour}: ${ratio.toFixed(2)} : 1 ${ok ? "pass" : "FAIL"}`);
+  }
+}
+if (!sunsetLiterals.length) console.log("  (none found)");
 
 console.log(`\nTile drift by night (paper 90% over midnight against the day's 60% tile; within ${TILE_DRIFT}):`);
 let drifted = 0;
@@ -526,7 +545,9 @@ if (offLiteral.length) {
   console.log(`Colours written in app/d/d-*.css outside ${HUE_MIN}° to ${HUE_MAX}°:`);
   for (const l of offLiteral) console.log(`  ${l.name}: ${l.colour} (hue ${hue(l.colour).toFixed(1)}°)`);
 } else {
-  console.log(`Literals: all ${literals.length} colours written in app/d/d-*.css (data URIs decoded) are grey or between ${HUE_MIN}° and ${HUE_MAX}°.`);
+  console.log(
+    `Literals: all ${literals.length - sunsetLiterals.length} colours written in app/d/d-*.css (data URIs decoded) are grey or between ${HUE_MIN}° and ${HUE_MAX}°, besides ${sunsetLiterals.length} in ${SUNSET_FILE} from ${SUNSET_MIN}° under the owner's exception.`,
+  );
 }
 if (failed) console.log(`${failed} ${failed === 1 ? "pair is" : "pairs are"} under the threshold.`);
 if (drifted) console.log(`${drifted} date tile ${drifted === 1 ? "ratio drifts" : "ratios drift"} more than ${TILE_DRIFT} from the day's.`);

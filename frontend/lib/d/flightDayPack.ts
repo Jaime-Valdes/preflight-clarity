@@ -107,16 +107,45 @@ export function usePackSession(): PackSession | null {
   return useSyncExternalStore(subscribe, getSnapshot, () => null);
 }
 
+/** The pick that opened the after_pick dialog on this page load (in memory: a reload never reopens it). */
+let pickedNow: { context: string; button: HTMLElement | null } | null = null;
+
 /**
  * "I'd pick this flight" was pressed to pick (not to withdraw) on a flight page or the compare page:
- * the after_pick card is claimed for that page, unless the offer is gone for the session or the card
- * has already shown on another page. Called from ChooseButton; it reads nothing about the flight
- * beyond which page it is on.
+ * the after_pick dialog is claimed for that page and opens now, unless the offer is gone for the
+ * session or has already been shown on another page. Called from ChooseButton with the button, which
+ * gets the focus back when the dialog closes; it reads nothing about the flight beyond which page it is on.
  */
-export function notePick(context: string): void {
+export function notePick(context: string, button: HTMLElement | null = null): void {
   const s = getSnapshot();
-  if (s.closed || s.shown.after_pick) return;
+  if (s.closed || (s.shown.after_pick && s.shown.after_pick !== context)) return;
+  pickedNow = { context, button };
   update((p) => ({ ...p, shown: { ...p.shown, after_pick: context } }));
+}
+
+/** Whether the after_pick dialog was opened by a pick on this page load, for this page. */
+export function pickedOnThisLoad(context: string): boolean {
+  return pickedNow?.context === context;
+}
+
+/** The pick button to give the focus back to (null when it is gone). */
+export function pickButton(): HTMLElement | null {
+  const el = pickedNow?.button ?? null;
+  return el && el.isConnected ? el : null;
+}
+
+// ── Which offer surface is open (the waitlist dialog never stacks on one) ───
+
+let surfacesOpen = 0;
+
+/** A pop-in or dialog of the offer opened (true) or closed (false). */
+export function noteSurface(open: boolean): void {
+  surfacesOpen = Math.max(0, surfacesOpen + (open ? 1 : -1));
+}
+
+/** Whether an offer pop-in or dialog is on screen or mid-flow now. */
+export function offerSurfaceOpen(): boolean {
+  return surfacesOpen > 0;
 }
 
 /** The results card shows on this page (once per session, and never after the after_pick card). */

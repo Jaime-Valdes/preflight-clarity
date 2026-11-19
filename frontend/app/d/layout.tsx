@@ -8,6 +8,7 @@ import { TestFlag } from "@/components/c/interest/TestFlag";
 import { DScope } from "@/components/d/brand/DScope";
 import { DCompanion } from "@/components/d/cloud/DCompanion";
 import { DMotionLayer } from "@/components/d/motion/DMotionLayer";
+import { DInterestPopup } from "@/components/d/offer/DInterestPopup";
 import { DPackBoot } from "@/components/d/offer/DPackBoot";
 import { DSky } from "@/components/d/sky/DSky";
 import "./d-sky.css";
@@ -18,6 +19,7 @@ import "./d-home.css";
 import "./d-results.css";
 import "./d-flight.css";
 import "./d-compare.css";
+import "./d-offer-sunset.css";
 import "./d-night.css";
 
 const DESCRIPTION =
@@ -76,6 +78,7 @@ export default function DLayout({ children }: { children: ReactNode }) {
         <Footer />
         <DCompanion />
         <DMotionLayer />
+        <DInterestPopup />
       </div>
     </ToolProvider>
   );

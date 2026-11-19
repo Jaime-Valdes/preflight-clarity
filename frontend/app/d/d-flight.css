@@ -279,11 +279,3 @@ html[data-d-on]:active-view-transition .d-pass-plane {
     margin-inline: 0;
   }
 }
-
-/* The Flight Day Pack card (docs/FLIGHT_DAY_PACK.md) under the laptop's sticky pick: while the column holds it, the
-   column scrolls with the page, so a long step of the card is never cut off below the screen. */
-@media (min-width: 1024px) {
-  [data-theme="d"] .d-flight-aside:has(> [data-d-offer]) {
-    position: static;
-  }
-}

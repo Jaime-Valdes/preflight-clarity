@@ -10,15 +10,19 @@ import type { DismissReason, EasierAnswer, PackItem, PlanChoice } from "@preflig
 export const OFFER_TITLE = "Make flight day easier";
 /** "Flight Day Pack · $4.99 per trip" */
 export const offerLine = (price: string) => `Flight Day Pack · ${price} per trip`;
-/** "Add for $4.99" */
-export const addLabel = (price: string) => `Add for ${price}`;
+/** "Add to flight – $4.99" (an en dash) */
+export const addLabel = (price: string) => `Add to flight – ${price}`;
+/** The offer's last, lighter line (iteration 2, 2026-11-19). */
+export const AND_MORE = "And more!";
 export const NO_THANKS = "No thanks";
+/** The after-pick dialog's accessible name. */
+export const OFFER_DIALOG_LABEL = "Flight Day Pack";
 
 /** The three items, as the offer lists them (title, then what it covers). */
 export const OFFER_ITEMS: readonly { key: Exclude<PackItem, "none">; title: string; detail: string }[] = [
   { key: "walkthrough", title: "Airport walkthrough for your departure airport", detail: "Security, your terminal, finding your gate" },
-  { key: "airline", title: "Your airline, explained", detail: "Boarding, what to expect on board" },
-  { key: "landed_text", title: "A “landed safely” text to someone you choose", detail: "" },
+  { key: "forecast_alerts", title: "Flight Forecast updates and alerts", detail: "" },
+  { key: "landed_text", title: "Let loved ones know you’ve landed", detail: "" },
 ];
 
 // ── "Add for $X": the honest fake door ──────────────────────────────────────
@@ -39,8 +43,8 @@ export const ITEMS_QUESTION = "Which of these would you actually use?";
 export const ITEMS_HELP = "Tick any that apply.";
 export const ITEM_LABELS: Record<PackItem, string> = {
   walkthrough: "Airport walkthrough",
-  airline: "Your airline, explained",
-  landed_text: "The “landed safely” text",
+  forecast_alerts: "Flight Forecast updates and alerts",
+  landed_text: "Letting loved ones know you’ve landed",
   none: "None of these",
 };
 export const WORTH_IT_LABEL = "What would make this worth it for you?";
@@ -84,6 +88,8 @@ export const PLAN_OPTIONS: readonly { key: PlanChoice; label: string }[] = [
 // ── Thank-you ───────────────────────────────────────────────────────────────
 
 export const THANKS_TITLE = "Thank you.";
+/** Closes the pop-in or dialog after the thank-you. */
+export const CLOSE = "Close";
 export const THANKS_JOINED = "You’re on the list for the Flight Day Pack. We’ll email you once, when it’s ready.";
 export const THANKS_OTHER = "That helps us build the right thing. Enjoy the rest of your search.";
 

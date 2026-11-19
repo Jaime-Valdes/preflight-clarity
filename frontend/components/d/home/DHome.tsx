@@ -67,8 +67,7 @@ export function DHome() {
             A calmer way to choose a flight
           </h1>
           <p className="d-home-rise mt-4 max-w-[32rem] text-[17px] leading-relaxed text-ink-soft" style={step(3)}>
-            Tell us what matters to you. We&rsquo;ll show every nonstop flight on your route in plain words &mdash; no scores,
-            no jargon.
+            Tell us what matters to you. We&rsquo;ll show you the flights that fit you best.
           </p>
           {/* Still from the first frame: the one thing on the screen to tap never moves under the thumb. */}
           <div className="mt-7 sm:max-w-[22rem]">

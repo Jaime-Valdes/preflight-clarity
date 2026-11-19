@@ -57,7 +57,7 @@ import {
 } from "@/lib/d/view";
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
-import { FlightDayPackOffer } from "@/components/d/offer/FlightDayPackOffer";
+import { FlightDayPackPopIn } from "@/components/d/offer/FlightDayPackOffer";
 import { DResultCard } from "./DResultCard";
 import { carryFor, signupContext, smoothestForYou } from "./marks";
 import { usePopOnChange } from "./usePopOnChange";
@@ -393,7 +393,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
             ) : (
               <>
                 <ol ref={listRef} aria-label="Flights" aria-describedby={ORDER_ID} className="flex flex-col gap-6">
-                  {shown.flatMap((option, index) => {
+                  {shown.map((option, index) => {
                     // The flight's own airports: a long flight "from LGA" leaves from JFK, and is one flight either way.
                     const item: CompareItem = {
                       origin: option.flight.origin.code,
@@ -403,7 +403,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                     };
                     const id = itemId(item);
                     const inCompare = compare.has(id);
-                    const card = (
+                    return (
                       <li
                         key={option.key}
                         className={redeals === 0 ? "animate-d-rise" : undefined}
@@ -438,26 +438,6 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
                         />
                       </li>
                     );
-                    // The Flight Day Pack's results card (docs/FLIGHT_DAY_PACK.md): a list item of its own after the 3rd
-                    // flight (after the last with fewer), the same slot and the same card for every search and sort.
-                    // It is no cloud seat and never moves with the flights: a re-sort leaves it where it is.
-                    if (index !== Math.min(2, shown.length - 1)) return [card];
-                    return [
-                      card,
-                      <FlightDayPackOffer
-                        key="d-flight-day-pack"
-                        placement="results"
-                        context={`results:${origin}.${destination}.${date}`}
-                        wrap={(offer) => (
-                          <li
-                            className={redeals === 0 ? "animate-d-rise" : undefined}
-                            style={{ animationDelay: `${Math.min(index + 1, 8) * 60}ms` }}
-                          >
-                            {offer}
-                          </li>
-                        )}
-                      />,
-                    ];
                   })}
                 </ol>
                 <p id={ORDER_ID} className="mt-4 text-xs leading-snug text-ink-500">
@@ -471,6 +451,10 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 
       {/* After the day's flights (docs/INTEREST.md). In flow, so the sticky tray never covers its button. */}
       <InterestCard placement="d_results" context={signupContext(day, total)} className="mt-2" />
+
+      {/* The Flight Day Pack's pop-in (docs/FLIGHT_DAY_PACK.md): 5 s after the first scroll of the flights, fixed over
+          the list from the right. The same panel for every search; it is told only which search this is. */}
+      <FlightDayPackPopIn context={`results:${origin}.${destination}.${date}`} ready={search.ok && shown.length > 0} />
 
       {filtersOpen ? (
         <Sheet
