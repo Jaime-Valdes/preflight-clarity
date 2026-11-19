@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { ListResponse, ListSignupsResponse, SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
+import type { DFeedback, ListDFeedbackResponse, ListResponse, ListSignupsResponse, SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
 
 /*
  * Server-only data access for the team results page. Never import this from
@@ -17,6 +17,8 @@ export type ResultsData =
       signups: Signup[];
       /** Why the sign-ups may be incomplete (old backend, no storage, request failed); undefined when they loaded. */
       signupsNote?: string;
+      /** Version D's Flight Day Pack answers (docs/FLIGHT_DAY_PACK.md); empty when the backend has none or no endpoint. */
+      dFeedback: DFeedback[];
     }
   | { status: "unauthorized" }
   | {
@@ -72,9 +74,10 @@ export async function fetchResults(key: string | undefined): Promise<ResultsData
   if (!apiUrl) return { status: "no_backend", reason: "no_api_url" };
 
   const headerKey = key && HEADER_SAFE.test(key) ? key : "";
-  const [responses, signups] = await Promise.all([
+  const [responses, signups, feedback] = await Promise.all([
     adminGet(apiUrl, "/responses", headerKey),
     adminGet(apiUrl, "/signups", headerKey),
+    adminGet(apiUrl, "/d-feedback", headerKey),
   ]);
 
   if (responses.kind === "unreachable") {
@@ -97,14 +100,30 @@ export async function fetchResults(key: string | undefined): Promise<ResultsData
     return { status: "error", message: "The backend sent an unexpected response shape." };
   }
 
-  const interest = await readSignups(signups);
+  const [interest, dFeedback] = await Promise.all([readSignups(signups), readDFeedback(feedback)]);
   return {
     status: "ok",
     records: body.responses,
     storage: storageKind(body.storage),
     signups: interest.signups,
     signupsNote: interest.note,
+    dFeedback,
   };
+}
+
+/**
+ * The Flight Day Pack's answers, for their CSV: an extra on top of the sessions, like the sign-ups.
+ * Anything that goes wrong (an older backend without the endpoint, the table not created yet, a bad
+ * body) leaves the list empty and the download button switched off; the page never fails over it.
+ */
+async function readDFeedback(fetched: Fetched): Promise<DFeedback[]> {
+  if (fetched.kind === "unreachable" || !fetched.response.ok) return [];
+  try {
+    const body = (await fetched.response.json()) as Partial<ListDFeedbackResponse> | null;
+    return body && Array.isArray(body.feedback) ? body.feedback : [];
+  } catch {
+    return [];
+  }
 }
 
 /**

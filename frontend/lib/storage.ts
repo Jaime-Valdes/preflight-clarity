@@ -1,5 +1,5 @@
 import { signupKey } from "@preflight/shared/signup";
-import type { SessionRecord, Signup } from "@preflight/shared/types";
+import type { DFeedback, SessionRecord, Signup } from "@preflight/shared/types";
 
 /*
  * Saving session records — client only.
@@ -19,6 +19,10 @@ export const LOCAL_RESPONSES_KEY = "pfc.responses.v1";
 export const LOCAL_SIGNUPS_KEY = "pfc.signups.v1";
 const MAX_LOCAL_RECORDS = 200;
 const MAX_LOCAL_SIGNUPS = 200;
+/** Version D's Flight Day Pack answers saved in this browser (the no-backend fallback), newest last. */
+export const LOCAL_D_FEEDBACK_KEY = "pfc.d.feedback.v1";
+const MAX_LOCAL_D_FEEDBACK = 200;
+const D_FEEDBACK_ENDPOINT = "/api/d-feedback";
 const ENDPOINT = "/api/responses";
 const SIGNUP_ENDPOINT = "/api/signups";
 /** Chrome caps keepalive / sendBeacon payloads at 64 KB; stay comfortably under. */
@@ -117,6 +121,50 @@ function mirrorSignupToLocal(signup: Signup): void {
   } catch {
     // Storage blocked or full: the network save still goes out.
   }
+}
+
+// ── version D: the Flight Day Pack's answers ────────────────────────────────
+
+/**
+ * Save one answered step of the Flight Day Pack test or the general feedback (docs/FLIGHT_DAY_PACK.md):
+ * mirrored to localStorage (one entry per id), then POSTed to /api/d-feedback. Resolves to where it
+ * ended up. Never throws. The request is a keepalive one, so a save made as the page goes away still leaves.
+ */
+export function saveDFeedback(feedback: DFeedback): Promise<SaveResult> {
+  if (typeof window === "undefined") return Promise.resolve("local");
+  let json: string;
+  try {
+    json = JSON.stringify(feedback);
+  } catch {
+    return Promise.resolve("local");
+  }
+  try {
+    const raw = window.localStorage.getItem(LOCAL_D_FEEDBACK_KEY);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    const kept = (Array.isArray(list) ? list.filter(isDFeedbackLike) : []).filter((f) => f.id !== feedback.id);
+    kept.push(feedback);
+    window.localStorage.setItem(LOCAL_D_FEEDBACK_KEY, JSON.stringify(kept.slice(-MAX_LOCAL_D_FEEDBACK)));
+  } catch {
+    // Storage blocked or full: the network save still goes out.
+  }
+  if (backendMissing) return Promise.resolve("local");
+  return postJson(D_FEEDBACK_ENDPOINT, json).catch((): SaveResult => "local");
+}
+
+/** The Flight Day Pack answers saved in this browser (the no-backend fallback), newest first. */
+export function loadLocalDFeedback(): DFeedback[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(LOCAL_D_FEEDBACK_KEY);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter(isDFeedbackLike).reverse() : [];
+  } catch {
+    return [];
+  }
+}
+
+function isDFeedbackLike(value: unknown): value is DFeedback {
+  return typeof value === "object" && value !== null && typeof (value as DFeedback).id === "string" && typeof (value as DFeedback).kind === "string";
 }
 
 // ── network ─────────────────────────────────────────────────────────────────

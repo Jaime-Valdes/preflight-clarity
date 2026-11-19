@@ -16,7 +16,7 @@ import {
   summarizeMeasures,
   type StatsFilters,
 } from "@preflight/shared/stats";
-import type { SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
+import type { DFeedback, SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
 import { useHydrated } from "@/lib/hooks";
 import { ChangeBlock } from "./ChangeBlock";
 import { ChangeByAnswerBlock } from "./ChangeByAnswerBlock";
@@ -44,10 +44,14 @@ export interface ResultsDashboardProps {
   signups: Signup[];
   /** Why the sign-ups may be incomplete (e.g. the backend has no sign-ups endpoint yet). */
   signupsNote?: string;
+  /** Version D's Flight Day Pack answers (docs/FLIGHT_DAY_PACK.md), for their CSV; empty when there are none. */
+  dFeedback?: DFeedback[];
   storage: ResultsSource;
   /** Extra note shown under the header (e.g. "No backend configured — …"). */
   banner?: string;
 }
+
+const NO_FEEDBACK: DFeedback[] = [];
 
 const FILE_BANNER =
   "The backend is storing sessions in a local file — set up Supabase before running the real study.";
@@ -72,7 +76,7 @@ function isPlausibleSignup(value: unknown): value is Signup {
  * The team results page body. Everything below the header is computed from
  * one filtered slice, so every chart, list and the table agree.
  */
-export function ResultsDashboard({ records, signups, signupsNote, storage, banner }: ResultsDashboardProps) {
+export function ResultsDashboard({ records, signups, signupsNote, dFeedback = NO_FEEDBACK, storage, banner }: ResultsDashboardProps) {
   const hydrated = useHydrated();
   const [filters, setFilters] = useState<StatsFilters>(DEFAULT_FILTERS);
 
@@ -101,6 +105,11 @@ export function ResultsDashboard({ records, signups, signupsNote, storage, banne
   }, [all, signups, filters.includeTest, filters.includeForced]);
   /** The rate's denominator comes from the same slice as the KPI counts (test/forced filters only). */
   const interest = useMemo(() => signupStats(shownSignups, base), [shownSignups, base]);
+  /** The Flight Day Pack's answers follow the test filter, like version D's sign-ups. */
+  const shownFeedback = useMemo(
+    () => dFeedback.filter((f) => typeof f === "object" && f !== null && typeof f.id === "string" && (filters.includeTest || !f.isTest)),
+    [dFeedback, filters.includeTest],
+  );
 
   if (!hydrated) return <ResultsSkeleton />;
 
@@ -146,7 +155,7 @@ export function ResultsDashboard({ records, signups, signupsNote, storage, banne
         <ExplorationBlock records={filtered} className="lg:col-span-2" />
         <OpenTextBlock answers={texts} className="lg:col-span-2" />
         <InterestBlock stats={interest} records={base} note={signupsNote} className="lg:col-span-2" />
-        <SignupsTable signups={shownSignups} className="lg:col-span-2" />
+        <SignupsTable signups={shownSignups} dFeedback={shownFeedback} className="lg:col-span-2" />
         <ResponsesTable records={filtered} className="lg:col-span-2" />
         <InterpretationNote className="lg:col-span-2" />
       </div>

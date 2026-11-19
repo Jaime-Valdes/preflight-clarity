@@ -27,6 +27,7 @@ export const PLACEMENT_LABELS: Record<SignupPlacement, string> = {
   d_results: "D · results",
   d_flight: "D · flight",
   d_compare: "D · compare",
+  d_addon: "D · Flight Day Pack",
 };
 
 /** Cells below this many sessions are flagged in the note as saying little. */

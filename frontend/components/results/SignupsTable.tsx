@@ -2,8 +2,9 @@
 
 import { Download } from "lucide-react";
 import { useState } from "react";
+import { dFeedbackToCsv, sortDFeedbackNewestFirst } from "@preflight/shared/dFeedback";
 import { signupsToCsv, sortSignupsNewestFirst } from "@preflight/shared/signup";
-import type { Signup } from "@preflight/shared/types";
+import type { DFeedback, Signup } from "@preflight/shared/types";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
@@ -53,8 +54,11 @@ function Row({ signup }: { signup: Signup }) {
   );
 }
 
-/** Every sign-up in the current slice, newest first, with the leads CSV. */
-export function SignupsTable({ signups, className }: { signups: Signup[]; className?: string }) {
+/**
+ * Every sign-up in the current slice, newest first, with the leads CSV and, beside it, the CSV of
+ * version D's Flight Day Pack answers (docs/FLIGHT_DAY_PACK.md; the same test filter applies).
+ */
+export function SignupsTable({ signups, dFeedback = [], className }: { signups: Signup[]; dFeedback?: DFeedback[]; className?: string }) {
   const [limit, setLimit] = useState(PAGE);
   const rows = sortSignupsNewestFirst(signups);
   const visible = rows.slice(0, limit);
@@ -66,15 +70,27 @@ export function SignupsTable({ signups, className }: { signups: Signup[]; classN
       title="Sign-ups"
       subtitle={`${rows.length} ${rows.length === 1 ? "sign-up" : "sign-ups"} in this slice, newest first. Scroll sideways on small screens.`}
       aside={
-        <Button
-          variant="secondary"
-          size="md"
-          icon={<Download aria-hidden className="size-4" />}
-          onClick={() => downloadCsv(signupsToCsv(rows), "preflight-clarity-signups")}
-          disabled={rows.length === 0}
-        >
-          Download sign-ups CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="md"
+            icon={<Download aria-hidden className="size-4" />}
+            onClick={() => downloadCsv(signupsToCsv(rows), "preflight-clarity-signups")}
+            disabled={rows.length === 0}
+          >
+            Download sign-ups CSV
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            icon={<Download aria-hidden className="size-4" />}
+            onClick={() => downloadCsv(dFeedbackToCsv(sortDFeedbackNewestFirst(dFeedback)), "preflight-clarity-flight-day-pack")}
+            disabled={dFeedback.length === 0}
+            title={`${dFeedback.length} Flight Day Pack ${dFeedback.length === 1 ? "answer" : "answers"} in this slice`}
+          >
+            Download Flight Day Pack CSV
+          </Button>
+        </div>
       }
     >
       {rows.length === 0 ? (

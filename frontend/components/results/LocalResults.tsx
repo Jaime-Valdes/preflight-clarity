@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useHydrated } from "@/lib/hooks";
-import { loadLocalResponses, loadLocalSignups } from "@/lib/storage";
+import { loadLocalDFeedback, loadLocalResponses, loadLocalSignups } from "@/lib/storage";
 import { ResultsDashboard } from "./ResultsDashboard";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 
@@ -20,5 +20,6 @@ export function LocalResults({ banner }: { banner: string }) {
 function LocalResultsInner({ banner }: { banner: string }) {
   const [records] = useState(() => loadLocalResponses());
   const [signups] = useState(() => loadLocalSignups());
-  return <ResultsDashboard records={records} signups={signups} storage="browser" banner={banner} />;
+  const [dFeedback] = useState(() => loadLocalDFeedback());
+  return <ResultsDashboard records={records} signups={signups} dFeedback={dFeedback} storage="browser" banner={banner} />;
 }

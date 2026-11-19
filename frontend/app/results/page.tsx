@@ -34,7 +34,13 @@ async function Results({ searchParams }: { searchParams: PageProps<"/results">["
       return <AccessCard />;
     case "ok":
       return (
-        <ResultsDashboard records={data.records} signups={data.signups} signupsNote={data.signupsNote} storage={data.storage} />
+        <ResultsDashboard
+          records={data.records}
+          signups={data.signups}
+          signupsNote={data.signupsNote}
+          dFeedback={data.dFeedback}
+          storage={data.storage}
+        />
       );
     case "no_backend":
       return (
