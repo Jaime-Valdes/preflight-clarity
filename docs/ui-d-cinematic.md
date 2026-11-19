@@ -606,7 +606,9 @@ both ways. "Noted" is identical in both directions and for every flight. A skip 
   task after the click, so a component's own reaction (the compare table answers a frame late) is already on the
   cloud: a click changes the face once, never bright and then beam. Writes: one `data-face` and at most one
   `data-mood` per reaction, and their removals; no inline styles, no new nodes.
-- **Never** for anything in the sign-up card (`[aria-labelledby^="c-interest-"]`), the footer, a sheet opener
+- **Never** for anything in the sign-up card (`[aria-labelledby^="c-interest-"]`), the Flight Day Pack card and the
+  general feedback (`[data-d-offer]`, `[data-d-feedback]`, docs/FLIGHT_DAY_PACK.md: a price test, so "Add" and
+  "No thanks" get the same, which is nothing), the footer, a sheet opener
   (`[aria-haspopup="dialog"]`), anything in a dialog, a disabled control, a form's submit button, a hash link or a
   link to another page (the transition takes over); nothing behind an open sheet. The listener reads only whether
   the element is a control, whether it is excluded, whether a link changes page and whether it is one of the tray's

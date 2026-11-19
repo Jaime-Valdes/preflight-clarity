@@ -76,6 +76,7 @@ screen. The record is saved to the backend after every step, every ~20 s on the 
 | `/c?test=1` | Version C in test mode for this browser, until 30 minutes pass without activity: events and sign-ups are flagged as tests, hidden from the results by default, and nothing is recorded in PostHog. |
 | `/d` | Version D, the smooth-flight finder ([docs/ITERATION_2.md](docs/ITERATION_2.md)): priorities, plain-language ratings, "I'd pick this flight". Share this link for the Sprint 3 test. |
 | `/d?test=1` | Version D in test mode for this browser, the same way (events and sign-ups flagged as tests, no recording, ends after 30 idle minutes). |
+| `/d?arm=p499` · `/d?arm=p1499` | Version D with the Flight Day Pack price forced for this tab (team previews; events and rows carry `arm_forced`). Combine with `&test=1`. |
 | `/preview?origin=JFK&destination=LAX&date=YYYY-MM-DD&v=A` | The dashboard alone, for demos. No surveys, saves nothing. |
 | `/results?key=<ADMIN_KEY>` | Team results: table, CSV export, pre-vs-post numbers. |
 
@@ -110,8 +111,10 @@ Three services. Do them in this order, because each one needs a value from the p
 2. Open **SQL Editor → New query**, paste the whole of
    [`backend/supabase/schema.sql`](backend/supabase/schema.sql) and run it. It is safe to run again later.
    It creates the `responses` table, a trigger that ignores stale writes, the `signups` table (product
-   sign-ups from the debrief and version C), and turns on row level security with no policies, so browser
-   keys can't read or write anything.
+   sign-ups from the debrief and versions C and D), the `d_feedback` table (version D's Flight Day Pack
+   test, [docs/FLIGHT_DAY_PACK.md](docs/FLIGHT_DAY_PACK.md)), and turns on row level security with no
+   policies, so browser keys can't read or write anything. Changes after the first run also ship on their
+   own in `backend/supabase/migrations/` (e.g. `2026-11-18_flight_day_pack.sql`).
 3. Open **Project Settings → API** (or **Data API**) and copy two values: the **Project URL**
    (`https://xxxx.supabase.co`) and the **secret / service_role key** (`sb_secret_…` or the legacy
    `eyJ…` service_role JWT). Never the anon / publishable key: the server-side key is the one that is
@@ -187,6 +190,10 @@ own environment, so `NEXT_PUBLIC_SITE_URL` is only needed if you host the fronte
   row: Supabase table `public.signups` (same `schema.sql`), `backend/data/signups.json` in dev, or the
   browser's `localStorage` (`pfc.signups.v1`) with no backend. Duplicate emails from the same source
   update the existing row.
+- **Flight Day Pack answers** — version D's pricing test ([docs/FLIGHT_DAY_PACK.md](docs/FLIGHT_DAY_PACK.md)):
+  one row per answered step in the Supabase table `public.d_feedback`, `backend/data/d_feedback.json` in dev,
+  or `localStorage` (`pfc.d.feedback.v1`) with no backend. API: `POST /d-feedback` (public, ≤ 10 KB, the same
+  rate limit) and `GET /d-feedback` (admin key), proxied as `/api/d-feedback`.
 
 ## The results page
 

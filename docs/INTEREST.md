@@ -12,6 +12,7 @@ sign-up, shown at the same point to everyone, measured as a rate.
 | Study (A and B) — debrief | The **debrief** screen, after the illustrative-data reminder. Someone who signed up on the briefing sees "You're on the list." here instead of the form. | A second, calmer chance after every answer is saved; identical in A and B. |
 | Version C | A card at the **bottom of every page** (home, results, flight, compare) and a "Get early access" link in the footer; tapping opens a sign-up sheet. | Interest peaks right after comparing flights; the card never covers content (the compare tray stays sticky). |
 | Version D (2026-10-28, docs/ITERATION_2.md) | The same card on every /d page (placements `d_home`, `d_results`, `d_flight`, `d_compare`, source `d`); on the flight page it carries a more concrete ask — **Get smoothness ratings for your real trip** — with the same form and storage. | Sprint 2: everyone saw the generic card, nobody signed up; the ask on the flight page says what they would get. |
+| Version D — the Flight Day Pack (2026-11-18, docs/FLIGHT_DAY_PACK.md) | Placement `d_addon`, source `d`: the form behind "Add for $X" on the Flight Day Pack card — *The Flight Day Pack isn't ready yet. Leave your email and you'll get it free at launch.* Email (prefilled with this browser's latest sign-up), optional first name, the same 15-minute-chat checkbox, and an optional "Have a real flight coming up? When?". Inline in the card, never a sheet. | A pricing test, so the ask says plainly that nothing exists to buy yet; nothing is charged and no payment is asked for. It does not mark the browser as signed up (`pfc.interest.v1`), so D's own cards keep asking as before. |
 
 The study's existing "open to a 15-minute chat" email form becomes part of this: one form, the product
 sign-up as the primary action, the interview as an optional checkbox.
@@ -36,9 +37,15 @@ sign-up on the briefing card marks the session (`emailSent`) and the debrief sho
 ## Data
 
 - `Signup` (shared/src/types.ts): `id` (browser UUID), `createdAt`, `source` (`study` | `c` | `d`),
-  `placement` (`dashboard` | `debrief` | `c_home` | `c_results` | `c_flight` | `c_compare` | `d_home` | `d_results` | `d_flight` | `d_compare`), `email`, `firstName`,
+  `placement` (`dashboard` | `debrief` | `c_home` | `c_results` | `c_flight` | `c_compare` | `d_home` | `d_results` | `d_flight` | `d_compare` | `d_addon`), `email`, `firstName`,
   `waitlist` (true), `interview`, `sessionId` + `variant` + `isTest` + `participant` (study), `context`
   (what they were looking at, e.g. `JFK → LAX · Nov 26 · 2 flights in compare`), `page`.
+- `d_addon` sign-ups only (2026-11-18, optional and absent on every other sign-up, so A, B, C and D's other cards
+  send and store exactly what they did): `priceArm` (`p499` | `p1499`), `armForced` (true only for a `?arm=`
+  preview), `offerPlacement` (`after_pick` | `results`), `flightDate` (YYYY-MM-DD), `utmSource`, `utmMedium`,
+  `utmCampaign` (the D session's first touch). Columns `price_arm`, `arm_forced`, `offer_placement`,
+  `flight_date`, `utm_*` on `signups` (nullable; a later sign-up from the same email and source that doesn't
+  send them leaves them as they were), appended to the sign-ups CSV.
 - `shared/src/signup.ts`: `parseSignup` (validation), `signupsToCsv`, `signupStats` (total, unique
   emails, by source/placement, study sign-up rate = sign-ups ÷ real sessions that saw the sign-up form —
   reached the briefing, which shows the card, or the debrief — overall and per variant).
@@ -61,7 +68,8 @@ sign-up on the briefing card marks the session (`emailSent`) and the debrief sho
   dashboard section, the real completed sessions shown it, split by opened / not opened, with each
   half's sign-up count and rate — `signupRateBySection` in `shared/src/stats.ts`; a cross-tab, not a
   cause), a sign-ups table (name, email, source, placement, variant, context, date, interview) and
-  **Download sign-ups CSV**.
+  **Download sign-ups CSV**, with **Download Flight Day Pack CSV** beside it (the `d_feedback` rows,
+  docs/FLIGHT_DAY_PACK.md).
 
 ## Analytics (PostHog, docs/ANALYTICS.md)
 

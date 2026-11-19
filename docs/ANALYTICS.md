@@ -43,6 +43,14 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 | `d_rating_open` | a rating's detail sheet is opened (the numbers and "how this is worked out") | `category` (cruise, takeoff_landing, aircraft, space), `tier`, `basis` (history, forecast, aircraft, cabin), `from` (results, flight, compare) |
 | `d_flight_view` | a /d flight page is shown | `key`, `origin`, `destination`, `days_until`, `has_scores`, `price`, `is_cheapest`, `position`, `price_rank`, `dollars_over_cheapest`, `cruise_tier`, `takeoff_landing_tier`, `aircraft_tier`, `space_tier` |
 | `d_flight_chosen` | "I'd pick this flight" on a /d flight or compare page (recorded only; nothing is booked) | `key`, `origin`, `destination`, `date`, `days_until`, `cruise_tier`, `takeoff_landing_tier`, `aircraft_tier`, `space_tier`, `price`, `price_rank` (1 = cheapest that day), `dollars_over_cheapest`, `position` (place in the results list it was opened from, null elsewhere), `from` (flight, compare), `priorities` (the visitor's order), `chosen` (false when the pick is withdrawn), `replaced_key` (the pick this one replaced on the same route and day, else null — count one pick per route and day by taking the last event per browser). The question the team is asking: do people pick a smoother flight over a cheaper one? Compare `price_rank` / `dollars_over_cheapest` against the tiers, broken down by `priorities`. |
+| `d_addon_view` | the Flight Day Pack offer card (docs/FLIGHT_DAY_PACK.md) is at least half on screen, once per placement per tab session, never while a page transition covers it | `placement` (after_pick, results), `price_arm`, `variant`, `is_test` (+ `arm_forced` when forced, on every event of the test) |
+| `d_addon_click` | "Add for $X" on the offer card | `placement`, `price_arm`, `variant`, `is_test` |
+| `d_addon_waitlist` | the "not ready yet" form is submitted with an email (the `d_addon` sign-up is saved) | `placement`, `price_arm`, `variant`, `is_test` |
+| `d_addon_dismiss` | "No thanks", when its reason is sent ("Done"), or when the visitor leaves the page without answering | `placement`, `price_arm`, `variant`, `is_test`, `reason` (too_expensive, wouldnt_use, not_sure, something_else, prefer_not, none_given) |
+| `d_addon_items` | "Which of these would you actually use?" is sent with at least one box ticked | `placement`, `price_arm`, `variant`, `is_test`, `items` (comma list of walkthrough, airline, landed_text, none) |
+| `d_pricing_answered` | the pricing questions are sent (once per browser) | `placement`, `price_arm`, `variant`, `is_test`, `questions_answered` (0–5; no amounts, no plan answer) |
+| `d_feedback_open` | "Tell us what you think" is opened on a /d flight or compare page | `placement` (flight, compare), `price_arm`, `variant`, `is_test` |
+| `d_feedback_submitted` | that feedback is sent | `placement`, `price_arm`, `variant`, `is_test` (no answers) |
 | `study_share` | "Share with a friend" on the debrief is used | `method` (native = the phone's share sheet, copy), `outcome` (shared, cancelled, copied, shown = the link was displayed because copying wasn't allowed). The shared link is the plain study link tagged `utm_source=share&utm_medium=friend`, so arrivals from a share carry those on their `$pageview`; the sharer's `?v=`, `?p=` and `?test=` never travel with it. |
 
 `placement = dashboard` is the sign-up card at the end of the study's briefing (after every section, before
@@ -56,6 +64,21 @@ Every event sent from a /c page (custom events, pageviews, autocapture) carries 
 carries `variant` "D" the same way (`frontend/lib/tool.ts`). These are stamped by URL in `before_send`, not registered as super
 properties, so the study's and the tools' context never bleed into each other when one browser visits
 them all.
+
+**Version D's Flight Day Pack pricing test** (docs/FLIGHT_DAY_PACK.md, from 2026-11-18). Every visitor's first /d page
+draws a price arm, 50/50 and kept in the browser: `p499` ($4.99 per trip) or `p1499` ($14.99). From then on every
+event sent from a /d page (pageviews, autocapture, `interest_*`, every `d_*` event) carries `price_arm`, stamped
+by URL in `before_send` like `variant`, so the study's and version C's events never get it. A team preview opened
+with `?arm=p499` or `?arm=p1499` forces that arm for the tab's session and adds `arm_forced: true` to every event
+(and row): filter `arm_forced` is not set, and `is_test = false`, before reading any number.
+
+- **Revenue per offer view**, per arm: count of `d_addon_waitlist` × the arm's price ÷ count of `d_addon_view`.
+  A waitlist join stands in for a purchase: nothing is charged, so this is intent at a price, not revenue.
+- **Revenue per visitor**, per arm: count of `d_addon_waitlist` × price ÷ unique visitors (distinct ids) with a
+  `$pageview` on /d, broken down by `price_arm`. Count unique users rather than events for both, since a
+  visitor can see the card in two tab sessions.
+- **Why not**: `d_addon_dismiss` by `reason`; **what they'd use**: `d_addon_items` by `items`. The amounts, the
+  plan answer and every typed answer are only in Supabase (`d_feedback`, `signups`), never in PostHog.
 
 Version D (docs/ITERATION_2.md) funnel: `$pageview` /d → `d_setup` → `d_search` → `d_flight_view` →
 `d_flight_chosen`, broken down by `priorities`; `d_rating_open` by `category` shows which ratings
