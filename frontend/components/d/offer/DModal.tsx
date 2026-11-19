@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { noteSurface } from "@/lib/d/flightDayPack";
 
 /*
@@ -8,8 +9,8 @@ import { noteSurface } from "@/lib/d/flightDayPack";
  * the waitlist after 30 s. Centred over a dimmed page; role="dialog" and aria-modal; the focus starts on the
  * heading, is kept inside, and goes back where it came from on close; the page behind does not scroll.
  * There is no ✕ and the backdrop does nothing: the content's own buttons are the only way out, and Escape is
- * handed to the content (it counts as "No thanks"). Rendered in place inside D's root (fixed, above the tray
- * and the header), so the theme's tokens and the night revert apply.
+ * handed to the content (it counts as "No thanks"). Portalled into D's root (fixed, above the page, the tray,
+ * the header and the companion), so the theme's tokens and the night revert still apply.
  */
 
 const FOCUSABLE =
@@ -47,7 +48,20 @@ export function DModal({
     document.body.style.overflow = "hidden";
     const start = boxRef.current?.querySelector<HTMLElement>("[data-step-title], h2, h1");
     (start ?? boxRef.current)?.focus({ preventScroll: true });
+    // A key pressed while the focus is somehow outside the dialog (the browser put it on <body>) is brought back in:
+    // Tab lands inside, and Escape is handed to the dialog's content as if pressed there.
+    const onDocKey = (event: globalThis.KeyboardEvent) => {
+      const box = boxRef.current;
+      if (!box || box.contains(document.activeElement)) return;
+      if (event.key !== "Escape" && event.key !== "Tab") return;
+      event.preventDefault();
+      const inside = box.querySelector<HTMLElement>("[data-step-title], h2, h1") ?? box;
+      inside.focus({ preventScroll: true });
+      if (event.key === "Escape") inside.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    };
+    document.addEventListener("keydown", onDocKey, true);
     return () => {
+      document.removeEventListener("keydown", onDocKey, true);
       noteSurface(false);
       html.style.overflow = prev.html;
       document.body.style.overflow = prev.body;
@@ -82,10 +96,17 @@ export function DModal({
     }
   };
 
-  return (
-    <div className="d-modal fixed inset-0 z-[60] flex items-center justify-center p-4" onKeyDown={onKeyDown}>
+  // Into D's root, outside <main> (which is its own stacking context during page moves), so nothing of the
+  // page, the companion cloud included, sits above the scrim; still inside the theme for its tokens.
+  const root = typeof document === "undefined" ? null : document.querySelector<HTMLElement>('[data-theme="d"]');
+  const dialog = (
+    <div className="d-modal fixed inset-0 z-[90] flex items-center justify-center p-4" onKeyDown={onKeyDown}>
       {/* The backdrop: it shades the page and takes taps, and does nothing with them. */}
-      <div aria-hidden className={sunset ? "d-modal-scrim d-modal-scrim-sunset absolute inset-0" : "d-modal-scrim absolute inset-0"} />
+      <div
+        aria-hidden
+        onMouseDown={(event) => event.preventDefault()}
+        className={sunset ? "d-modal-scrim d-modal-scrim-sunset absolute inset-0" : "d-modal-scrim absolute inset-0"}
+      />
       <div
         ref={boxRef}
         role="dialog"
@@ -98,4 +119,5 @@ export function DModal({
       </div>
     </div>
   );
+  return root ? createPortal(dialog, root) : dialog;
 }

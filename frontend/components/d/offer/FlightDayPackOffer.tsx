@@ -2,6 +2,7 @@
 
 import { Bell, MapPinned, MessageSquareText, Plus, Sparkles } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { addDays } from "@preflight/shared/dates";
 import type { DismissReason, OfferPlacement, PackItem, PlanChoice, Signup } from "@preflight/shared/types";
 import { INTEREST_INTERVIEW } from "@/components/c/interest/InterestSheet";
@@ -133,7 +134,8 @@ function PopInPanel({ children }: { children: ReactNode }) {
       window.removeEventListener("scroll", measure);
     };
   }, []);
-  return (
+  const root = typeof document === "undefined" ? null : document.querySelector<HTMLElement>('[data-theme="d"]');
+  const panel = (
     <div
       ref={ref}
       className="d-offer-popin fixed right-0 z-[45] w-[88vw] max-w-[400px] sm:right-6 sm:w-[392px]"
@@ -142,6 +144,8 @@ function PopInPanel({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
+  // In D's root, outside <main>, like the dialogs: above the page and the companion cloud.
+  return root ? createPortal(panel, root) : panel;
 }
 
 // ── after_pick: the dialog ──────────────────────────────────────────────────
