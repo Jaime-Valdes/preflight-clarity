@@ -81,10 +81,6 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="How long we keep it">
-          <p>Only as long as the project needs it. We delete it when the project ends.</p>
-        </Section>
-
         <Section title="Your choices">
           <p>
             Email <Mail /> to see, correct or delete what we hold about you, or to stop hearing from us. Every
