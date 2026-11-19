@@ -75,7 +75,7 @@ export default function DLayout({ children }: { children: ReactNode }) {
           {children}
         </main>
         <CompareTray />
-        <Footer />
+        <Footer privacy />
         <DCompanion />
         <DMotionLayer />
         <DInterestPopup />

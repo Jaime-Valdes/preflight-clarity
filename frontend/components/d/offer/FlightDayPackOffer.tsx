@@ -33,6 +33,7 @@ import { loadLocalSignups, saveSignup } from "@/lib/storage";
 import { useTodayISO } from "@/lib/hooks";
 import * as copy from "./copy";
 import { DModal } from "./DModal";
+import { PrivacyNote } from "./PrivacyNote";
 import { ChoiceGroup, FIELD, LABEL, Optional, TextAnswer } from "./fields";
 
 /*
@@ -570,6 +571,7 @@ function Join({
           {copy.NOT_NOW}
         </button>
       </Actions>
+      <PrivacyNote />
     </form>
   );
 }

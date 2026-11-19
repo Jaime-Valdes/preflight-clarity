@@ -21,6 +21,7 @@ import { saveSignup } from "@/lib/storage";
 import { NO_THANKS } from "./copy";
 import { DModal } from "./DModal";
 import { FIELD, LABEL, Optional } from "./fields";
+import { PrivacyNote } from "./PrivacyNote";
 
 /*
  * The waitlist as a dialog (docs/INTEREST.md, placement `d_popup`; iteration 2 of docs/FLIGHT_DAY_PACK.md, the
@@ -255,6 +256,7 @@ function PopupDialog({ onClose }: { onClose: () => void }) {
                 {NO_THANKS}
               </button>
             </div>
+            <PrivacyNote />
           </form>
         )}
       </section>
