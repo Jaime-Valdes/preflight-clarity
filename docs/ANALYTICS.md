@@ -92,7 +92,8 @@ became `forecast_alerts`. D's waitlist also opens as a dialog after 30 s of visi
 
 **Flight Day Pack tracking (2026-11-19, docs/FLIGHT_DAY_PACK.md).** The offer's six events (`d_addon_view`,
 `d_addon_click`, `d_addon_waitlist`, `d_addon_dismiss`, `d_addon_items`, `d_pricing_answered`) carry
-`offer_version: "v2"` from this change on; **a missing `offer_version` (null) means v1**, which includes the
+`offer_version: "v2"` from this change on (production from 4:22 pm New York time, 21:22 UTC, on 2026-11-19, so
+iteration-2 events between 20:56 and 21:22 UTC have none); **a missing `offer_version` (null) means v1**, which includes the
 iteration-2 events sent before this shipped, so split those by time as the note above says. `d_addon_dismiss`
 also carries `via`: `no_thanks`, `escape` (the after-pick dialog) or `left_page` (the results pop-in left
 showing and unanswered, with `reason: "none_given"`). The item key `forecast_alerts` replaced `airline`; old
