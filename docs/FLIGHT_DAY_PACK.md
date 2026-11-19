@@ -65,7 +65,8 @@ banned words, nothing typed or answered sent to PostHog, A/B/C pixel-identical.
      (`pfc.d.arm.v1`). It is never re-drawn.
    - `?arm=p499|p1499` forces an arm for that tab's session (sessionStorage). The drawn arm stays stored
      underneath, and every event and row carries `arm_forced: true`.
-2. **The offer card.** It is inline, never a pop-up, and is the same card for every flight and every search.
+2. **The offer card.** It is the same card for every flight and every search. (Iteration 1 placed it in the
+   page; **2026-11-19, iteration 2:** it is now the results pop-in and the after-pick dialog, see above.)
    - **`after_pick`:** right below "I'd pick this flight", once a flight is picked, on the flight page (under
      whichever pick is on screen) and on the compare page (under the table, whose last row is the pick).
    - **`results`:** a list item after the 3rd result, or after the last with fewer. It never shows once the
@@ -75,7 +76,7 @@ banned words, nothing typed or answered sent to PostHog, A/B/C pixel-identical.
    - **Server rendering:** the card exists only on the client, so the price never exists on the server and
      can't flash.
    - **The cloud:** it gives the card no reaction at all, so "Add" and "No thanks" get exactly the same.
-3. **"Add for $X"** shows the fake door, inline:
+3. **"Add for $X"** (iteration 2: "Add to flight – $X") shows the fake door, inside the card:
    1. **Email form.** The email is prefilled with this browser's latest sign-up. Also an optional first name,
       the usual 15-minute-chat box, and an optional "When?" date (today to a year out). It saves a `signups`
       row: source `d`, placement `d_addon`, with the arm, the card's placement, the date and the session's
@@ -128,12 +129,35 @@ banned words, nothing typed or answered sent to PostHog, A/B/C pixel-identical.
 Every event from a /d page carries `price_arm` (and `arm_forced` when forced). The test's own events are:
 
 - `d_addon_view`, `d_addon_click`, `d_addon_waitlist`;
-- `d_addon_dismiss` (+ `reason`) and `d_addon_items` (+ `items`, keys only);
+- `d_addon_dismiss` (+ `reason`, and `via` from 2026-11-19) and `d_addon_items` (+ `items`, keys only);
 - `d_pricing_answered` (+ `questions_answered`, a count);
 - `d_feedback_open` and `d_feedback_submitted`.
 
 Each one has `placement`, `variant: "D"` and `is_test`. None of them carries an email, a name, typed text, a
 dollar amount, the plan answer or the date.
+
+**Tracking for iteration 2 (2026-11-19):**
+
+- **`offer_version`.** The offer's six events (`d_addon_view`, `d_addon_click`, `d_addon_waitlist`,
+  `d_addon_dismiss`, `d_addon_items`, `d_pricing_answered`) carry `offer_version: "v2"`; so do new `d_feedback`
+  rows (column `offer_version`) and `d_addon` sign-ups (column `offer_version`, `offerVersion` in the record).
+  Missing or null means v1: iteration 1's events and rows, before this was added. One constant,
+  `OFFER_VERSION` in `frontend/lib/d/flightDayPack.ts`; the `d_feedback_*` and `interest_*` events don't carry it.
+  Migration: `backend/supabase/migrations/2026-11-19_offer_version.sql`; until it runs, the API saves rows
+  without the column and the record keeps it.
+- **Placements stay `results` (the pop-in) and `after_pick` (the dialog).** No new placement values.
+- **When `d_addon_view` fires.** Pop-in: when it has finished sliding (or, under reduced motion, fading) into
+  view, not when the 5-second timer starts. After-pick dialog: when it opens. Once per placement per tab session,
+  and never while a page transition covers the page.
+- **`via` on `d_addon_dismiss`** (a fixed key): `no_thanks` (the button), `escape` (Escape in the after-pick
+  dialog), `left_page` (the results pop-in left showing and unanswered: another page, a new search, the tab
+  closing; sent once with `reason: "none_given"`; tab-close delivery is best effort). The pop-in has no ✕; the
+  dialog can't be left without choosing, so it never sends `left_page`.
+- **Item keys.** `walkthrough`, `forecast_alerts` ("Flight Forecast updates and alerts", which replaced "Your
+  airline, explained"), `landed_text`, `none`. "And more!" is a line on the card, not a choice. New answers must
+  use `forecast_alerts` (the API refuses `airline`). Rows saved under iteration 1 with `airline` still read and
+  export: in the CSV it is its own column, `item_airline_v1`, "Your airline, explained (v1)", never folded into
+  `item_forecast_alerts`. The CSV also ends with `offer_version` (blank = v1).
 
 ## How to read it
 

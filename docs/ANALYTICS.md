@@ -44,12 +44,12 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 | `d_rating_open` | a rating's detail sheet is opened (the numbers and "how this is worked out") | `category` (cruise, takeoff_landing, aircraft, space), `tier`, `basis` (history, forecast, aircraft, cabin), `from` (results, flight, compare) |
 | `d_flight_view` | a /d flight page is shown | `key`, `origin`, `destination`, `days_until`, `has_scores`, `price`, `is_cheapest`, `position`, `price_rank`, `dollars_over_cheapest`, `cruise_tier`, `takeoff_landing_tier`, `aircraft_tier`, `space_tier` |
 | `d_flight_chosen` | "I'd pick this flight" on a /d flight or compare page (recorded only; nothing is booked) | `key`, `origin`, `destination`, `date`, `days_until`, `cruise_tier`, `takeoff_landing_tier`, `aircraft_tier`, `space_tier`, `price`, `price_rank` (1 = cheapest that day), `dollars_over_cheapest`, `position` (place in the results list it was opened from, null elsewhere), `from` (flight, compare), `priorities` (the visitor's order), `chosen` (false when the pick is withdrawn), `replaced_key` (the pick this one replaced on the same route and day, else null — count one pick per route and day by taking the last event per browser). The question the team is asking: do people pick a smoother flight over a cheaper one? Compare `price_rank` / `dollars_over_cheapest` against the tiers, broken down by `priorities`. |
-| `d_addon_view` | the Flight Day Pack offer card (docs/FLIGHT_DAY_PACK.md) is at least half on screen, once per placement per tab session, never while a page transition covers it | `placement` (after_pick, results), `price_arm`, `variant`, `is_test` (+ `arm_forced` when forced, on every event of the test) |
-| `d_addon_click` | "Add for $X" on the offer card | `placement`, `price_arm`, `variant`, `is_test` |
-| `d_addon_waitlist` | the "not ready yet" form is submitted with an email (the `d_addon` sign-up is saved) | `placement`, `price_arm`, `variant`, `is_test` |
-| `d_addon_dismiss` | "No thanks", when its reason is sent ("Done"), or when the visitor leaves the page without answering | `placement`, `price_arm`, `variant`, `is_test`, `reason` (too_expensive, wouldnt_use, not_sure, something_else, prefer_not, none_given) |
-| `d_addon_items` | "Which of these would you actually use?" is sent with at least one box ticked | `placement`, `price_arm`, `variant`, `is_test`, `items` (comma list of walkthrough, forecast_alerts, landed_text, none; `airline` instead of `forecast_alerts` before iteration 2) |
-| `d_pricing_answered` | the pricing questions are sent (once per browser) | `placement`, `price_arm`, `variant`, `is_test`, `questions_answered` (0–5; no amounts, no plan answer) |
+| `d_addon_view` | the Flight Day Pack offer (docs/FLIGHT_DAY_PACK.md) is seen, once per placement per tab session, never while a page transition covers it. Iteration 1: the card at least half on screen. From iteration 2 (2026-11-19): the results pop-in when it has finished sliding (reduced motion: fading) in, not when its 5-second timer starts; the after-pick dialog when it opens | `placement` (after_pick, results), `price_arm`, `variant`, `is_test`, `offer_version` (+ `arm_forced` when forced, on every event of the test) |
+| `d_addon_click` | "Add for $X" on the offer card ("Add to flight – $X" from iteration 2) | `placement`, `price_arm`, `variant`, `is_test`, `offer_version` (from 2026-11-19) |
+| `d_addon_waitlist` | the "not ready yet" form is submitted with an email (the `d_addon` sign-up is saved) | `placement`, `price_arm`, `variant`, `is_test`, `offer_version` (from 2026-11-19) |
+| `d_addon_dismiss` | "No thanks", when its reason is sent ("Done"), or when the visitor leaves the page without answering; from 2026-11-19 also the results pop-in left showing and unanswered | `placement`, `price_arm`, `variant`, `is_test`, `offer_version`, `reason` (too_expensive, wouldnt_use, not_sure, something_else, prefer_not, none_given), `via` (no_thanks, escape, left_page; from 2026-11-19) |
+| `d_addon_items` | "Which of these would you actually use?" is sent with at least one box ticked | `placement`, `price_arm`, `variant`, `is_test`, `offer_version` (from 2026-11-19), `items` (comma list of walkthrough, forecast_alerts, landed_text, none; `airline` instead of `forecast_alerts` before iteration 2) |
+| `d_pricing_answered` | the pricing questions are sent (once per browser) | `placement`, `price_arm`, `variant`, `is_test`, `offer_version` (from 2026-11-19), `questions_answered` (0–5; no amounts, no plan answer) |
 | `d_feedback_open` | "Tell us what you think" is opened on a /d flight or compare page | `placement` (flight, compare), `price_arm`, `variant`, `is_test` |
 | `d_feedback_submitted` | that feedback is sent | `placement`, `price_arm`, `variant`, `is_test` (no answers) |
 | `study_share` | "Share with a friend" on the debrief is used | `method` (native = the phone's share sheet, copy), `outcome` (shared, cancelled, copied, shown = the link was displayed because copying wasn't allowed). The shared link is the plain study link tagged `utm_source=share&utm_medium=friend`, so arrivals from a share carry those on their `$pageview`; the sharer's `?v=`, `?p=` and `?test=` never travel with it. |
@@ -89,6 +89,15 @@ raises dismiss counts (every after-pick view ends in Add or No thanks, and Escap
 `d_addon_click` per `d_addon_view`, by arm, as the price signal, not the dismiss rate. The item key `airline`
 became `forecast_alerts`. D's waitlist also opens as a dialog after 30 s of visible time (`d_popup`):
 `interest_signup` by `placement` keeps it separable from the inline cards.
+
+**Flight Day Pack tracking (2026-11-19, docs/FLIGHT_DAY_PACK.md).** The offer's six events (`d_addon_view`,
+`d_addon_click`, `d_addon_waitlist`, `d_addon_dismiss`, `d_addon_items`, `d_pricing_answered`) carry
+`offer_version: "v2"` from this change on; **a missing `offer_version` (null) means v1**, which includes the
+iteration-2 events sent before this shipped, so split those by time as the note above says. `d_addon_dismiss`
+also carries `via`: `no_thanks`, `escape` (the after-pick dialog) or `left_page` (the results pop-in left
+showing and unanswered, with `reason: "none_given"`). The item key `forecast_alerts` replaced `airline`; old
+rows with `airline` still export, in their own CSV column `item_airline_v1`. Placements are unchanged:
+`results` for the pop-in, `after_pick` for the dialog.
 
 Version D (docs/ITERATION_2.md) funnel: `$pageview` /d → `d_setup` → `d_search` → `d_flight_view` →
 `d_flight_chosen`, broken down by `priorities`; `d_rating_open` by `category` shows which ratings
