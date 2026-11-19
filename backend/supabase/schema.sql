@@ -184,12 +184,13 @@ comment on column public.signups.record is 'The full Signup as sent by the brows
 -- 2026-10-28: source 'd' and the d_* placements (version D, the smooth-flight finder). The
 -- source check used to be inline on the column; it is a named constraint now so it can grow.
 -- 2026-11-18: 'd_addon', version D's Flight Day Pack offer (docs/FLIGHT_DAY_PACK.md).
+-- 2026-11-19: 'd_popup', version D's waitlist dialog (migrations/2026-11-19_d_popup.sql).
 alter table public.signups drop constraint if exists signups_source_check;
 alter table public.signups add constraint signups_source_check
   check (source in ('study', 'c', 'd'));
 alter table public.signups drop constraint if exists signups_placement_check;
 alter table public.signups add constraint signups_placement_check
-  check (placement in ('debrief', 'dashboard', 'c_home', 'c_results', 'c_flight', 'c_compare', 'd_home', 'd_results', 'd_flight', 'd_compare', 'd_addon'));
+  check (placement in ('debrief', 'dashboard', 'c_home', 'c_results', 'c_flight', 'c_compare', 'd_home', 'd_results', 'd_flight', 'd_compare', 'd_addon', 'd_popup'));
 
 -- Repeat sign-ups: the upsert replaces the details, so keep the original
 -- created_at (in the column and inside the jsonb record), stamp updated_at

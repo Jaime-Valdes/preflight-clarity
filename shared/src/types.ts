@@ -657,7 +657,9 @@ export type SignupPlacement =
   | "d_flight"
   | "d_compare"
   /** Version D's Flight Day Pack offer (docs/FLIGHT_DAY_PACK.md, 2026-11-18): the honest "not ready yet" waitlist. */
-  | "d_addon";
+  | "d_addon"
+  /** Version D's waitlist as a dialog after 30 s (iteration 2 of docs/FLIGHT_DAY_PACK.md, 2026-11-19). */
+  | "d_popup";
 
 /**
  * One "notify me when it's live" sign-up (docs/INTEREST.md). Stored in its own
@@ -715,7 +717,7 @@ export type OfferPlacement = "after_pick" | "results";
 /** Where a d_feedback row's question was asked: an offer placement, or the general feedback link's page. */
 export type DFeedbackPlacement = OfferPlacement | "flight" | "compare";
 export type DFeedbackKind = "addon_join" | "addon_dismiss" | "pricing" | "general";
-export type PackItem = "walkthrough" | "airline" | "landed_text" | "none";
+export type PackItem = "walkthrough" | "forecast_alerts" | "landed_text" | "none";
 export type DismissReason = "too_expensive" | "wouldnt_use" | "not_sure" | "something_else" | "prefer_not";
 export type PlanChoice = "per_trip" | "yearly" | "neither" | "not_sure";
 export type EasierAnswer = "yes" | "a_little" | "no" | "none";

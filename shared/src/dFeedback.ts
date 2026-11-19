@@ -31,7 +31,7 @@ export const MAX_PRICE_USD = 500;
 
 export const D_FEEDBACK_KINDS: readonly DFeedbackKind[] = ["addon_join", "addon_dismiss", "pricing", "general"];
 export const D_FEEDBACK_PLACEMENTS: readonly DFeedbackPlacement[] = ["after_pick", "results", "flight", "compare"];
-export const PACK_ITEMS: readonly PackItem[] = ["walkthrough", "airline", "landed_text", "none"];
+export const PACK_ITEMS: readonly PackItem[] = ["walkthrough", "forecast_alerts", "landed_text", "none"];
 export const DISMISS_REASONS: readonly DismissReason[] = ["too_expensive", "wouldnt_use", "not_sure", "something_else", "prefer_not"];
 export const PLAN_CHOICES: readonly PlanChoice[] = ["per_trip", "yearly", "neither", "not_sure"];
 export const EASIER_ANSWERS: readonly EasierAnswer[] = ["yes", "a_little", "no", "none"];
@@ -195,7 +195,7 @@ export const D_FEEDBACK_CSV_COLUMNS = [
   "utm_medium",
   "utm_campaign",
   "item_walkthrough",
-  "item_airline",
+  "item_forecast_alerts",
   "item_landed_text",
   "item_none",
   "worth_it",
@@ -220,7 +220,7 @@ function answerCells(row: DFeedback): Cell[] {
   switch (row.kind) {
     case "addon_join": {
       const has = (item: PackItem) => row.answers.items.includes(item);
-      return [has("walkthrough"), has("airline"), has("landed_text"), has("none"), row.answers.worthIt, ...blank(9)];
+      return [has("walkthrough"), has("forecast_alerts"), has("landed_text"), has("none"), row.answers.worthIt, ...blank(9)];
     }
     case "addon_dismiss":
       return [...blank(5), row.answers.reason, row.answers.anythingElse, ...blank(7)];

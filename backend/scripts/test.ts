@@ -1488,6 +1488,19 @@ function expectFeedback(input: unknown): DFeedback {
 }
 
 group("flight day pack: sign-up fields", () => {
+  test("the waitlist dialog's placement d_popup is accepted, and an unknown one still refused", () => {
+    const popup = expectSignup({ ...signupFixture(), source: "d", placement: "d_popup", sessionId: null, variant: null });
+    assert.equal(popup.placement, "d_popup");
+    expectSignupError({ ...signupFixture(), placement: "d_modal" }, "invalid_placement");
+  });
+
+  test("the items use the iteration-2 keys (forecast_alerts replaces airline)", () => {
+    const ok = parseDFeedback({ ...feedbackFixture(), answers: { items: ["forecast_alerts"], worthIt: "" } });
+    assert.equal(ok.ok, true);
+    const old = parseDFeedback({ ...feedbackFixture(), answers: { items: ["airline"], worthIt: "" } });
+    assert.equal(old.ok, false);
+  });
+
   test("a sign-up without the new fields parses exactly as before (no new keys)", () => {
     const parsed = expectSignup(signupFixture());
     assert.deepEqual(parsed, signupFixture());
@@ -1617,7 +1630,7 @@ group("flight day pack: parseDFeedback", () => {
     expectFeedbackError(looseFeedback((r) => (r.answers = [])), "invalid_answers");
     expectFeedbackError(looseFeedback((r) => (r.answers.email = "a@b.co")), "invalid_answers");
     expectFeedbackError(looseFeedback((r) => (r.answers.items = ["lounge"])), "invalid_answers");
-    expectFeedbackError(looseFeedback((r) => (r.answers.items = ["none", "airline"])), "invalid_answers");
+    expectFeedbackError(looseFeedback((r) => (r.answers.items = ["none", "forecast_alerts"])), "invalid_answers");
     expectFeedbackError(looseFeedback((r) => (r.answers.items = "walkthrough")), "invalid_answers");
     expectFeedbackError(looseFeedback((r) => (r.answers.worthIt = 5)), "invalid_answers");
     expectFeedbackError(looseFeedback((r) => {
@@ -1660,7 +1673,7 @@ group("flight day pack: parseDFeedback", () => {
     const col = (name: string) => D_FEEDBACK_CSV_COLUMNS.indexOf(name as (typeof D_FEEDBACK_CSV_COLUMNS)[number]);
     const join = byKind("addon_join");
     assert.equal(join[col("item_walkthrough")], "true");
-    assert.equal(join[col("item_airline")], "false");
+    assert.equal(join[col("item_forecast_alerts")], "false");
     assert.equal(join[col("item_landed_text")], "true");
     assert.equal(join[col("price_usd")], String(ARM_PRICE_USD.p1499));
     assert.equal(join[col("dismiss_reason")], "");

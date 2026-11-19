@@ -67,6 +67,7 @@ export const SIGNUP_PLACEMENTS: readonly SignupPlacement[] = [
   "d_flight",
   "d_compare",
   "d_addon",
+  "d_popup",
 ];
 
 export type ParsedSignup = { ok: true; signup: Signup } | { ok: false; error: string };
