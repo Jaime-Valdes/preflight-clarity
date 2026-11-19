@@ -59,6 +59,7 @@ import {
 } from "@preflight/shared/dFeedback";
 import type { DFeedback } from "@preflight/shared/types";
 import { createFileStore, D_FEEDBACK_FILE, SIGNUPS_FILE } from "../src/lib/store/file";
+import { createSupabaseStore, without, withoutNewerSignupColumns as stripSignupColumns } from "../src/lib/store/supabase";
 import {
   dFeedbackToRow,
   isMissingColumn,
@@ -1213,9 +1214,9 @@ group("signup stats and CSV", () => {
     assert.equal(csv.startsWith("﻿"), true);
     const lines = csv.slice(1).split("\r\n");
     assert.deepEqual(lines[0].split(","), [...SIGNUP_CSV_COLUMNS]);
-    // The Flight Day Pack's seven columns come last and stay blank for every other sign-up.
-    assert.equal(lines[1], `${SIGNUP_ID},2026-10-21T15:30:00.000Z,study,debrief,Sam,Sam@Example.com,true,true,${SESSION_ID},A,false,sarah,JFK → LAX · Nov 26,/,,,,,,,`);
-    assert.equal(lines[2], `${session(2)},2026-10-21T15:30:00.000Z,c,c_home,'=cmd,Sam@Example.com,true,true,,,false,sarah,"JFK → LAX, Nov 26",/c,,,,,,,`);
+    // The Flight Day Pack's eight columns (offer_version last, 2026-11-19) come last and stay blank for every other sign-up.
+    assert.equal(lines[1], `${SIGNUP_ID},2026-10-21T15:30:00.000Z,study,debrief,Sam,Sam@Example.com,true,true,${SESSION_ID},A,false,sarah,JFK → LAX · Nov 26,/,,,,,,,,`);
+    assert.equal(lines[2], `${session(2)},2026-10-21T15:30:00.000Z,c,c_home,'=cmd,Sam@Example.com,true,true,,,false,sarah,"JFK → LAX, Nov 26",/c,,,,,,,,`);
     assert.deepEqual(lines.slice(3), [""], "ends with CRLF");
   });
 
@@ -2018,6 +2019,118 @@ group("routes: flight day pack", () => {
     assert.equal(limited.status, 429);
     assert.equal(limited.headers.get("retry-after"), "60");
     assert.deepEqual(await json(limited), { ok: false, storage: "file", error: "rate_limited" });
+  });
+});
+
+// ── Flight Day Pack tracking, 2026-11-19: offer_version and iteration 1's "airline" ─────────────────────
+
+/** A fake Supabase client: refuses any upsert that carries one of `missing` (as PostgREST does), records the rest. */
+function fakeSupabase(missing: readonly string[]) {
+  const writes: Array<{ table: string; row: Record<string, unknown> }> = [];
+  const client = {
+    from(table: string) {
+      return {
+        async upsert(row: Record<string, unknown>) {
+          const absent = missing.find((c) => c in row);
+          if (absent) return { error: { code: "PGRST204", message: `Could not find the '${absent}' column of '${table}' in the schema cache` } };
+          writes.push({ table, row });
+          return { error: null };
+        },
+      };
+    },
+  };
+  return { client, writes };
+}
+
+group("flight day pack: offer_version and legacy items", () => {
+  test("the validator accepts forecast_alerts, and POST-time parsing refuses airline", () => {
+    assert.equal(parseDFeedback({ ...feedbackFixture(), answers: { items: ["forecast_alerts"], worthIt: "" } }).ok, true);
+    const old = parseDFeedback({ ...feedbackFixture(), answers: { items: ["airline"], worthIt: "" } });
+    assert.deepEqual(old, { ok: false, error: "invalid_answers" });
+  });
+
+  test("a stored row with airline reads (stored mode) and exports in its own v1 column", () => {
+    const stored = { ...feedbackFixture(5), answers: { items: ["walkthrough", "airline"], worthIt: "" } };
+    const read = parseDFeedback(stored, { stored: true });
+    assert.equal(read.ok, true);
+    if (!read.ok) return;
+    assert.deepEqual((read.feedback.answers as { items: string[] }).items, ["walkthrough", "airline"], "never folded into forecast_alerts");
+    const csv = dFeedbackToCsv([read.feedback]);
+    const [header, line] = csv.slice(1).split("\r\n");
+    const cols = header.split(",");
+    const cells = line.split(",");
+    assert.equal(cells[cols.indexOf("item_airline_v1")], "true");
+    assert.equal(cells[cols.indexOf("item_forecast_alerts")], "false");
+    assert.equal(cells[cols.indexOf("offer_version")], "", "no version = v1");
+    assert.equal(cols.at(-1), "offer_version");
+  });
+
+  test("offer_version: v2 is stored, a missing one means v1, anything else is refused", () => {
+    const v2 = expectFeedback({ ...feedbackFixture(), offerVersion: "v2" });
+    assert.equal(v2.offerVersion, "v2");
+    assert.equal(dFeedbackToRow(v2).offer_version, "v2");
+    const v1 = expectFeedback(feedbackFixture());
+    assert.equal("offerVersion" in v1, false);
+    assert.equal("offer_version" in dFeedbackToRow(v1), false);
+    expectFeedbackError({ ...feedbackFixture(), offerVersion: "v3" }, "invalid_offer_version");
+    expectFeedbackError({ ...feedbackFixture(), offerVersion: 2 }, "invalid_offer_version");
+    const csv = dFeedbackToCsv([v2]).slice(1).split("\r\n");
+    assert.equal(csv[1].split(",").at(-1), "v2");
+  });
+
+  test("a d_addon sign-up stores offerVersion (column offer_version) and keeps it across a plain repeat", async () => {
+    const parsed = expectSignup({ ...addonSignupFixture(), offerVersion: "v2" });
+    assert.equal(parsed.offerVersion, "v2");
+    assert.equal(signupToRow(parsed).offer_version, "v2");
+    assert.equal("offerVersion" in expectSignup({ ...addonSignupFixture(), offerVersion: "v9" }), false, "an unknown version is dropped, the lead kept");
+    const store = createFileStore(join(tempDir, "offer-version", "responses.json"));
+    await store.upsertSignup(parsed);
+    const repeat = { ...addonSignupFixture(), id: session(64), placement: "d_flight" as const };
+    for (const key of ["priceArm", "offerPlacement", "flightDate", "utmSource", "utmMedium", "utmCampaign"] as const) delete repeat[key];
+    await store.upsertSignup(repeat);
+    const [stored] = await store.listSignups();
+    assert.equal(stored.offerVersion, "v2");
+    assert.equal(stored.priceArm, "p499");
+  });
+
+  test("POST /d-feedback: offer_version stored; airline refused; GET reads an old airline row", async () => {
+    const res = await postFeedback(JSON.stringify({ ...feedbackFixture(8), offerVersion: "v2" }), { "x-forwarded-for": "203.0.113.80" });
+    assert.equal(res.status, 200);
+    const bad = await postFeedback(JSON.stringify({ ...feedbackFixture(9), answers: { items: ["airline"], worthIt: "" } }), { "x-forwarded-for": "203.0.113.80" });
+    assert.equal(bad.status, 400);
+    assert.equal((await json(bad)).error, "invalid_answers");
+    // An iteration-1 row already in the store (written straight to the file, as the old API did).
+    const store = createFileStore(process.env.DATA_FILE!);
+    await store.upsertDFeedback({ ...feedbackFixture(10), answers: { items: ["airline"], worthIt: "" } });
+    const body = await json(await app.request("/d-feedback", { headers: { "x-admin-key": ADMIN_KEY } }));
+    const v2 = body.feedback.find((r: DFeedback) => r.id === feedbackFixture(8).id);
+    const old = body.feedback.find((r: DFeedback) => r.id === feedbackFixture(10).id);
+    assert.equal(v2.offerVersion, "v2");
+    assert.deepEqual(old.answers.items, ["airline"]);
+    assert.equal("offerVersion" in old, false);
+  });
+
+  test("supabase: before the offer_version migration, rows are saved without that column, never lost", async () => {
+    const fb = { ...feedbackFixture(11), offerVersion: "v2" as const };
+    const a = fakeSupabase(["offer_version"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const storeA = createSupabaseStore({ url: "https://x.supabase.co", key: "k" }, a.client as any);
+    await storeA.upsertDFeedback(fb);
+    assert.equal(a.writes.length, 1);
+    assert.equal("offer_version" in a.writes[0].row, false);
+    assert.equal((a.writes[0].row.record as DFeedback).offerVersion, "v2", "the record keeps it");
+    await storeA.upsertSignup({ ...addonSignupFixture(), offerVersion: "v2" });
+    assert.equal(a.writes.length, 2);
+    assert.equal("offer_version" in a.writes[1].row, false);
+    assert.equal(a.writes[1].row.price_arm, "p499", "the other pack columns stay when only offer_version is missing");
+    // None of the pack migrations applied: the sign-up is saved without every newer column.
+    const b = fakeSupabase(["offer_version", "price_arm"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const storeB = createSupabaseStore({ url: "https://x.supabase.co", key: "k" }, b.client as any);
+    await storeB.upsertSignup({ ...addonSignupFixture(), offerVersion: "v2" });
+    assert.equal(b.writes.length, 1);
+    assert.deepEqual(Object.keys(b.writes[0].row).sort(), Object.keys(stripSignupColumns(signupToRow(addonSignupFixture()))).sort());
+    assert.deepEqual(without({ a: 1, b: 2 }, "b"), { a: 1 });
   });
 });
 

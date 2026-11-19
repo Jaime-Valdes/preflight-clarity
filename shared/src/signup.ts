@@ -19,7 +19,7 @@ import {
   parseTimestamp,
 } from "./record";
 import { isISODate } from "./dates";
-import type { OfferPlacement, PriceArm, SessionRecord, Signup, SignupPlacement, SignupSource, Step, Variant } from "./types";
+import type { OfferPlacement, OfferVersion, PriceArm, SessionRecord, Signup, SignupPlacement, SignupSource, Step, Variant } from "./types";
 
 export { MAX_EMAIL_CHARS, MAX_FIRST_NAME_CHARS, MAX_PARTICIPANT_CHARS };
 export const MAX_CONTEXT_CHARS = 120;
@@ -51,6 +51,8 @@ export function packFields(input: Record<string, unknown>): Partial<Signup> {
   if (medium) out.utmMedium = medium;
   const campaign = cleanLine(input.utmCampaign, MAX_UTM_CHARS);
   if (campaign) out.utmCampaign = campaign;
+  // The offer's version (2026-11-19): only "v2" is known; anything else is dropped, like the other fields.
+  if (input.offerVersion === ("v2" satisfies OfferVersion)) out.offerVersion = "v2";
   return out;
 }
 
@@ -182,6 +184,7 @@ export const SIGNUP_CSV_COLUMNS = [
   "utm_source",
   "utm_medium",
   "utm_campaign",
+  "offer_version",
 ] as const;
 
 /** One row per sign-up, in the order given. Same conventions as recordsToCsv: BOM, CRLF, formula-safe cells. */
@@ -211,6 +214,7 @@ export function signupsToCsv(signups: readonly Signup[]): string {
         s.utmSource,
         s.utmMedium,
         s.utmCampaign,
+        s.offerVersion,
       ]
         .map(csvCell)
         .join(","),

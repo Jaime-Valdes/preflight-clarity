@@ -25,7 +25,7 @@ export const SIGNUPS_FILE = "signups.json";
 export const D_FEEDBACK_FILE = "d_feedback.json";
 
 /** The Flight Day Pack's sign-up fields (docs/FLIGHT_DAY_PACK.md): a later sign-up without them keeps the earlier ones. */
-const PACK_KEYS = ["priceArm", "armForced", "offerPlacement", "flightDate", "utmSource", "utmMedium", "utmCampaign"] as const;
+const PACK_KEYS = ["priceArm", "armForced", "offerPlacement", "flightDate", "utmSource", "utmMedium", "utmCampaign", "offerVersion"] as const;
 
 export interface FileStore extends ResponseStore {
   /** Absolute path of the session-record JSON file. */

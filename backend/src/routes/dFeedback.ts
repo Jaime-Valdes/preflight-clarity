@@ -63,7 +63,12 @@ dFeedback.get("/", async (c) => {
   }
 
   try {
-    const feedback = await listDFeedback();
+    // Stored rows are read with the lenient parser (iteration 1's "airline" item stays readable); a row it can't
+    // read is passed through as stored rather than dropped.
+    const feedback = (await listDFeedback()).map((row) => {
+      const parsed = parseDFeedback(row, { stored: true });
+      return parsed.ok ? parsed.feedback : row;
+    });
     return c.json<ListDFeedbackResponse>({ ok: true, storage, feedback });
   } catch (err) {
     console.error("listDFeedback failed", err);

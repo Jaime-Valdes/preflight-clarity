@@ -16,6 +16,8 @@ import { cleanLine, cleanText, isObject, isUuid, parseTimestamp } from "./record
 import { MAX_UTM_CHARS, PRICE_ARMS } from "./signup";
 import type {
   DFeedback,
+  LegacyPackItem,
+  OfferVersion,
   DFeedbackKind,
   DFeedbackPlacement,
   DismissReason,
@@ -32,6 +34,11 @@ export const MAX_PRICE_USD = 500;
 export const D_FEEDBACK_KINDS: readonly DFeedbackKind[] = ["addon_join", "addon_dismiss", "pricing", "general"];
 export const D_FEEDBACK_PLACEMENTS: readonly DFeedbackPlacement[] = ["after_pick", "results", "flight", "compare"];
 export const PACK_ITEMS: readonly PackItem[] = ["walkthrough", "forecast_alerts", "landed_text", "none"];
+/** Iteration 1's item, readable on stored rows only (2026-11-18): "Your airline, explained (v1)". */
+export const LEGACY_PACK_ITEMS: readonly LegacyPackItem[] = ["airline"];
+export const LEGACY_ITEM_LABELS: Record<LegacyPackItem, string> = { airline: "Your airline, explained (v1)" };
+/** The offer versions a row or sign-up may carry; missing means v1. */
+export const OFFER_VERSIONS: readonly OfferVersion[] = ["v2"];
 export const DISMISS_REASONS: readonly DismissReason[] = ["too_expensive", "wouldnt_use", "not_sure", "something_else", "prefer_not"];
 export const PLAN_CHOICES: readonly PlanChoice[] = ["per_trip", "yearly", "neither", "not_sure"];
 export const EASIER_ANSWERS: readonly EasierAnswer[] = ["yes", "a_little", "no", "none"];
@@ -85,21 +92,25 @@ function dollars(value: unknown): number | null {
   return Math.round(value * 100) / 100;
 }
 
-/** The ticked items: known keys, no repeats, in the form's order; "none" never with another item. */
-function items(value: unknown): PackItem[] {
+/**
+ * The ticked items: known keys, no repeats, in the form's order; "none" never with another item. `stored`:
+ * reading a row saved earlier, which may carry iteration 1's "airline" (kept as it is, after the v2 keys).
+ */
+function items(value: unknown, stored: boolean): Array<PackItem | LegacyPackItem> {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) fail("invalid_answers");
-  const picked = new Set<PackItem>();
-  for (const entry of value) picked.add(option(entry, PACK_ITEMS) ?? fail("invalid_answers"));
+  const known: readonly (PackItem | LegacyPackItem)[] = stored ? [...PACK_ITEMS, ...LEGACY_PACK_ITEMS] : PACK_ITEMS;
+  const picked = new Set<PackItem | LegacyPackItem>();
+  for (const entry of value) picked.add(option(entry, known) ?? fail("invalid_answers"));
   if (picked.has("none") && picked.size > 1) fail("invalid_answers");
-  return PACK_ITEMS.filter((item) => picked.has(item));
+  return known.filter((item) => picked.has(item));
 }
 
-function answersFor(kind: DFeedbackKind, input: Record<string, unknown>): DFeedback["answers"] {
+function answersFor(kind: DFeedbackKind, input: Record<string, unknown>, stored: boolean): DFeedback["answers"] {
   for (const key of Object.keys(input)) if (!ANSWER_KEYS[kind].includes(key)) fail("invalid_answers");
   switch (kind) {
     case "addon_join":
-      return { items: items(input.items), worthIt: answerText(input.worthIt) };
+      return { items: items(input.items, stored), worthIt: answerText(input.worthIt) };
     case "addon_dismiss":
       return { reason: option(input.reason, DISMISS_REASONS), anythingElse: answerText(input.anythingElse) };
     case "pricing":
@@ -125,9 +136,13 @@ export function hasAnswer(feedback: Pick<DFeedback, "kind" | "answers">): boolea
  * Validates and sanitizes one d_feedback row from the browser. Short error
  * codes, like parseSignup: missing_id, invalid_created_at, missing_session_id,
  * invalid_kind, invalid_placement, invalid_price_arm, invalid_answers,
- * invalid_price, empty_answers.
+ * invalid_price, invalid_offer_version, empty_answers.
+ *
+ * `stored: true` reads a row saved earlier (the list and the CSV): it also accepts iteration 1's item key
+ * "airline". New answers (POST) never do.
  */
-export function parseDFeedback(input: unknown): ParsedDFeedback {
+export function parseDFeedback(input: unknown, options: { stored?: boolean } = {}): ParsedDFeedback {
+  const stored = options.stored === true;
   if (!isObject(input)) return { ok: false, error: "invalid_body" };
   if (input.schemaVersion !== undefined && input.schemaVersion !== 1) return { ok: false, error: "unsupported_schema_version" };
   const id = typeof input.id === "string" ? input.id.trim() : "";
@@ -143,9 +158,13 @@ export function parseDFeedback(input: unknown): ParsedDFeedback {
   const priceArm = PRICE_ARMS.find((a) => a === input.priceArm);
   if (!priceArm) return { ok: false, error: "invalid_price_arm" };
   if (!isObject(input.answers)) return { ok: false, error: "invalid_answers" };
+  if (input.offerVersion !== undefined && input.offerVersion !== null && !OFFER_VERSIONS.some((v) => v === input.offerVersion)) {
+    return { ok: false, error: "invalid_offer_version" };
+  }
+  const offerVersion = OFFER_VERSIONS.find((v) => v === input.offerVersion);
   let answers: DFeedback["answers"];
   try {
-    answers = answersFor(kind, input.answers);
+    answers = answersFor(kind, input.answers, stored);
   } catch (err) {
     if (err instanceof Invalid) return { ok: false, error: err.code };
     throw err;
@@ -164,6 +183,7 @@ export function parseDFeedback(input: unknown): ParsedDFeedback {
     utmMedium: cleanLine(input.utmMedium, MAX_UTM_CHARS),
     utmCampaign: cleanLine(input.utmCampaign, MAX_UTM_CHARS),
     isTest: input.isTest === true,
+    ...(offerVersion ? { offerVersion } : {}),
   } as DFeedback;
   if (!hasAnswer(feedback)) return { ok: false, error: "empty_answers" };
   return { ok: true, feedback };
@@ -208,6 +228,10 @@ export const D_FEEDBACK_CSV_COLUMNS = [
   "plan",
   "easier",
   "more_useful",
+  // Appended 2026-11-19 so the earlier columns keep their places: iteration 1's item (never folded into
+  // item_forecast_alerts) and the offer's version (blank = v1).
+  "item_airline_v1",
+  "offer_version",
 ] as const;
 
 /** The price each arm showed, in dollars. */
@@ -258,6 +282,8 @@ export function dFeedbackToCsv(rows: readonly DFeedback[]): string {
         r.utmMedium,
         r.utmCampaign,
         ...answerCells(r),
+        r.kind === "addon_join" ? r.answers.items.includes("airline") : null,
+        r.offerVersion ?? null,
       ]
         .map(csvCell)
         .join(","),

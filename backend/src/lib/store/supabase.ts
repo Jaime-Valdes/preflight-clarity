@@ -176,9 +176,11 @@ export interface SignupRow {
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
+  /** 2026-11-19 (migrations/2026-11-19_offer_version.sql): "v2"; only written when the sign-up carries it. */
+  offer_version?: string;
 }
 
-/** The signups columns schema.sql added for the Flight Day Pack test. */
+/** The signups columns schema.sql added for the Flight Day Pack test (offer_version last, a later migration). */
 export const NEWER_SIGNUP_COLUMNS = [
   "price_arm",
   "arm_forced",
@@ -187,7 +189,11 @@ export const NEWER_SIGNUP_COLUMNS = [
   "utm_source",
   "utm_medium",
   "utm_campaign",
+  "offer_version",
 ] as const;
+
+/** Added by migrations/2026-11-19_offer_version.sql on signups and d_feedback; the API copes until it is applied. */
+export const OFFER_VERSION_COLUMN = "offer_version";
 
 export function signupToRow(signup: Signup): SignupRow {
   const pack: Partial<SignupRow> = {};
@@ -198,6 +204,7 @@ export function signupToRow(signup: Signup): SignupRow {
   if (signup.utmSource) pack.utm_source = signup.utmSource;
   if (signup.utmMedium) pack.utm_medium = signup.utmMedium;
   if (signup.utmCampaign) pack.utm_campaign = signup.utmCampaign;
+  if (signup.offerVersion) pack.offer_version = signup.offerVersion;
   return {
     id: signup.id,
     created_at: signup.createdAt,
@@ -241,6 +248,8 @@ export interface DFeedbackRow {
   utm_medium: string | null;
   utm_campaign: string | null;
   is_test: boolean;
+  /** "v2" from iteration 2; omitted (null in the table) for a row without it. */
+  offer_version?: string;
   record: DFeedback;
 }
 
@@ -258,8 +267,16 @@ export function dFeedbackToRow(feedback: DFeedback): DFeedbackRow {
     utm_medium: feedback.utmMedium || null,
     utm_campaign: feedback.utmCampaign || null,
     is_test: feedback.isTest,
+    ...(feedback.offerVersion ? { offer_version: feedback.offerVersion } : {}),
     record: feedback,
   };
+}
+
+/** A row without the given column (a table the newest migration hasn't reached yet). */
+export function without<T extends object>(row: T, column: string): T {
+  const rest = { ...row } as Record<string, unknown>;
+  delete rest[column];
+  return rest as T;
 }
 
 export function rowToDFeedback(row: unknown): DFeedback {
@@ -328,8 +345,8 @@ async function listAll<T>(client: SupabaseClient, table: string, tiebreak: strin
   return out;
 }
 
-export function createSupabaseStore(config: SupabaseConfig): ResponseStore {
-  const client = getClient(config);
+/** `client`: tests pass a stand-in; the API always uses the real one for `config`. */
+export function createSupabaseStore(config: SupabaseConfig, client: SupabaseClient = getClient(config)): ResponseStore {
   return {
     async upsert(record) {
       const row = recordToRow(record);
@@ -359,7 +376,14 @@ export function createSupabaseStore(config: SupabaseConfig): ResponseStore {
       // Only a Flight Day Pack sign-up writes the newer columns: before the migration is applied, keep the
       // lead (its fields are in the jsonb record regardless) rather than lose it, like the responses' fallback.
       if (isMissingColumn(error) && NEWER_SIGNUP_COLUMNS.some((c) => c in row)) {
+        // First without offer_version alone (the 2026-11-19 migration not applied yet), then without every newer
+        // column (none of the Flight Day Pack migrations applied). The jsonb record keeps them all either way.
         console.warn(`signups: ${describe(error)} — saving without the newer columns; apply backend/supabase/schema.sql`);
+        if (OFFER_VERSION_COLUMN in row) {
+          const first = await client.from(SIGNUPS_TABLE).upsert(without(row, OFFER_VERSION_COLUMN), { onConflict: "email_key,source" });
+          if (!first.error) return;
+          if (!isMissingColumn(first.error)) throw new Error(`Supabase upsert (${SIGNUPS_TABLE}) failed: ${describe(first.error)}`);
+        }
         const retry = await client.from(SIGNUPS_TABLE).upsert(withoutNewerSignupColumns(row), { onConflict: "email_key,source" });
         if (!retry.error) return;
         throw new Error(`Supabase upsert (${SIGNUPS_TABLE}) failed: ${describe(retry.error)}`);
@@ -373,8 +397,18 @@ export function createSupabaseStore(config: SupabaseConfig): ResponseStore {
 
     async upsertDFeedback(feedback) {
       // By id: a repeat of the same save replaces it; the trigger keeps the original created_at.
-      const { error } = await client.from(D_FEEDBACK_TABLE).upsert(dFeedbackToRow(feedback), { onConflict: "id" });
-      if (error) throw new Error(`Supabase upsert (${D_FEEDBACK_TABLE}) failed: ${describe(error)}`);
+      const row = dFeedbackToRow(feedback);
+      const { error } = await client.from(D_FEEDBACK_TABLE).upsert(row, { onConflict: "id" });
+      if (!error) return;
+      // offer_version arrived with migrations/2026-11-19_offer_version.sql: before it is applied, save the row
+      // without that column rather than lose it (the jsonb record still has offerVersion).
+      if (isMissingColumn(error) && OFFER_VERSION_COLUMN in row) {
+        console.warn(`${D_FEEDBACK_TABLE}: ${describe(error)} — saving without offer_version; apply backend/supabase/schema.sql`);
+        const retry = await client.from(D_FEEDBACK_TABLE).upsert(without(row, OFFER_VERSION_COLUMN), { onConflict: "id" });
+        if (!retry.error) return;
+        throw new Error(`Supabase upsert (${D_FEEDBACK_TABLE}) failed: ${describe(retry.error)}`);
+      }
+      throw new Error(`Supabase upsert (${D_FEEDBACK_TABLE}) failed: ${describe(error)}`);
     },
 
     listDFeedback() {

@@ -210,6 +210,7 @@ begin
   new.interview := new.interview or old.interview;
   -- 2026-11-18: the Flight Day Pack's fields from an earlier d_addon sign-up stay in the record when
   -- the repeat doesn't carry them (its flat columns are not in the repeat's update at all).
+  -- 2026-11-19: offerVersion too.
   new.record := jsonb_strip_nulls(jsonb_build_object(
     'priceArm', old.record -> 'priceArm',
     'armForced', old.record -> 'armForced',
@@ -217,7 +218,8 @@ begin
     'flightDate', old.record -> 'flightDate',
     'utmSource', old.record -> 'utmSource',
     'utmMedium', old.record -> 'utmMedium',
-    'utmCampaign', old.record -> 'utmCampaign'
+    'utmCampaign', old.record -> 'utmCampaign',
+    'offerVersion', old.record -> 'offerVersion'
   )) || new.record;
   new.record := new.record || jsonb_build_object(
     'firstName', coalesce(new.first_name, ''),
@@ -368,3 +370,19 @@ begin
   end if;
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 2026-11-19: the Flight Day Pack offer's version (migrations/2026-11-19_offer_version.sql). "v2" from
+-- iteration 2; null means v1. The sign-up trigger above keeps offerVersion like the other pack fields.
+
+alter table public.signups add column if not exists offer_version text;
+comment on column public.signups.offer_version is 'd_addon only: the Flight Day Pack offer''s version, v2 from 2026-11-19; null means v1.';
+alter table public.signups drop constraint if exists signups_offer_version_check;
+alter table public.signups add constraint signups_offer_version_check
+  check (offer_version is null or offer_version in ('v2'));
+
+alter table public.d_feedback add column if not exists offer_version text;
+comment on column public.d_feedback.offer_version is 'The Flight Day Pack offer''s version, v2 from 2026-11-19; null means v1.';
+alter table public.d_feedback drop constraint if exists d_feedback_offer_version_check;
+alter table public.d_feedback add constraint d_feedback_offer_version_check
+  check (offer_version is null or offer_version in ('v2'));

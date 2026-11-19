@@ -706,6 +706,8 @@ export interface Signup {
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
+  /** The offer's version when the sign-up was made: "v2" from 2026-11-19 (iteration 2); absent means v1. */
+  offerVersion?: OfferVersion;
 }
 
 // ── Version D: the Flight Day Pack pricing test (docs/FLIGHT_DAY_PACK.md) ───
@@ -718,6 +720,13 @@ export type OfferPlacement = "after_pick" | "results";
 export type DFeedbackPlacement = OfferPlacement | "flight" | "compare";
 export type DFeedbackKind = "addon_join" | "addon_dismiss" | "pricing" | "general";
 export type PackItem = "walkthrough" | "forecast_alerts" | "landed_text" | "none";
+/**
+ * An item key only stored rows can have: iteration 1's "Your airline, explained" (v1, 2026-11-18). Read and
+ * exported as its own column, never folded into forecast_alerts, and refused on new answers.
+ */
+export type LegacyPackItem = "airline";
+/** The offer's version, stored with rows and sign-ups from iteration 2 on; missing (null) means v1. */
+export type OfferVersion = "v2";
 export type DismissReason = "too_expensive" | "wouldnt_use" | "not_sure" | "something_else" | "prefer_not";
 export type PlanChoice = "per_trip" | "yearly" | "neither" | "not_sure";
 export type EasierAnswer = "yes" | "a_little" | "no" | "none";
@@ -725,7 +734,7 @@ export type EasierAnswer = "yes" | "a_little" | "no" | "none";
 /** Answers by kind. Every field is optional on the form: "" or null when left blank. */
 export interface AddonJoinAnswers {
   /** "Which of these would you actually use?" — "none" is exclusive. */
-  items: PackItem[];
+  items: Array<PackItem | LegacyPackItem>;
   /** "What would make this worth it for you?" */
   worthIt: string;
 }
@@ -767,6 +776,8 @@ interface DFeedbackBase {
   utmCampaign: string;
   /** Team test (?test=1, lib/testMode.ts). */
   isTest: boolean;
+  /** "v2" from iteration 2 (2026-11-19); absent on iteration 1's rows, which means v1. */
+  offerVersion?: OfferVersion;
 }
 
 /** One answered step of the Flight Day Pack test or the general feedback (Supabase table d_feedback). */
