@@ -32,6 +32,17 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  // The marketing domain (cloud9fly.com, www. as served by Vercel) opens on version D, not on the
+  // study's front page. A redirect, not a rewrite: analytics tells the versions apart by the URL's path,
+  // so the visitor must land on /d itself. Temporary (307), so it can change without stuck browser
+  // caches; query strings (utm_* tags) are passed through. Every other host, and every other path on
+  // this one, is untouched: the study keeps https://preflight-clarity.vercel.app/.
+  async redirects() {
+    return [
+      { source: "/", has: [{ type: "host", value: "cloud9fly.com" }], destination: "/d", permanent: false },
+      { source: "/", has: [{ type: "host", value: "www.cloud9fly.com" }], destination: "/d", permanent: false },
+    ];
+  },
   // The browser reaches the backend through this same-origin proxy, so there is
   // no CORS to configure and sendBeacon works: /api/responses → ${API_URL}/responses
   async rewrites() {
