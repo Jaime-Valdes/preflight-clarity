@@ -18,13 +18,41 @@ import {
   MAX_PARTICIPANT_CHARS,
   parseTimestamp,
 } from "./record";
-import type { SessionRecord, Signup, SignupPlacement, SignupSource, Step, Variant } from "./types";
+import { isISODate } from "./dates";
+import type { OfferPlacement, PriceArm, SessionRecord, Signup, SignupPlacement, SignupSource, Step, Variant } from "./types";
 
 export { MAX_EMAIL_CHARS, MAX_FIRST_NAME_CHARS, MAX_PARTICIPANT_CHARS };
 export const MAX_CONTEXT_CHARS = 120;
 export const MAX_PAGE_CHARS = 200;
 /** Longest `page` value looked at before it is reduced to a pathname. */
 const MAX_URL_CHARS = 2048;
+/** Longest campaign tag kept (utm_source, utm_medium, utm_campaign), the same cut the tools' links make. */
+export const MAX_UTM_CHARS = 200;
+
+export const PRICE_ARMS: readonly PriceArm[] = ["p499", "p1499"];
+export const OFFER_PLACEMENTS: readonly OfferPlacement[] = ["after_pick", "results"];
+
+/**
+ * The Flight Day Pack's optional sign-up fields (docs/FLIGHT_DAY_PACK.md), each kept only when
+ * present and valid. A sign-up without them (every other form) gets none of the keys, so its
+ * stored object is exactly what it was before the test.
+ */
+export function packFields(input: Record<string, unknown>): Partial<Signup> {
+  const out: Partial<Signup> = {};
+  const arm = PRICE_ARMS.find((a) => a === input.priceArm);
+  if (arm) out.priceArm = arm;
+  if (input.armForced === true) out.armForced = true;
+  const placement = OFFER_PLACEMENTS.find((p) => p === input.offerPlacement);
+  if (placement) out.offerPlacement = placement;
+  if (typeof input.flightDate === "string" && isISODate(input.flightDate.trim())) out.flightDate = input.flightDate.trim();
+  const source = cleanLine(input.utmSource, MAX_UTM_CHARS);
+  if (source) out.utmSource = source;
+  const medium = cleanLine(input.utmMedium, MAX_UTM_CHARS);
+  if (medium) out.utmMedium = medium;
+  const campaign = cleanLine(input.utmCampaign, MAX_UTM_CHARS);
+  if (campaign) out.utmCampaign = campaign;
+  return out;
+}
 
 export const SIGNUP_SOURCES: readonly SignupSource[] = ["study", "c", "d"];
 export const SIGNUP_PLACEMENTS: readonly SignupPlacement[] = [
@@ -38,6 +66,7 @@ export const SIGNUP_PLACEMENTS: readonly SignupPlacement[] = [
   "d_results",
   "d_flight",
   "d_compare",
+  "d_addon",
 ];
 
 export type ParsedSignup = { ok: true; signup: Signup } | { ok: false; error: string };
@@ -101,6 +130,7 @@ export function parseSignup(input: unknown): ParsedSignup {
       participant: cleanParticipant(input.participant),
       context: cleanLine(input.context, MAX_CONTEXT_CHARS),
       page: pathname(input.page),
+      ...packFields(input),
     },
   };
 }
@@ -143,6 +173,14 @@ export const SIGNUP_CSV_COLUMNS = [
   "participant",
   "context",
   "page",
+  // The Flight Day Pack test's fields (docs/FLIGHT_DAY_PACK.md), appended so the earlier columns keep their places.
+  "price_arm",
+  "arm_forced",
+  "offer_placement",
+  "flight_date",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
 ] as const;
 
 /** One row per sign-up, in the order given. Same conventions as recordsToCsv: BOM, CRLF, formula-safe cells. */
@@ -150,7 +188,29 @@ export function signupsToCsv(signups: readonly Signup[]): string {
   const lines = [SIGNUP_CSV_COLUMNS.map(csvCell).join(",")];
   for (const s of signups) {
     lines.push(
-      [s.id, s.createdAt, s.source, s.placement, s.firstName, s.email, s.waitlist, s.interview, s.sessionId, s.variant, s.isTest, s.participant, s.context, s.page]
+      [
+        s.id,
+        s.createdAt,
+        s.source,
+        s.placement,
+        s.firstName,
+        s.email,
+        s.waitlist,
+        s.interview,
+        s.sessionId,
+        s.variant,
+        s.isTest,
+        s.participant,
+        s.context,
+        s.page,
+        s.priceArm,
+        s.armForced,
+        s.offerPlacement,
+        s.flightDate,
+        s.utmSource,
+        s.utmMedium,
+        s.utmCampaign,
+      ]
         .map(csvCell)
         .join(","),
     );

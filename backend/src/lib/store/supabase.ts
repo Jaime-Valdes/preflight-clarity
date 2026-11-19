@@ -8,16 +8,19 @@
  *   signups   — one product-interest Signup per email per source
  *               (docs/INTEREST.md), upserted on (email_key, source); its trigger
  *               keeps the original created_at.
+ *   d_feedback — version D's Flight Day Pack answers (docs/FLIGHT_DAY_PACK.md),
+ *               one row per answered step, upserted on id.
  *
  * Uses the service-role / secret key, which bypasses row level security, so
  * it must only ever run on the server.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { SessionRecord, Signup } from "@preflight/shared/types";
+import type { DFeedback, SessionRecord, Signup } from "@preflight/shared/types";
 import type { ResponseStore } from "./types";
 
 export const TABLE = "responses";
 export const SIGNUPS_TABLE = "signups";
+export const D_FEEDBACK_TABLE = "d_feedback";
 
 /** Rows per request. PostgREST caps a response at 1,000 rows by default, so listing pages through. */
 export const PAGE_SIZE = 1000;
@@ -164,9 +167,37 @@ export interface SignupRow {
   context: string | null;
   page: string | null;
   record: Signup;
+  // The Flight Day Pack's columns (docs/FLIGHT_DAY_PACK.md, 2026-11-18): only on a row whose sign-up carries them,
+  // so every other sign-up writes exactly the columns it did before, and a repeat without them leaves them alone.
+  price_arm?: string;
+  arm_forced?: boolean;
+  offer_placement?: string;
+  flight_date?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
 }
 
+/** The signups columns schema.sql added for the Flight Day Pack test. */
+export const NEWER_SIGNUP_COLUMNS = [
+  "price_arm",
+  "arm_forced",
+  "offer_placement",
+  "flight_date",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+] as const;
+
 export function signupToRow(signup: Signup): SignupRow {
+  const pack: Partial<SignupRow> = {};
+  if (signup.priceArm) pack.price_arm = signup.priceArm;
+  if (signup.armForced) pack.arm_forced = true;
+  if (signup.offerPlacement) pack.offer_placement = signup.offerPlacement;
+  if (signup.flightDate) pack.flight_date = signup.flightDate;
+  if (signup.utmSource) pack.utm_source = signup.utmSource;
+  if (signup.utmMedium) pack.utm_medium = signup.utmMedium;
+  if (signup.utmCampaign) pack.utm_campaign = signup.utmCampaign;
   return {
     id: signup.id,
     created_at: signup.createdAt,
@@ -183,7 +214,56 @@ export function signupToRow(signup: Signup): SignupRow {
     context: signup.context || null,
     page: signup.page || null,
     record: signup,
+    ...pack,
   };
+}
+
+/** The sign-up row without the Flight Day Pack columns, for a table that doesn't have them yet. */
+export function withoutNewerSignupColumns(row: SignupRow): SignupRow {
+  const rest: Record<string, unknown> = { ...row };
+  for (const column of NEWER_SIGNUP_COLUMNS) delete rest[column];
+  return rest as unknown as SignupRow;
+}
+
+// ── d_feedback ──────────────────────────────────────────────────────────────
+
+/** The columns we write; the answers stay one jsonb object, the full row in `record`. */
+export interface DFeedbackRow {
+  id: string;
+  created_at: string;
+  session_id: string;
+  price_arm: string;
+  arm_forced: boolean;
+  placement: string;
+  kind: string;
+  answers: DFeedback["answers"];
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  is_test: boolean;
+  record: DFeedback;
+}
+
+export function dFeedbackToRow(feedback: DFeedback): DFeedbackRow {
+  return {
+    id: feedback.id,
+    created_at: feedback.createdAt,
+    session_id: feedback.sessionId,
+    price_arm: feedback.priceArm,
+    arm_forced: feedback.armForced,
+    placement: feedback.placement,
+    kind: feedback.kind,
+    answers: feedback.answers,
+    utm_source: feedback.utmSource || null,
+    utm_medium: feedback.utmMedium || null,
+    utm_campaign: feedback.utmCampaign || null,
+    is_test: feedback.isTest,
+    record: feedback,
+  };
+}
+
+export function rowToDFeedback(row: unknown): DFeedback {
+  return recordColumn(row) as DFeedback;
 }
 
 /** The full sign-up lives in the jsonb column, with the original createdAt kept by the trigger. */
@@ -273,12 +353,32 @@ export function createSupabaseStore(config: SupabaseConfig): ResponseStore {
 
     async upsertSignup(signup) {
       // One row per email per source; the database keeps the original created_at.
-      const { error } = await client.from(SIGNUPS_TABLE).upsert(signupToRow(signup), { onConflict: "email_key,source" });
-      if (error) throw new Error(`Supabase upsert (${SIGNUPS_TABLE}) failed: ${describe(error)}`);
+      const row = signupToRow(signup);
+      const { error } = await client.from(SIGNUPS_TABLE).upsert(row, { onConflict: "email_key,source" });
+      if (!error) return;
+      // Only a Flight Day Pack sign-up writes the newer columns: before the migration is applied, keep the
+      // lead (its fields are in the jsonb record regardless) rather than lose it, like the responses' fallback.
+      if (isMissingColumn(error) && NEWER_SIGNUP_COLUMNS.some((c) => c in row)) {
+        console.warn(`signups: ${describe(error)} — saving without the newer columns; apply backend/supabase/schema.sql`);
+        const retry = await client.from(SIGNUPS_TABLE).upsert(withoutNewerSignupColumns(row), { onConflict: "email_key,source" });
+        if (!retry.error) return;
+        throw new Error(`Supabase upsert (${SIGNUPS_TABLE}) failed: ${describe(retry.error)}`);
+      }
+      throw new Error(`Supabase upsert (${SIGNUPS_TABLE}) failed: ${describe(error)}`);
     },
 
     listSignups() {
       return listAll(client, SIGNUPS_TABLE, "id", rowToSignup);
+    },
+
+    async upsertDFeedback(feedback) {
+      // By id: a repeat of the same save replaces it; the trigger keeps the original created_at.
+      const { error } = await client.from(D_FEEDBACK_TABLE).upsert(dFeedbackToRow(feedback), { onConflict: "id" });
+      if (error) throw new Error(`Supabase upsert (${D_FEEDBACK_TABLE}) failed: ${describe(error)}`);
+    },
+
+    listDFeedback() {
+      return listAll(client, D_FEEDBACK_TABLE, "id", rowToDFeedback);
     },
   };
 }

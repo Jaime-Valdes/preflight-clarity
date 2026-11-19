@@ -10,7 +10,7 @@
  *   "none"     — nothing configured: the API answers 503 not_configured
  */
 import { resolve } from "node:path";
-import type { SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
+import type { DFeedback, SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
 import { createFileStore, type FileStore } from "./store/file";
 import { createSupabaseStore, supabaseConfig } from "./store/supabase";
 import type { ResponseStore } from "./store/types";
@@ -61,4 +61,14 @@ export async function upsertSignup(signup: Signup): Promise<void> {
 /** All sign-ups, newest first. Throws on error. */
 export async function listSignups(): Promise<Signup[]> {
   return store().listSignups();
+}
+
+/** Insert or update a Flight Day Pack answer row (docs/FLIGHT_DAY_PACK.md) by id. Throws on error. */
+export async function upsertDFeedback(feedback: DFeedback): Promise<void> {
+  await store().upsertDFeedback(feedback);
+}
+
+/** All d_feedback rows, newest first. Throws on error. */
+export async function listDFeedback(): Promise<DFeedback[]> {
+  return store().listDFeedback();
 }

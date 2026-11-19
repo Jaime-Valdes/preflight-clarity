@@ -7,24 +7,33 @@
  * Session records live in DATA_FILE keyed by sessionId; product-interest
  * sign-ups (docs/INTEREST.md) in a sibling signups.json keyed by
  * "email_key|source" (signupKey in shared/src/signup.ts) — one entry per email
- * per source, like the Supabase table. Every write goes through one in-process
+ * per source, like the Supabase table; version D's Flight Day Pack answers
+ * (docs/FLIGHT_DAY_PACK.md) in a sibling d_feedback.json keyed by id. Every write goes through one in-process
  * queue (so concurrent saves never interleave) and lands atomically (temp file
  * + rename), so a crash mid-write can't leave a torn file behind.
  */
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { sortDFeedbackNewestFirst } from "@preflight/shared/dFeedback";
 import { signupKey, sortSignupsNewestFirst } from "@preflight/shared/signup";
-import type { SessionRecord, Signup } from "@preflight/shared/types";
+import type { DFeedback, SessionRecord, Signup } from "@preflight/shared/types";
 import { sortNewestFirst, type ResponseStore } from "./types";
 
 /** Name of the sign-up file, created next to DATA_FILE. */
 export const SIGNUPS_FILE = "signups.json";
+/** Name of the Flight Day Pack answers file, created next to DATA_FILE. */
+export const D_FEEDBACK_FILE = "d_feedback.json";
+
+/** The Flight Day Pack's sign-up fields (docs/FLIGHT_DAY_PACK.md): a later sign-up without them keeps the earlier ones. */
+const PACK_KEYS = ["priceArm", "armForced", "offerPlacement", "flightDate", "utmSource", "utmMedium", "utmCampaign"] as const;
 
 export interface FileStore extends ResponseStore {
   /** Absolute path of the session-record JSON file. */
   readonly path: string;
   /** Absolute path of the sign-up JSON file (next to `path`). */
   readonly signupsPath: string;
+  /** Absolute path of the d_feedback JSON file (next to `path`). */
+  readonly dFeedbackPath: string;
 }
 
 type Keyed<T> = Record<string, T>;
@@ -41,6 +50,7 @@ function isMissingFile(err: unknown): boolean {
 export function createFileStore(file: string): FileStore {
   const path = resolve(process.cwd(), file);
   const signupsPath = join(dirname(path), SIGNUPS_FILE);
+  const dFeedbackPath = join(dirname(path), D_FEEDBACK_FILE);
 
   // Serializes all reads and writes, both files: each task starts once the previous one settles.
   let queue: Promise<unknown> = Promise.resolve();
@@ -87,10 +97,12 @@ export function createFileStore(file: string): FileStore {
 
   const readRecords = () => readAll<SessionRecord>(path, "sessionId");
   const readSignups = () => readAll<Signup>(signupsPath, "email_key|source");
+  const readDFeedback = () => readAll<DFeedback>(dFeedbackPath, "id");
 
   return {
     path,
     signupsPath,
+    dFeedbackPath,
 
     upsert(record) {
       return serialize(async () => {
@@ -118,7 +130,12 @@ export function createFileStore(file: string): FileStore {
         // A repeat keeps the original createdAt and never loses what the first sign-up said: the forms
         // start blank, so an empty name or an unticked interview box on the repeat means "not asked
         // again", not "take me off". Same rule as the Supabase trigger (schema.sql).
+        // The Flight Day Pack's fields from an earlier d_addon sign-up stay when a later form doesn't send them
+        // (the Supabase upsert leaves those columns alone the same way). Nothing to keep on any other row.
+        const kept: Partial<Signup> = {};
+        for (const k of PACK_KEYS) if (existing?.[k] !== undefined && signup[k] === undefined) Object.assign(kept, { [k]: existing[k] });
         signups[key] = {
+          ...kept,
           ...signup,
           createdAt: existing?.createdAt ?? signup.createdAt,
           firstName: signup.firstName || existing?.firstName || "",
@@ -130,6 +147,19 @@ export function createFileStore(file: string): FileStore {
 
     listSignups() {
       return serialize(async () => sortSignupsNewestFirst(Object.values(await readSignups())));
+    },
+
+    upsertDFeedback(feedback) {
+      return serialize(async () => {
+        const rows = await readDFeedback();
+        const existing = Object.hasOwn(rows, feedback.id) ? rows[feedback.id] : undefined;
+        rows[feedback.id] = { ...feedback, createdAt: existing?.createdAt ?? feedback.createdAt };
+        await writeAll(dFeedbackPath, rows);
+      });
+    },
+
+    listDFeedback() {
+      return serialize(async () => sortDFeedbackNewestFirst(Object.values(await readDFeedback())));
     },
   };
 }

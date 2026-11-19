@@ -655,7 +655,9 @@ export type SignupPlacement =
   | "d_home"
   | "d_results"
   | "d_flight"
-  | "d_compare";
+  | "d_compare"
+  /** Version D's Flight Day Pack offer (docs/FLIGHT_DAY_PACK.md, 2026-11-18): the honest "not ready yet" waitlist. */
+  | "d_addon";
 
 /**
  * One "notify me when it's live" sign-up (docs/INTEREST.md). Stored in its own
@@ -688,7 +690,89 @@ export interface Signup {
   context: string;
   /** Pathname the form was on, e.g. "/c/compare". */
   page: string;
+  // ── Version D's Flight Day Pack test (docs/FLIGHT_DAY_PACK.md): only on `d_addon` sign-ups ──
+  // Optional and absent on every other sign-up, so A, B, C and D's other cards send and store exactly what they did.
+  /** The price the visitor was shown. */
+  priceArm?: PriceArm;
+  /** True when the arm was forced with ?arm= (team previews); absent otherwise. */
+  armForced?: true;
+  /** Where the offer card was. */
+  offerPlacement?: OfferPlacement;
+  /** "Have a real flight coming up? When?" (YYYY-MM-DD), when answered. */
+  flightDate?: string;
+  /** First-touch campaign tags of the visitor's D session, when present. */
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
 }
+
+// ── Version D: the Flight Day Pack pricing test (docs/FLIGHT_DAY_PACK.md) ───
+
+/** The two prices under test: $4.99 and $14.99 per trip. */
+export type PriceArm = "p499" | "p1499";
+/** Where the offer card was: right after "I'd pick this flight", or after the 3rd result. */
+export type OfferPlacement = "after_pick" | "results";
+/** Where a d_feedback row's question was asked: an offer placement, or the general feedback link's page. */
+export type DFeedbackPlacement = OfferPlacement | "flight" | "compare";
+export type DFeedbackKind = "addon_join" | "addon_dismiss" | "pricing" | "general";
+export type PackItem = "walkthrough" | "airline" | "landed_text" | "none";
+export type DismissReason = "too_expensive" | "wouldnt_use" | "not_sure" | "something_else" | "prefer_not";
+export type PlanChoice = "per_trip" | "yearly" | "neither" | "not_sure";
+export type EasierAnswer = "yes" | "a_little" | "no" | "none";
+
+/** Answers by kind. Every field is optional on the form: "" or null when left blank. */
+export interface AddonJoinAnswers {
+  /** "Which of these would you actually use?" — "none" is exclusive. */
+  items: PackItem[];
+  /** "What would make this worth it for you?" */
+  worthIt: string;
+}
+export interface AddonDismissAnswers {
+  reason: DismissReason | null;
+  /** "Anything else?" */
+  anythingElse: string;
+}
+/** The four Van Westendorp questions (US dollars, 0–500, cents) and the plan question. */
+export interface PricingAnswers {
+  tooCheap: number | null;
+  bargain: number | null;
+  gettingExpensive: number | null;
+  tooExpensive: number | null;
+  plan: PlanChoice | null;
+}
+export interface GeneralAnswers {
+  /** "Did Cloud9 make choosing a flight feel easier?" */
+  easier: EasierAnswer | null;
+  /** "What would make Cloud9 more useful before your next flight?" */
+  moreUseful: string;
+}
+
+interface DFeedbackBase {
+  schemaVersion: 1;
+  /** UUID generated in the browser (a repeat of the same save upserts). */
+  id: string;
+  /** ISO timestamp from the browser. */
+  createdAt: string;
+  /** Version D's per-tab session id (sessionStorage). */
+  sessionId: string;
+  priceArm: PriceArm;
+  /** The arm was forced with ?arm= (team previews). */
+  armForced: boolean;
+  placement: DFeedbackPlacement;
+  /** First-touch campaign tags of the D session; "" when none. */
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
+  /** Team test (?test=1, lib/testMode.ts). */
+  isTest: boolean;
+}
+
+/** One answered step of the Flight Day Pack test or the general feedback (Supabase table d_feedback). */
+export type DFeedback =
+  | (DFeedbackBase & { kind: "addon_join"; answers: AddonJoinAnswers })
+  | (DFeedbackBase & { kind: "addon_dismiss"; answers: AddonDismissAnswers })
+  | (DFeedbackBase & { kind: "pricing"; answers: PricingAnswers })
+  | (DFeedbackBase & { kind: "general"; answers: GeneralAnswers });
 
 // ── API ─────────────────────────────────────────────────────────────────────
 
@@ -722,5 +806,20 @@ export interface ListSignupsResponse {
   ok: boolean;
   storage: StorageKind;
   signups: Signup[];
+  error?: string;
+}
+
+/** POST /api/d-feedback → */
+export interface SaveDFeedbackResponse {
+  ok: boolean;
+  storage: StorageKind;
+  error?: string;
+}
+
+/** GET /api/d-feedback?key=ADMIN_KEY → */
+export interface ListDFeedbackResponse {
+  ok: boolean;
+  storage: StorageKind;
+  feedback: DFeedback[];
   error?: string;
 }

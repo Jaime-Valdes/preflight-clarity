@@ -1,4 +1,4 @@
-import type { SessionRecord, Signup } from "@preflight/shared/types";
+import type { DFeedback, SessionRecord, Signup } from "@preflight/shared/types";
 
 /** What every storage adapter provides. `lib/db.ts` picks one from the environment. */
 export interface ResponseStore {
@@ -15,6 +15,13 @@ export interface ResponseStore {
   upsertSignup(signup: Signup): Promise<void>;
   /** All sign-ups, newest first (by createdAt). Throws on error. */
   listSignups(): Promise<Signup[]>;
+  /**
+   * Insert or update one version D Flight Day Pack answer row (docs/FLIGHT_DAY_PACK.md), by id:
+   * a repeat of the same save (a double tap, a retry) replaces it. Throws on error.
+   */
+  upsertDFeedback(feedback: DFeedback): Promise<void>;
+  /** All d_feedback rows, newest first (by createdAt). Throws on error. */
+  listDFeedback(): Promise<DFeedback[]>;
 }
 
 /** Newest first by createdAt, then updatedAt; sessionId breaks remaining ties so the order is stable. */

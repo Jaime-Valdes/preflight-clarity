@@ -1,8 +1,8 @@
 /*
- * Per-IP rate limit shared by the public POST routes (/responses, /signups):
+ * Per-IP rate limit shared by the public POST routes (/responses, /signups, /d-feedback):
  * one in-memory counter per client address per minute, per process — plenty
- * for one small API instance. Both routes draw on the same budget, so a flood
- * on either is stopped the same way.
+ * for one small API instance. All of them draw on the same budget, so a flood
+ * on any of them is stopped the same way.
  */
 import { getConnInfo } from "@hono/node-server/conninfo";
 import type { Context, MiddlewareHandler } from "hono";

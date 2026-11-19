@@ -49,8 +49,28 @@ import type {
   SessionRecord,
   Signup,
 } from "@preflight/shared/types";
-import { createFileStore, SIGNUPS_FILE } from "../src/lib/store/file";
-import { isMissingColumn, recordToRow, rowToRecord, rowToSignup, signupToRow, withoutNewerColumns } from "../src/lib/store/supabase";
+import {
+  ARM_PRICE_USD,
+  D_FEEDBACK_CSV_COLUMNS,
+  dFeedbackToCsv,
+  MAX_ANSWER_CHARS,
+  parseDFeedback,
+  sortDFeedbackNewestFirst,
+} from "@preflight/shared/dFeedback";
+import type { DFeedback } from "@preflight/shared/types";
+import { createFileStore, D_FEEDBACK_FILE, SIGNUPS_FILE } from "../src/lib/store/file";
+import {
+  dFeedbackToRow,
+  isMissingColumn,
+  NEWER_SIGNUP_COLUMNS,
+  recordToRow,
+  rowToDFeedback,
+  rowToRecord,
+  rowToSignup,
+  signupToRow,
+  withoutNewerColumns,
+  withoutNewerSignupColumns,
+} from "../src/lib/store/supabase";
 
 // ── Harness ─────────────────────────────────────────────────────────────────
 
@@ -1193,8 +1213,9 @@ group("signup stats and CSV", () => {
     assert.equal(csv.startsWith("﻿"), true);
     const lines = csv.slice(1).split("\r\n");
     assert.deepEqual(lines[0].split(","), [...SIGNUP_CSV_COLUMNS]);
-    assert.equal(lines[1], `${SIGNUP_ID},2026-10-21T15:30:00.000Z,study,debrief,Sam,Sam@Example.com,true,true,${SESSION_ID},A,false,sarah,JFK → LAX · Nov 26,/`);
-    assert.equal(lines[2], `${session(2)},2026-10-21T15:30:00.000Z,c,c_home,'=cmd,Sam@Example.com,true,true,,,false,sarah,"JFK → LAX, Nov 26",/c`);
+    // The Flight Day Pack's seven columns come last and stay blank for every other sign-up.
+    assert.equal(lines[1], `${SIGNUP_ID},2026-10-21T15:30:00.000Z,study,debrief,Sam,Sam@Example.com,true,true,${SESSION_ID},A,false,sarah,JFK → LAX · Nov 26,/,,,,,,,`);
+    assert.equal(lines[2], `${session(2)},2026-10-21T15:30:00.000Z,c,c_home,'=cmd,Sam@Example.com,true,true,,,false,sarah,"JFK → LAX, Nov 26",/c,,,,,,,`);
     assert.deepEqual(lines.slice(3), [""], "ends with CRLF");
   });
 
@@ -1404,6 +1425,301 @@ group("file store: sign-ups", () => {
   });
 });
 
+// ── Flight Day Pack (version D, docs/FLIGHT_DAY_PACK.md) ────────────────────
+
+const D_SESSION = "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d";
+
+/** A d_addon sign-up: the version D fields on top of an ordinary D sign-up. */
+function addonSignupFixture(): Signup {
+  return {
+    ...signupFixture(),
+    id: session(61),
+    source: "d",
+    placement: "d_addon",
+    sessionId: null,
+    variant: null,
+    participant: "",
+    context: "Flight Day Pack · $4.99 per trip",
+    page: "/d/flight",
+    priceArm: "p499",
+    offerPlacement: "after_pick",
+    flightDate: "2026-12-20",
+    utmSource: "x",
+    utmMedium: "y",
+    utmCampaign: "z",
+  };
+}
+
+function feedbackFixture(n = 1): Extract<DFeedback, { kind: "addon_join" }> {
+  return {
+    schemaVersion: 1,
+    id: session(70 + n),
+    createdAt: `2026-11-18T1${n}:00:00.000Z`,
+    sessionId: D_SESSION,
+    priceArm: "p1499",
+    armForced: false,
+    placement: "results",
+    kind: "addon_join",
+    answers: { items: ["walkthrough", "landed_text"], worthIt: "If it covered my airport." },
+    utmSource: "x",
+    utmMedium: "y",
+    utmCampaign: "z",
+    isTest: false,
+  };
+}
+
+function looseFeedback(mutate: (r: Loose) => void): unknown {
+  const r = JSON.parse(JSON.stringify(feedbackFixture())) as Loose;
+  mutate(r);
+  return r;
+}
+
+function expectFeedbackError(input: unknown, code: string): void {
+  const result = parseDFeedback(input);
+  assert.equal(result.ok, false, `expected rejection with ${code}`);
+  if (!result.ok) assert.equal(result.error, code);
+}
+
+function expectFeedback(input: unknown): DFeedback {
+  const result = parseDFeedback(input);
+  assert.equal(result.ok, true, `expected acceptance, got ${result.ok ? "" : result.error}`);
+  if (!result.ok) throw new Error("unreachable");
+  return result.feedback;
+}
+
+group("flight day pack: sign-up fields", () => {
+  test("a sign-up without the new fields parses exactly as before (no new keys)", () => {
+    const parsed = expectSignup(signupFixture());
+    assert.deepEqual(parsed, signupFixture());
+    for (const key of ["priceArm", "armForced", "offerPlacement", "flightDate", "utmSource", "utmMedium", "utmCampaign"]) {
+      assert.equal(key in parsed, false, `${key} absent`);
+    }
+  });
+
+  test("a d_addon sign-up keeps its arm, offer placement, flight date and campaign tags", () => {
+    assert.deepEqual(expectSignup(addonSignupFixture()), addonSignupFixture());
+    const forced = expectSignup({ ...addonSignupFixture(), armForced: true });
+    assert.equal(forced.armForced, true);
+  });
+
+  test("invalid new fields are dropped, never fatal", () => {
+    const parsed = expectSignup({
+      ...addonSignupFixture(),
+      priceArm: "p999",
+      armForced: "yes",
+      offerPlacement: "popup",
+      flightDate: "2026-02-30",
+      utmSource: "  ",
+      utmMedium: "m".repeat(500),
+      utmCampaign: 42,
+    });
+    assert.equal("priceArm" in parsed, false);
+    assert.equal("armForced" in parsed, false);
+    assert.equal("offerPlacement" in parsed, false);
+    assert.equal("flightDate" in parsed, false);
+    assert.equal("utmSource" in parsed, false);
+    assert.equal(parsed.utmMedium, "m".repeat(200), "cut at 200 characters");
+    assert.equal("utmCampaign" in parsed, false);
+  });
+
+  test("signupToRow adds the new columns only when the sign-up has them", () => {
+    const plain = signupToRow(signupFixture());
+    for (const column of NEWER_SIGNUP_COLUMNS) assert.equal(column in plain, false, `${column} not written for a plain sign-up`);
+    const row = signupToRow({ ...addonSignupFixture(), armForced: true });
+    assert.equal(row.placement, "d_addon");
+    assert.equal(row.price_arm, "p499");
+    assert.equal(row.arm_forced, true);
+    assert.equal(row.offer_placement, "after_pick");
+    assert.equal(row.flight_date, "2026-12-20");
+    assert.equal(row.utm_source, "x");
+    assert.equal(row.utm_medium, "y");
+    assert.equal(row.utm_campaign, "z");
+    const without = withoutNewerSignupColumns(row);
+    for (const column of NEWER_SIGNUP_COLUMNS) assert.equal(column in without, false);
+    assert.deepEqual(without.record, row.record, "the jsonb record still has them");
+  });
+
+  test("the sign-ups CSV fills the new columns for a d_addon row", () => {
+    const csv = signupsToCsv([{ ...addonSignupFixture(), armForced: true }]);
+    const [header, line] = csv.slice(1).split("\r\n");
+    const cols = header.split(",");
+    const cells = line.split(",");
+    const at = (name: string) => cells[cols.indexOf(name)];
+    assert.equal(at("placement"), "d_addon");
+    assert.equal(at("price_arm"), "p499");
+    assert.equal(at("arm_forced"), "true");
+    assert.equal(at("offer_placement"), "after_pick");
+    assert.equal(at("flight_date"), "2026-12-20");
+    assert.equal(at("utm_campaign"), "z");
+  });
+
+  test("file store: a later plain sign-up from the same email keeps the d_addon fields", async () => {
+    const store = createFileStore(join(tempDir, "addon-signups", "responses.json"));
+    await store.upsertSignup(addonSignupFixture());
+    const later = { ...addonSignupFixture(), id: session(62), placement: "d_flight" as const, context: "JFK → LAX · Nov 26" };
+    for (const key of ["priceArm", "offerPlacement", "flightDate", "utmSource", "utmMedium", "utmCampaign"] as const) delete later[key];
+    await store.upsertSignup(later);
+    const [stored] = await store.listSignups();
+    assert.equal(stored.placement, "d_flight", "the latest placement, as before");
+    assert.equal(stored.priceArm, "p499");
+    assert.equal(stored.flightDate, "2026-12-20");
+    assert.equal(stored.utmSource, "x");
+  });
+});
+
+group("flight day pack: parseDFeedback", () => {
+  test("accepts each kind with its own answers", () => {
+    assert.deepEqual(expectFeedback(feedbackFixture()), feedbackFixture());
+    const dismiss = expectFeedback(looseFeedback((r) => {
+      r.kind = "addon_dismiss";
+      r.placement = "after_pick";
+      r.answers = { reason: "too_expensive", anythingElse: "" };
+    }));
+    assert.deepEqual(dismiss.answers, { reason: "too_expensive", anythingElse: "" });
+    const pricing = expectFeedback(looseFeedback((r) => {
+      r.kind = "pricing";
+      r.answers = { tooCheap: 1, bargain: 4.995, gettingExpensive: 12, tooExpensive: null, plan: "yearly" };
+    }));
+    assert.deepEqual(pricing.answers, { tooCheap: 1, bargain: 5, gettingExpensive: 12, tooExpensive: null, plan: "yearly" });
+    const general = expectFeedback(looseFeedback((r) => {
+      r.kind = "general";
+      r.placement = "compare";
+      r.answers = { easier: "a_little" };
+    }));
+    assert.deepEqual(general.answers, { easier: "a_little", moreUseful: "" });
+  });
+
+  test("normalizes ids, keeps items in the form's order, cuts text at 1,000 characters", () => {
+    const parsed = expectFeedback(looseFeedback((r) => {
+      r.id = r.id.toUpperCase();
+      r.sessionId = r.sessionId.toUpperCase();
+      r.answers = { items: ["landed_text", "walkthrough", "landed_text"], worthIt: `  ${"w".repeat(1500)}\u0000 ` };
+      r.armForced = "yes";
+      r.utmSource = "u".repeat(300);
+    }));
+    assert.equal(parsed.id, feedbackFixture().id);
+    assert.equal(parsed.sessionId, D_SESSION);
+    assert.deepEqual((parsed.answers as { items: string[] }).items, ["walkthrough", "landed_text"]);
+    assert.equal((parsed.answers as { worthIt: string }).worthIt.length, MAX_ANSWER_CHARS);
+    assert.equal(parsed.armForced, false, "only true counts");
+    assert.equal(parsed.utmSource.length, 200);
+  });
+
+  test("rejects unknown kinds, placements, arms, keys and values", () => {
+    expectFeedbackError(null, "invalid_body");
+    expectFeedbackError(looseFeedback((r) => delete r.id), "missing_id");
+    expectFeedbackError(looseFeedback((r) => (r.createdAt = "yesterday")), "invalid_created_at");
+    expectFeedbackError(looseFeedback((r) => (r.sessionId = "abc")), "missing_session_id");
+    expectFeedbackError(looseFeedback((r) => (r.kind = "survey")), "invalid_kind");
+    expectFeedbackError(looseFeedback((r) => (r.placement = "home")), "invalid_placement");
+    expectFeedbackError(looseFeedback((r) => (r.placement = "flight")), "invalid_placement");
+    expectFeedbackError(looseFeedback((r) => (r.priceArm = "p999")), "invalid_price_arm");
+    expectFeedbackError(looseFeedback((r) => (r.answers = [])), "invalid_answers");
+    expectFeedbackError(looseFeedback((r) => (r.answers.email = "a@b.co")), "invalid_answers");
+    expectFeedbackError(looseFeedback((r) => (r.answers.items = ["lounge"])), "invalid_answers");
+    expectFeedbackError(looseFeedback((r) => (r.answers.items = ["none", "airline"])), "invalid_answers");
+    expectFeedbackError(looseFeedback((r) => (r.answers.items = "walkthrough")), "invalid_answers");
+    expectFeedbackError(looseFeedback((r) => (r.answers.worthIt = 5)), "invalid_answers");
+    expectFeedbackError(looseFeedback((r) => {
+      r.kind = "addon_dismiss";
+      r.answers = { reason: "because" };
+    }), "invalid_answers");
+    for (const bad of [-1, 500.01, Number.NaN, "5", Infinity]) {
+      expectFeedbackError(looseFeedback((r) => {
+        r.kind = "pricing";
+        r.answers = { tooCheap: bad };
+      }), "invalid_price");
+    }
+    expectFeedbackError(looseFeedback((r) => {
+      r.kind = "pricing";
+      r.answers = { plan: "monthly" };
+    }), "invalid_answers");
+  });
+
+  test("rejects a row that answers nothing", () => {
+    expectFeedbackError(looseFeedback((r) => (r.answers = { items: [], worthIt: "   " })), "empty_answers");
+    expectFeedbackError(looseFeedback((r) => {
+      r.kind = "pricing";
+      r.answers = {};
+    }), "empty_answers");
+  });
+
+  test("CSV: one row per answer, answers flattened, formula-safe", () => {
+    const rows: DFeedback[] = [
+      feedbackFixture(1),
+      { ...feedbackFixture(2), kind: "addon_dismiss", placement: "after_pick", priceArm: "p499", answers: { reason: "not_sure", anythingElse: "=sum" } },
+      { ...feedbackFixture(3), kind: "pricing", answers: { tooCheap: 1, bargain: 4.5, gettingExpensive: null, tooExpensive: 30, plan: "not_sure" } },
+      { ...feedbackFixture(4), kind: "general", placement: "flight", armForced: true, isTest: true, answers: { easier: "yes", moreUseful: "Seat maps please" } },
+    ];
+    const csv = dFeedbackToCsv(sortDFeedbackNewestFirst(rows));
+    assert.equal(csv.startsWith("﻿"), true);
+    const lines = csv.slice(1).split("\r\n");
+    assert.deepEqual(lines[0].split(","), [...D_FEEDBACK_CSV_COLUMNS]);
+    assert.equal(lines.length, 6, "header, four rows, final CRLF");
+    const byKind = (kind: string) => lines.find((l) => l.split(",")[3] === kind)!.split(",");
+    const col = (name: string) => D_FEEDBACK_CSV_COLUMNS.indexOf(name as (typeof D_FEEDBACK_CSV_COLUMNS)[number]);
+    const join = byKind("addon_join");
+    assert.equal(join[col("item_walkthrough")], "true");
+    assert.equal(join[col("item_airline")], "false");
+    assert.equal(join[col("item_landed_text")], "true");
+    assert.equal(join[col("price_usd")], String(ARM_PRICE_USD.p1499));
+    assert.equal(join[col("dismiss_reason")], "");
+    const dismiss = byKind("addon_dismiss");
+    assert.equal(dismiss[col("dismiss_reason")], "not_sure");
+    assert.equal(dismiss[col("anything_else")], "'=sum");
+    assert.equal(dismiss[col("price_usd")], "4.99");
+    const pricing = byKind("pricing");
+    assert.deepEqual(
+      ["price_too_cheap", "price_bargain", "price_getting_expensive", "price_too_expensive", "plan"].map((n) => pricing[col(n)]),
+      ["1", "4.5", "", "30", "not_sure"],
+    );
+    const general = byKind("general");
+    assert.equal(general[col("easier")], "yes");
+    assert.equal(general[col("more_useful")], "Seat maps please");
+    assert.equal(general[col("arm_forced")], "true");
+    assert.equal(general[col("is_test")], "true");
+  });
+});
+
+group("flight day pack: stores", () => {
+  test("dFeedbackToRow flattens the columns; rowToDFeedback reads the record", () => {
+    const fb = feedbackFixture();
+    const row = dFeedbackToRow(fb);
+    assert.deepEqual(row, {
+      id: fb.id,
+      created_at: fb.createdAt,
+      session_id: D_SESSION,
+      price_arm: "p1499",
+      arm_forced: false,
+      placement: "results",
+      kind: "addon_join",
+      answers: fb.answers,
+      utm_source: "x",
+      utm_medium: "y",
+      utm_campaign: "z",
+      is_test: false,
+      record: fb,
+    });
+    assert.equal(dFeedbackToRow({ ...fb, utmSource: "", utmMedium: "", utmCampaign: "" }).utm_source, null);
+    assert.deepEqual(rowToDFeedback({ record: JSON.stringify(fb) }), fb);
+  });
+
+  test("file store: d_feedback.json next to the responses file, upsert by id keeps createdAt, newest first", async () => {
+    const store = createFileStore(join(tempDir, "dfeedback", "responses.json"));
+    assert.equal(store.dFeedbackPath, join(tempDir, "dfeedback", D_FEEDBACK_FILE));
+    assert.deepEqual(await store.listDFeedback(), []);
+    await store.upsertDFeedback(feedbackFixture(1));
+    await store.upsertDFeedback(feedbackFixture(2));
+    await store.upsertDFeedback({ ...feedbackFixture(1), createdAt: "2026-11-18T19:00:00.000Z", answers: { items: ["none"], worthIt: "" } });
+    const list = await store.listDFeedback();
+    assert.deepEqual(list.map((r) => r.id), [feedbackFixture(2).id, feedbackFixture(1).id]);
+    assert.equal(list[1].createdAt, feedbackFixture(1).createdAt, "original createdAt kept");
+    assert.deepEqual((list[1].answers as { items: string[] }).items, ["none"]);
+    assert.deepEqual(await store.listSignups(), [], "sign-ups are separate");
+    assert.deepEqual((await readdir(join(tempDir, "dfeedback"))).sort(), [D_FEEDBACK_FILE]);
+  });
+});
+
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 type App = typeof import("../src/app").app;
@@ -1600,6 +1916,98 @@ group("routes: sign-ups", () => {
   });
 });
 
+// ── Routes: Flight Day Pack ─────────────────────────────────────────────────
+
+/** Its own client address again, so its rate-limit bucket is separate. */
+const FEEDBACK_IP = { "x-forwarded-for": "203.0.113.70" };
+
+async function postFeedback(body: string, headers: Record<string, string> = {}) {
+  return app.request("/d-feedback", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...FEEDBACK_IP, ...headers },
+    body,
+  });
+}
+
+group("routes: flight day pack", () => {
+  test("POST /signups without the new fields behaves as before; with them, they are stored", async () => {
+    const plain = { ...signupFixture(), id: session(81), email: "plain@example.com", source: "d", placement: "d_flight", sessionId: null, variant: null };
+    let res = await postSignup(JSON.stringify(plain), FEEDBACK_IP);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await json(res), { ok: true, storage: "file" });
+    res = await postSignup(JSON.stringify({ ...addonSignupFixture(), email: "pack@example.com" }), FEEDBACK_IP);
+    assert.equal(res.status, 200);
+    const body = await json(await app.request("/signups", { headers: { "x-admin-key": ADMIN_KEY } }));
+    const stored = body.signups.find((s: Signup) => s.email === "plain@example.com");
+    assert.deepEqual(stored, plain, "exactly the sign-up sent, no new keys");
+    const pack = body.signups.find((s: Signup) => s.email === "pack@example.com");
+    assert.equal(pack.placement, "d_addon");
+    assert.equal(pack.priceArm, "p499");
+    assert.equal(pack.offerPlacement, "after_pick");
+    assert.equal(pack.flightDate, "2026-12-20");
+    assert.equal(pack.utmSource, "x");
+  });
+
+  test("POST /d-feedback a valid row → 200 (text/plain too), GET lists it with the key", async () => {
+    let res = await postFeedback(JSON.stringify(feedbackFixture(1)));
+    assert.equal(res.status, 200);
+    assert.deepEqual(await json(res), { ok: true, storage: "file" });
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    res = await postFeedback(JSON.stringify(feedbackFixture(2)), { "content-type": "text/plain" });
+    assert.equal(res.status, 200);
+    const list = await app.request(`/d-feedback?key=${ADMIN_KEY}`);
+    assert.equal(list.status, 200);
+    const body = await json(list);
+    assert.equal(body.ok, true);
+    assert.equal(body.storage, "file");
+    assert.deepEqual(body.feedback, [feedbackFixture(2), feedbackFixture(1)]);
+    const byHeader = await app.request("/d-feedback", { headers: { "x-admin-key": ADMIN_KEY } });
+    assert.deepEqual(await json(byHeader), body);
+  });
+
+  test("POST /d-feedback invalid → 400 with a short code, nothing stored", async () => {
+    let res = await postFeedback("{nope");
+    assert.equal(res.status, 400);
+    assert.equal((await json(res)).error, "invalid_json");
+    res = await postFeedback(JSON.stringify(looseFeedback((r) => (r.kind = "rating"))));
+    assert.equal(res.status, 400);
+    assert.deepEqual(await json(res), { ok: false, storage: "file", error: "invalid_kind" });
+    res = await postFeedback(JSON.stringify(looseFeedback((r) => (r.answers.name = "Sam"))));
+    assert.equal((await json(res)).error, "invalid_answers");
+    res = await postFeedback(JSON.stringify(looseFeedback((r) => {
+      r.id = session(90);
+      r.kind = "pricing";
+      r.answers = { bargain: 9999 };
+    })));
+    assert.equal((await json(res)).error, "invalid_price");
+    const body = await json(await app.request("/d-feedback", { headers: { "x-admin-key": ADMIN_KEY } }));
+    assert.equal(body.feedback.length, 2);
+  });
+
+  test("POST /d-feedback too large → 413", async () => {
+    const declared = await postFeedback("{}", { "content-length": "20000" });
+    assert.equal(declared.status, 413);
+    assert.equal((await json(declared)).error, "too_large");
+    const actual = await postFeedback(JSON.stringify({ ...feedbackFixture(), padding: "x".repeat(12_000) }));
+    assert.equal(actual.status, 413);
+  });
+
+  test("GET /d-feedback without the key → 401", async () => {
+    let res = await app.request("/d-feedback");
+    assert.equal(res.status, 401);
+    assert.deepEqual(await json(res), { ok: false, storage: "file", feedback: [], error: "unauthorized" });
+    res = await app.request("/d-feedback?key=wrong");
+    assert.equal(res.status, 401);
+  });
+
+  test("the rate limit is shared with /responses and /signups", async () => {
+    const limited = await postFeedback(JSON.stringify(feedbackFixture()), { "x-forwarded-for": "203.0.113.9" });
+    assert.equal(limited.status, 429);
+    assert.equal(limited.headers.get("retry-after"), "60");
+    assert.deepEqual(await json(limited), { ok: false, storage: "file", error: "rate_limited" });
+  });
+});
+
 // ── Routes: no storage ──────────────────────────────────────────────────────
 
 group("routes: no storage", () => {
@@ -1618,6 +2026,12 @@ group("routes: no storage", () => {
     const signups = await app.request("/signups", { headers: { "x-admin-key": ADMIN_KEY } });
     assert.equal(signups.status, 503);
     assert.deepEqual(await json(signups), { ok: false, storage: "none", signups: [], error: "not_configured" });
+    const feedback = await postFeedback(JSON.stringify(feedbackFixture()));
+    assert.equal(feedback.status, 503);
+    assert.deepEqual(await json(feedback), { ok: false, storage: "none", error: "not_configured" });
+    const feedbackList = await app.request("/d-feedback", { headers: { "x-admin-key": ADMIN_KEY } });
+    assert.equal(feedbackList.status, 503);
+    assert.deepEqual(await json(feedbackList), { ok: false, storage: "none", feedback: [], error: "not_configured" });
   });
 });
 
