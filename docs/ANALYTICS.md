@@ -81,8 +81,8 @@ with `?arm=p499` or `?arm=p1499` forces that arm for the tab's session and adds 
 - **Why not**: `d_addon_dismiss` by `reason`; **what they'd use**: `d_addon_items` by `items`. The amounts, the
   plan answer and every typed answer are only in Supabase (`d_feedback`, `signups`), never in PostHog.
 
-**Flight Day Pack, iteration 2** (docs/FLIGHT_DAY_PACK.md, branch `test/flight-day-pack-2`; ship time: to be
-filled in at deploy). The offer stopped being inline: the `results` card became a pop-in 5 s after the first
+**Flight Day Pack, iteration 2** (docs/FLIGHT_DAY_PACK.md, branch `test/flight-day-pack-2`; reached production
+at 3:56 pm New York time on 2026-11-19, 20:56 UTC). The offer stopped being inline: the `results` card became a pop-in 5 s after the first
 scroll, and `after_pick` a dialog that must be answered. So `d_addon_view`, `d_addon_click` and
 `d_addon_dismiss` from before and after that point are not comparable; split by time. The forced choice also
 raises dismiss counts (every after-pick view ends in Add or No thanks, and Escape counts as No thanks), so read
