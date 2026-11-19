@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { DFeedback, DFeedbackPlacement, OfferPlacement } from "@preflight/shared/types";
+import type { DFeedback, DFeedbackPlacement, OfferPlacement, OfferVersion } from "@preflight/shared/types";
 import { track, type EventProps } from "@/lib/analytics";
 import { saveDFeedback } from "@/lib/storage";
 import { isTestMode } from "@/lib/testMode";
@@ -23,6 +23,15 @@ import { armProps, currentArm } from "./priceArm";
  * hydration); write from handlers and effects. Nothing here reads a flight, a rating or a price
  * beyond the arm: the card is the same for every flight.
  */
+
+/**
+ * The offer's version on its events, rows and sign-ups: "v2" since iteration 2 (2026-11-19, the pop-in and the
+ * after-pick dialog). Iteration 1's data has none, which means v1. Bump it when the offer changes again.
+ */
+export const OFFER_VERSION: OfferVersion = "v2";
+
+/** The offer's own events: they carry offer_version (the general feedback's d_feedback_* events don't). */
+const OFFER_EVENTS = new Set(["d_addon_view", "d_addon_click", "d_addon_waitlist", "d_addon_dismiss", "d_addon_items", "d_pricing_answered"]);
 
 const SESSION_STATE_KEY = "pfc.d.fdp.v1";
 const SESSION_ID_KEY = "pfc.d.session.v1";
@@ -302,9 +311,9 @@ export function isTestRun(): boolean {
 
 /**
  * One of the test's events, with the properties every one of them carries: price_arm (and
- * arm_forced when forced), placement, variant "D" and is_test. `extra` is only ever a category
- * key, a count or a list of item keys: never typed text, an email, a name, a dollar amount, the
- * plan answer or a date.
+ * arm_forced when forced), placement, variant "D" and is_test; the offer's six events also carry
+ * offer_version. `extra` is only ever a category key (reason, via), a count or a list of item keys:
+ * never typed text, an email, a name, a dollar amount, the plan answer or a date.
  */
 export function trackPack(
   event:
@@ -319,7 +328,8 @@ export function trackPack(
   placement: DFeedbackPlacement,
   extra: EventProps = {},
 ): void {
-  track(event, { ...extra, placement, variant: "D", is_test: isTestRun(), ...armProps() });
+  const version = OFFER_EVENTS.has(event) ? { offer_version: OFFER_VERSION } : {};
+  track(event, { ...extra, placement, variant: "D", is_test: isTestRun(), ...armProps(), ...version });
 }
 
 type RowInput = Pick<DFeedback, "kind" | "answers"> & { placement: DFeedbackPlacement };
@@ -336,6 +346,7 @@ export function savePackRow(input: RowInput): void {
     armForced: forced,
     ...sessionUtms(),
     isTest: isTestRun(),
+    offerVersion: OFFER_VERSION,
     ...input,
   } as DFeedback;
   void saveDFeedback(row);

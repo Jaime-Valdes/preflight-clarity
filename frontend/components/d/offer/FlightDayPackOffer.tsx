@@ -20,6 +20,7 @@ import {
   noteSurface,
   pickButton,
   pickedOnThisLoad,
+  OFFER_VERSION,
   pricingAsked,
   resultsCardAllowed,
   savePackRow,
@@ -189,8 +190,13 @@ function OfferFlow({
   const rootRef = useRef<HTMLElement>(null);
   const [stage, setStage] = useState<Stage>("offer");
   const [path, setPath] = useState<Path>("skip");
-  /** "No thanks" was chosen and its answer isn't sent yet (sent on Done, or when the visitor leaves). */
-  const dismissRef = useRef<{ reason: DismissReason | null; text: string } | null>(null);
+  /**
+   * "No thanks" was chosen and its answer isn't sent yet (sent on Done, or when the visitor leaves). `via`: how
+   * it was chosen, the button (no_thanks) or, in the after-pick dialog, Escape (escape). A fixed key, never text.
+   */
+  const dismissRef = useRef<{ reason: DismissReason | null; text: string; via: "no_thanks" | "escape" } | null>(null);
+  /** Add or No thanks was chosen (the results pop-in's left-page dismiss is for an unanswered card only). */
+  const answeredRef = useRef(false);
   const [reason, setReason] = useState<DismissReason | null>(null);
   const [anythingElse, setAnythingElse] = useState("");
 
@@ -223,7 +229,7 @@ function OfferFlow({
     const pending = dismissRef.current;
     if (!pending) return;
     dismissRef.current = null;
-    trackPack("d_addon_dismiss", placement, { reason: pending.reason ?? "none_given" });
+    trackPack("d_addon_dismiss", placement, { reason: pending.reason ?? "none_given", via: pending.via });
     const text = pending.text.trim();
     if (pending.reason || text) savePackRow({ kind: "addon_dismiss", placement, answers: { reason: pending.reason, anythingElse: text } });
     if (text) noteOpenAnswer();
@@ -232,15 +238,24 @@ function OfferFlow({
   useEffect(() => {
     finishRef.current = finishDismiss;
   });
-  // Leaving the page (another page, or the tab closing) with "No thanks" unanswered still counts it.
+  // Leaving the page (another page, a new search, or the tab closing) with "No thanks" unanswered still counts
+  // it. And the results pop-in, its only way out besides Add and No thanks: left showing and unanswered, it
+  // counts once as a dismiss with no reason, via "left_page". (The after-pick dialog can't be left unanswered.)
+  // Tab-close delivery is best effort.
+  const leftRef = useRef(false);
   useEffect(() => {
-    const onHide = () => finishRef.current();
-    window.addEventListener("pagehide", onHide);
-    return () => {
-      window.removeEventListener("pagehide", onHide);
+    const leave = () => {
       finishRef.current();
+      if (placement !== "results" || answeredRef.current || leftRef.current) return;
+      leftRef.current = true;
+      trackPack("d_addon_dismiss", placement, { reason: "none_given", via: "left_page" });
     };
-  }, []);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, [placement]);
 
   /** Move on, and take the focus to the new step's heading so a screen reader hears where it is. */
   const go = (next: Stage) => {
@@ -255,16 +270,18 @@ function OfferFlow({
   const afterAnswers = () => go(pricingAsked() ? "thanks" : "pricing");
 
   const add = () => {
+    answeredRef.current = true;
     trackPack("d_addon_click", placement);
     onEngage();
     closeOffer();
     setPath("skip");
     go("join");
   };
-  const noThanks = () => {
+  const noThanks = (via: "no_thanks" | "escape" = "no_thanks") => {
+    answeredRef.current = true;
     onEngage();
     closeOffer();
-    dismissRef.current = { reason: null, text: "" };
+    dismissRef.current = { reason: null, text: "", via };
     setPath("dismiss");
     go("dismiss");
   };
@@ -278,7 +295,7 @@ function OfferFlow({
     if (event.key !== "Escape") return;
     event.preventDefault();
     event.stopPropagation();
-    if (stage === "offer") noThanks();
+    if (stage === "offer") noThanks("escape");
     else if (stage === "join") afterAnswers();
     else if (stage === "items") afterAnswers();
     else if (stage === "dismiss") doneDismiss();
@@ -296,7 +313,7 @@ function OfferFlow({
       data-d-offer-scroll
     >
       {stage === "offer" ? (
-        <Offer titleId={titleId} price={price} onAdd={add} onNoThanks={noThanks} />
+        <Offer titleId={titleId} price={price} onAdd={add} onNoThanks={() => noThanks("no_thanks")} />
       ) : stage === "join" ? (
         <Join
           titleId={titleId}
@@ -462,6 +479,7 @@ function Join({
       ...(utms.utmSource ? { utmSource: utms.utmSource } : {}),
       ...(utms.utmMedium ? { utmMedium: utms.utmMedium } : {}),
       ...(utms.utmCampaign ? { utmCampaign: utms.utmCampaign } : {}),
+      offerVersion: OFFER_VERSION,
     };
     void saveSignup(signup);
     trackPack("d_addon_waitlist", placement);
