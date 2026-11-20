@@ -3,6 +3,7 @@
  * route, the providers and the cache share. The rows and the day are the shared package's
  * (shared/src/schedule.ts), so the browser reads exactly what a provider produced.
  */
+import type { RouteOnTime } from "@preflight/shared/onTime";
 import type { RouteDaySchedule } from "@preflight/shared/schedule";
 
 /** FLIGHT_PROVIDER values: the illustrative timetable (default, no key), AeroDataBox, or its saved listings (tests). */
@@ -39,8 +40,8 @@ export interface RouteDayQuery {
   date: string;
 }
 
-/** GET /flights/day's answer. */
-export type RouteDayResponse = { ok: true; schedule: RouteDaySchedule; cached: boolean } | { ok: false; error: string };
+/** GET /flights/day's answer; `onTime` (the US DOT's airline figures for the day) is left out when the table can't be read. */
+export type RouteDayResponse = { ok: true; schedule: RouteDaySchedule; cached: boolean; onTime?: RouteOnTime } | { ok: false; error: string };
 
 /** A route-day as the durable layer keeps it (Supabase `route_days`; route_days.json in development). */
 export interface RouteDayRecord {

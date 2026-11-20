@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/check-fake-flight.ts && tsx scripts/check-search.ts && tsx scripts/check-ratings.ts && tsx scripts/check-schedule.ts"
+    "test": "tsx scripts/check-fake-flight.ts && tsx scripts/check-search.ts && tsx scripts/check-ratings.ts && tsx scripts/check-schedule.ts && tsx scripts/check-on-time.ts"
   },
   "devDependencies": {
     "@types/node": "^20",

@@ -9,12 +9,16 @@
  * Hono's app.request() against temporary data files. Version D's schedules
  * (docs/REAL_DATA.md, step 1): the query validation, the providers (the
  * generator, the AeroDataBox fixture mapping, the adapter over a fetch double),
- * the route-day cache and GET /flights/day.
+ * the route-day cache and GET /flights/day. The airline on-time step (docs/REAL_DATA.md, "Status:
+ * airline on-time from BTS"): the precompute's CSV and ZIP reading and its count on a tiny fixture,
+ * the bundled table, the lookup a route-day carries, and GET /flights/day's `onTime`.
  */
 import assert from "node:assert/strict";
+import { createReadStream } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { CSV_COLUMNS, csvCell, recordToRow as csvRow, recordsToCsv } from "@preflight/shared/csv";
 import { addDays, toISODate } from "@preflight/shared/dates";
 import {
@@ -25,6 +29,7 @@ import {
   parseSessionRecord,
 } from "@preflight/shared/record";
 import { generatedSchedule, optionsFromSchedule, type RouteDaySchedule, type ScheduleRow } from "@preflight/shared/schedule";
+import { airlineOnTime, isRouteOnTime, onTimePeriod, routeOnTime, type OnTimeTable } from "@preflight/shared/onTime";
 import { SECTION_IDS } from "@preflight/shared/sections";
 import {
   emailKey,
@@ -81,7 +86,10 @@ import { createFixtureProvider, defaultFixtureDir, fixtureFile } from "../src/li
 import { createGeneratorProvider } from "../src/lib/flights/generator";
 import { currentProvider, providerName, routeDayCache, validateDayQuery } from "../src/lib/flights/index";
 import { ProviderError, ROUTE_DAY_MAX_AGE_MS, ROUTE_DAY_TTL_MS, type RouteDayStore, type ScheduleProvider } from "../src/lib/flights/types";
+import { ON_TIME_TABLE, onTimeForSchedule } from "../src/lib/onTime/index";
 import { createFileStore, D_FEEDBACK_FILE, ROUTE_DAYS_FILE, SIGNUPS_FILE } from "../src/lib/store/file";
+import { aggregateCsv, isOnTime, OnTimeAggregator, parseCsvLine } from "./bts/aggregate";
+import { listZip, openZipCsv } from "./bts/zip";
 import { createMemoryRouteDayStore } from "../src/lib/store/memory";
 import { createSupabaseStore, without, withoutNewerSignupColumns as stripSignupColumns } from "../src/lib/store/supabase";
 import {
@@ -2800,9 +2808,13 @@ group("routes: flights", () => {
     assert.equal(body.cached, false);
     assert.ok(Math.abs(Date.parse(body.schedule.fetchedAt) - Date.now()) < 60_000, "fetchedAt is the server clock");
     assert.deepEqual(body.schedule, generatedSchedule({ origin: "JFK", destination: "LAX", date: day }, body.schedule.fetchedAt));
+    // The US DOT figures ride beside the schedule, never inside it (the cached payload stays the provider's).
+    assert.equal(isRouteOnTime(body.onTime), true);
+    assert.deepEqual(body.onTime, onTimeForSchedule(body.schedule));
     const again = await json(await app.request(dayUrl, { headers: FLIGHTS_IP }));
     assert.equal(again.cached, true);
     assert.deepEqual(again.schedule, body.schedule);
+    assert.deepEqual(again.onTime, body.onTime, "a cached day gets the figures too");
     const raw = JSON.parse(await readFile(join(tempDir, "routes", ROUTE_DAYS_FILE), "utf8"));
     assert.deepEqual(Object.keys(raw), [`JFK-LAX|${day}|generator`]);
     assert.deepEqual(raw[`JFK-LAX|${day}|generator`].payload, body.schedule);
@@ -2853,6 +2865,143 @@ group("routes: flights", () => {
     assert.equal(limited.status, 429);
     assert.equal(limited.headers.get("retry-after"), "60");
     assert.equal((await json(limited)).error, "rate_limited");
+  });
+});
+
+// ── Airline on-time (BTS) ───────────────────────────────────────────────────
+
+const BTS_FIXTURES = fileURLToPath(new URL("../fixtures/bts/", import.meta.url));
+
+/** backend/fixtures/bts/tiny.csv counted with small floors (a route needs 3 flights, a carrier 2). */
+async function tinyTable(input?: import("node:stream").Readable): Promise<{ table: OnTimeTable; agg: OnTimeAggregator; lines: number }> {
+  const agg = new OnTimeAggregator();
+  const lines = await aggregateCsv(input ?? createReadStream(join(BTS_FIXTURES, "tiny.csv")), agg);
+  return { table: agg.table({ source: "fixture", minCarrierFlights: 2, minRouteFlights: 3 }), agg, lines };
+}
+
+group("on-time: the BTS precompute", () => {
+  test("parseCsvLine reads BTS quoting: commas inside quotes, doubled quotes, empty and trailing fields, a field limit", () => {
+    assert.deepEqual(parseCsvLine('2025,"AA","New York, NY",,1.00,'), ["2025", "AA", "New York, NY", "", "1.00", ""]);
+    assert.deepEqual(parseCsvLine('"say ""hi""",x'), ['say "hi"', "x"]);
+    assert.deepEqual(parseCsvLine(""), [""]);
+    assert.deepEqual(parseCsvLine('a,"b, c",d,e', 2), ["a", "b, c"]);
+  });
+
+  test("on time is DOT's: arrived less than 15 minutes late; cancelled, diverted and unknown arrivals are not", () => {
+    assert.equal(isOnTime({ arrDel15: "0.00", cancelled: "0.00", diverted: "0.00" }), true);
+    assert.equal(isOnTime({ arrDel15: "1.00", cancelled: "0.00", diverted: "0.00" }), false);
+    assert.equal(isOnTime({ arrDel15: "", cancelled: "1.00", diverted: "0.00" }), false);
+    assert.equal(isOnTime({ arrDel15: "", cancelled: "0.00", diverted: "1.00" }), false);
+    assert.equal(isOnTime({ arrDel15: "0.00", cancelled: "0.00", diverted: "1.00" }), false);
+    assert.equal(isOnTime({ arrDel15: "", cancelled: "0.00", diverted: "0.00" }), false);
+  });
+
+  test("the count over the tiny fixture: industry, carriers past their floor and in every month, routes by direction past theirs", async () => {
+    const { table, agg, lines } = await tinyTable();
+    assert.equal(lines, 16);
+    assert.equal(agg.skipped, 1, "the row without a carrier");
+    assert.equal(agg.unknownArrivals, 1, "the flown row without an arrival indicator");
+    assert.deepEqual(agg.monthsSeen(), ["2025-12", "2026-01"]);
+    assert.equal(table.from, "2025-12");
+    assert.equal(table.to, "2026-01");
+    // 15 flights counted, 8 on time (a 14-minute arrival is on time; 15 minutes, cancelled and diverted are not).
+    assert.deepEqual(table.industry, [53.3, 15], "the industry counts every carrier, NK and 9E too");
+    assert.deepEqual(agg.partialCarriers(), ["9E", "NK"]);
+    assert.deepEqual(table.carriers, { AA: [40, 5], DL: [50, 6] }, "9E is under the floor of 2; NK flew only in December");
+    assert.deepEqual(table.routes, { "JFK-LAX": { AA: [40, 5], DL: [75, 4] } }, "LAX-JFK has 2 flights, under the floor of 3; NK has no network figure");
+    assert.equal(table.minCarrierFlights, 2);
+    assert.equal(table.minRouteFlights, 3);
+    assert.match(table.definition, /less than 15 minutes/);
+  });
+
+  test("the ZIP reader finds the one CSV beside the readme and streams it to the same count", async () => {
+    const zip = join(BTS_FIXTURES, "tiny.zip");
+    assert.deepEqual((await listZip(zip)).map((m) => m.name).sort(), ["readme.html", "tiny.csv"]);
+    const { name, stream } = await openZipCsv(zip);
+    assert.equal(name, "tiny.csv");
+    const fromZip = await tinyTable(stream);
+    assert.deepEqual(fromZip.table, (await tinyTable()).table);
+    await assert.rejects(openZipCsv(join(BTS_FIXTURES, "tiny.csv")), /not a ZIP archive/);
+  });
+
+  test("an empty count or a CSV without the columns is an error, not an empty table", async () => {
+    assert.throws(() => new OnTimeAggregator().table({ source: "x" }), /no flights counted/);
+    const { Readable } = await import("node:stream");
+    await assert.rejects(aggregateCsv(Readable.from(['"Year","Month"\n', "2026,1\n"]), new OnTimeAggregator()), /no IATA_CODE_Reporting_Airline column/);
+  });
+});
+
+group("on-time: the lookup", () => {
+  test("routeOnTime keeps every network figure and only the routes asked for, once each", async () => {
+    const { table } = await tinyTable();
+    const block = routeOnTime(table, [["JFK", "LAX"], ["jfk", "lax"], ["BOS", "JFK"]]);
+    assert.deepEqual(block, {
+      source: "bts",
+      from: "2025-12",
+      to: "2026-01",
+      industry: { pct: 53.3, flights: 15 },
+      carriers: { AA: { pct: 40, flights: 5 }, DL: { pct: 50, flights: 6 } },
+      routes: { "JFK-LAX": { AA: { pct: 40, flights: 5 }, DL: { pct: 75, flights: 4 } } },
+    });
+    assert.equal(isRouteOnTime(block), true);
+    assert.equal(JSON.stringify(block).length < 400, true);
+  });
+
+  test("airlineOnTime: network and route, network only, none, and no figures at all", async () => {
+    const block = routeOnTime((await tinyTable()).table, [["JFK", "LAX"]]);
+    assert.deepEqual(airlineOnTime(block, "dl", "JFK", "LAX"), { network: 50, route: 75, industry: 53, period: "Dec 2025–Jan 2026" });
+    assert.deepEqual(airlineOnTime(block, "DL", "LAX", "JFK"), { network: 50, route: null, industry: 53, period: "Dec 2025–Jan 2026" });
+    assert.deepEqual(airlineOnTime(block, "NK", "JFK", "LAX"), { network: null, route: null, industry: 53, period: "Dec 2025–Jan 2026" });
+    assert.deepEqual(airlineOnTime(block, "BA", "JFK", "LAX"), { network: null, route: null, industry: 53, period: "Dec 2025–Jan 2026" });
+    assert.equal(airlineOnTime(null, "AA", "JFK", "LAX"), null);
+    assert.equal(onTimePeriod("2026-09", "2026-09"), "Sep 2026");
+  });
+
+  test("isRouteOnTime turns away what is not the contract", async () => {
+    const block = routeOnTime((await tinyTable()).table, [["JFK", "LAX"]]);
+    assert.equal(isRouteOnTime(undefined), false);
+    assert.equal(isRouteOnTime({ ...block, source: "other" }), false);
+    assert.equal(isRouteOnTime({ ...block, from: "2025-13" }), false);
+    assert.equal(isRouteOnTime({ ...block, industry: { pct: 120, flights: 3 } }), false);
+    assert.equal(isRouteOnTime({ ...block, carriers: { AA: { pct: 80 } } }), false);
+    assert.equal(isRouteOnTime({ ...block, routes: { "JFK-LAX": { AA: [80, 3] } } }), false);
+  });
+
+  test("the bundled table: twelve consecutive months, an industry figure, the large US carriers, routes past the floor", () => {
+    const t = ON_TIME_TABLE;
+    const [fy, fm] = t.from.split("-").map(Number) as [number, number];
+    const [ty, tm] = t.to.split("-").map(Number) as [number, number];
+    assert.equal((ty - fy) * 12 + (tm - fm) + 1, 12, `${t.from} to ${t.to}`);
+    assert.ok(t.industry[0] > 50 && t.industry[0] < 95 && t.industry[1] > 5_000_000, `industry ${t.industry.join(", ")}`);
+    for (const code of ["AA", "DL", "UA", "WN", "B6", "AS"]) assert.ok(t.carriers[code], `${code} has a network figure`);
+    for (const [code, [pct, n]] of Object.entries(t.carriers)) assert.ok(pct >= 0 && pct <= 100 && n >= t.minCarrierFlights, code);
+    for (const [route, byCarrier] of Object.entries(t.routes)) {
+      assert.match(route, /^[A-Z]{3}-[A-Z]{3}$/);
+      for (const [code, [, n]] of Object.entries(byCarrier)) assert.ok(n >= t.minRouteFlights && t.carriers[code], `${route} ${code}`);
+    }
+    assert.ok(t.routes["JFK-LAX"], "JFK-LAX has figures");
+  });
+
+  test("onTimeForSchedule: the day's routes from the bundled table; a broken table costs only the figures", () => {
+    const schedule = generatedSchedule({ origin: "JFK", destination: "LAX", date: FIXTURE_DAY }, FETCHED_AT);
+    const block = onTimeForSchedule(schedule)!;
+    assert.equal(isRouteOnTime(block), true);
+    assert.deepEqual(Object.keys(block.routes), ["JFK-LAX"]);
+    assert.equal(block.from, ON_TIME_TABLE.from);
+    assert.equal(block.to, ON_TIME_TABLE.to);
+    for (const row of schedule.rows.filter((r) => ["AA", "DL", "B6"].includes(r.airline))) {
+      assert.notEqual(airlineOnTime(block, row.airline, row.origin, row.destination)?.network ?? null, null, `${row.airline} ${row.number}`);
+    }
+    // The AeroDataBox fixture's rows name the operating carrier: Republic (YX) for an American or Delta regional flight.
+    const adb = onTimeForSchedule(fixtureDay())!;
+    for (const code of ["DL", "B6", "AA", "YX", "UA"]) assert.notEqual(airlineOnTime(adb, code, "JFK", "LAX")?.network ?? null, null, code);
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      assert.equal(onTimeForSchedule(schedule, { ...ON_TIME_TABLE, carriers: null } as unknown as OnTimeTable), undefined);
+    } finally {
+      console.error = quiet;
+    }
   });
 });
 
