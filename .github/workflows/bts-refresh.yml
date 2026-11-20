@@ -27,6 +27,9 @@ on:
         description: "Optional YYYY-MM: build the twelve months ending here, even if the table already ends there"
         type: string
         default: ""
+  # TEMPORARY: the one approved test run, a dry run with end month 2026-09 (removed in the next commit).
+  push:
+    branches: [ci/bts-refresh]
 
 permissions:
   contents: write
@@ -41,8 +44,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
-      DRY_RUN: ${{ inputs.dry_run == true }}
-      END_MONTH: ${{ inputs.end_month }}
+      DRY_RUN: ${{ github.event_name == 'push' || inputs.dry_run == true }}
+      END_MONTH: ${{ github.event_name == 'push' && '2026-09' || inputs.end_month }}
       TABLE: backend/src/lib/onTime/bts-ontime.json
     steps:
       - name: Check out
