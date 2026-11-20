@@ -177,12 +177,15 @@ timetable the other versions use, so the study needs none of this.
 - `AERODATABOX_API_KEY` and `AERODATABOX_HOST`: the key from [aerodatabox.com](https://aerodatabox.com) and
   where it was issued — `rapidapi` (the marketplace plans, the free one included; the default) or `direct`
   (`api.aerodatabox.com`). The key stays on the server and is never logged.
-- Re-run `schema.sql`: it adds the `route_days` table. A route-day costs two FIDS calls, is kept for 24 hours
+- Run `backend/supabase/migrations/2026-11-19_route_days.sql` once in the SQL editor (or re-run `schema.sql`,
+  which carries the same statements): it adds the `route_days` table. A route-day costs two FIDS calls, is kept for 24 hours
   (in memory and in that table) and refreshed after that; a trigger drops rows older than 7 days, AeroDataBox's
   cache rule. Without Supabase the memory cache works alone (plus `backend/data/route_days.json` in
   development).
 - The free plan is for non-commercial use and requires the "Schedules: AeroDataBox" line version D shows
   under its results; move to a paid plan before the public sees it.
+- `FLIGHT_PROVIDER_ROUTE_DAYS_PER_HOUR`: provider calls one API process may make per hour (default 60). The free
+  plan has 400 units a month and a fresh route-day costs 4, so keep it low on a free key.
 
 ## How data is stored
 

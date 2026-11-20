@@ -87,7 +87,32 @@ Fares and seat availability wait for a business decision (booking partner) and s
 - Fares (if ever shown as real): full price at the moment shown, code-share operator named on the first
   screen, quoted-at time visible.
 
-## Status (2026-11-04): step 1 is built
+## Status (2026-11-19): step 1 is brought onto main
+
+Branch `data/real-schedules-2` merges `data/real-schedules` into main as of 2026-11-19 (version D pass 4, the
+Flight Day Pack test with its tracking, the privacy page). Step 1 now runs on D's current results, flight and
+compare pages, by day and by night: the real nonstops, the attribution line under the results count, under the
+boarding pass and under the compare table, and the date strip loading no other day. The Flight Day Pack behaves
+as on main (the price arm, the results pop-in 5 s after the first scroll of a loaded day, the after-pick dialog,
+the waitlist dialog, every event with `offer_version` and `via`, and the saved rows). A provider's day with no
+flights in it (a 204) now falls back to the illustrative day, like a provider failure, and says so. Versions A, B
+and C are pixel-identical to main by day and by night, and `generateFlight` is unchanged.
+
+What production needs before `FLIGHT_PROVIDER=aerodatabox` is switched on:
+
+1. **Backend env vars** on the backend's Vercel project (then redeploy): `FLIGHT_PROVIDER=aerodatabox`,
+   `AERODATABOX_API_KEY=<the key>`, `AERODATABOX_HOST=rapidapi` (the key is a RapidAPI marketplace key).
+   Without them the API answers from the generator and every page says "Illustrative schedule".
+2. **The `route_days` table**: run `backend/supabase/migrations/2026-11-19_route_days.sql` once in the Supabase
+   SQL editor (`schema.sql` carries the same statements). Until it runs the API still answers, but logs a failed
+   read and write on each new day and keeps days in each server instance's memory only, so instances fetch the
+   same day separately.
+3. **The AeroDataBox plan**: the key is on the free Basic plan, 400 units a month, non-commercial, with the
+   attribution line. A fresh route-day costs 4 units (two 12-hour FIDS windows), so about 100 fresh route-days a
+   month; a cached day costs nothing for 24 hours. `FLIGHT_PROVIDER_ROUTE_DAYS_PER_HOUR` (default 60, per
+   server process) is the only brake on a busy hour: on the free plan set it low (for example 4) or move to Pro
+   ($8/month, 5,000 units) before the public sees it.
+
 
 Branch `data/real-schedules` (on top of the version D look). What is live when `FLIGHT_PROVIDER=aerodatabox`
 and `AERODATABOX_API_KEY` are set in the backend's environment:
