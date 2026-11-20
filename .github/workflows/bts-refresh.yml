@@ -1,0 +1,133 @@
+# Monthly refresh of version D's airline on-time table from the US DOT (BTS) files
+# (docs/REAL_DATA.md, "Status: airline on-time from BTS", the refresh).
+#
+# Finds the latest month BTS has published, downloads the twelve months ending there, rebuilds
+# backend/src/lib/onTime/bts-ontime.json, runs the checks, and opens a pull request against main.
+# It never pushes to main: merging the pull request is what deploys to production (Vercel).
+# No new month: succeeds with a notice. A failed download or check: the job fails, no pull request.
+#
+# Needs the repository setting Settings → Actions → General → Workflow permissions →
+# "Allow GitHub Actions to create and approve pull requests" to open the pull request.
+
+name: BTS on-time refresh
+
+on:
+  schedule:
+    # BTS posts a month around the middle of the next-but-one month; try on the 20th, and again on the
+    # 27th in case it was late (a run that finds nothing new, or a pull request already open, does nothing).
+    - cron: "17 9 20 * *"
+    - cron: "17 9 27 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: build and check the table, upload it as an artifact, open no pull request"
+        type: boolean
+        default: false
+      end_month:
+        description: "Optional YYYY-MM: build the twelve months ending here, even if the table already ends there"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bts-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      DRY_RUN: ${{ inputs.dry_run == true }}
+      END_MONTH: ${{ inputs.end_month }}
+      TABLE: backend/src/lib/onTime/bts-ontime.json
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Download the latest twelve months from BTS
+        id: download
+        run: |
+          args=(--dir "$RUNNER_TEMP/bts-raw" --table "$TABLE")
+          if [ -n "$END_MONTH" ]; then args+=(--end "$END_MONTH"); fi
+          npx tsx backend/scripts/bts-download.ts "${args[@]}"
+
+      - name: Rebuild the table
+        if: steps.download.outputs.status == 'new'
+        run: |
+          cp "$TABLE" "$RUNNER_TEMP/bts-ontime.old.json"
+          npx tsx backend/scripts/bts-ontime.ts --out "$TABLE" "$RUNNER_TEMP"/bts-raw/bts-*.zip
+
+      - name: Check the table (backend tests, on-time copy check)
+        if: steps.download.outputs.status == 'new'
+        run: |
+          npm run test -w backend
+          npx tsx shared/scripts/check-on-time.ts
+
+      - name: Summarise
+        id: summary
+        if: steps.download.outputs.status == 'new'
+        run: |
+          npx tsx backend/scripts/bts-summary.ts --old "$RUNNER_TEMP/bts-ontime.old.json" --new "$TABLE" > "$RUNNER_TEMP/pr-body.md"
+          cat "$RUNNER_TEMP/pr-body.md"
+          cat "$RUNNER_TEMP/pr-body.md" >> "$GITHUB_STEP_SUMMARY"
+          if git diff --quiet -- "$TABLE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=BTS on-time refresh::The rebuilt table is byte-identical to the committed one ($(sha256sum "$TABLE" | cut -c1-16)); nothing to propose."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- "$TABLE"
+          fi
+
+      - name: Upload the table (dry run)
+        if: steps.download.outputs.status == 'new' && env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bts-ontime-${{ steps.download.outputs.end }}
+          path: |
+            ${{ env.TABLE }}
+            ${{ runner.temp }}/pr-body.md
+          retention-days: 14
+
+      - name: Open the pull request
+        if: steps.download.outputs.status == 'new' && steps.summary.outputs.changed == 'true' && env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ steps.download.outputs.from }}
+          END: ${{ steps.download.outputs.end }}
+        run: |
+          branch="data/bts-refresh-$END"
+          open=$(gh pr list --head "$branch" --base main --state open --json url --jq '.[0].url // ""')
+          if [ -n "$open" ]; then
+            echo "::notice title=BTS on-time refresh::Already proposed in $open; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -m "On-time table: US DOT (BTS) $FROM to $END" -- "$TABLE"
+          git push --force origin "HEAD:refs/heads/$branch"
+          if ! out=$(gh pr create --base main --head "$branch" \
+                --title "On-time table: US DOT (BTS) $FROM to $END" \
+                --body-file "$RUNNER_TEMP/pr-body.md" 2>&1); then
+            echo "$out"
+            if grep -qi "not permitted to create" <<<"$out"; then
+              echo "::error title=Allow Actions to open pull requests::GitHub refused to let this workflow open the pull request. Turn on Settings → Actions → General → Workflow permissions → \"Allow GitHub Actions to create and approve pull requests\", then re-run this job. The new table is already on branch $branch; you can also open the pull request by hand: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch"
+            else
+              echo "::error title=BTS on-time refresh::Could not open the pull request (see the log above). The new table is on branch $branch."
+            fi
+            exit 1
+          fi
+          echo "::notice title=BTS on-time refresh::Opened $out"

@@ -141,21 +141,52 @@ not the generator's. Built on branch `data/bts-ontime`; not on main or productio
   came without figures (the browser's own illustrative day, when the API cannot be reached) the line says "The US
   DOT figures did not load this time". The generator's invented `airlineStats.onTimePct` and `onTimeRoutePct` are
   never shown in D; A, B and C still show them, unchanged.
-- **Refresh monthly** (after BTS posts a month, usually mid-month): download the latest twelve months into a new,
-  empty folder, then run the script from the repo root with the files as arguments:
+- **Refresh monthly, automated**: the GitHub Action `.github/workflows/bts-refresh.yml` ("BTS on-time refresh")
+  runs on the 20th of each month at 09:17 UTC and again on the 27th (in case BTS posted late). It never pushes to
+  main; it opens a pull request, and **merging that pull request is what deploys the new figures to production**.
+  - What a run does: `backend/scripts/bts-download.ts` probes the PREZIP files backwards from the current month
+    (a ranged GET of each file's first bytes: 404 is "not yet", a ZIP is "published", anything else fails the run
+    rather than pass for "nothing new") to find the latest published month. If that is the committed table's `to`,
+    the run ends green with the notice "No new month". Otherwise it downloads the twelve months ending there, one
+    at a time, into the runner's temp folder (`bts-YYYY-MM.zip`; four attempts each, a 20-minute cap and a
+    90-second stall cap per attempt, a 200 MB size cap; each checked to be a ZIP holding one CSV); then the
+    precompute rebuilds the table, `npm run test -w backend` and `shared/scripts/check-on-time.ts` check it,
+    `backend/scripts/bts-summary.ts` writes the summary (the period, the industry figure old → new, each carrier's
+    network figure old → new, the number of routes, the merge-deploys-to-production reminder), and the run commits
+    only the table to the branch `data/bts-refresh-YYYY-MM` and opens the pull request with the summary as its body.
+    A failed download, precompute or check fails the job (GitHub emails the owner) and opens nothing. An open pull
+    request for the same month (the 27th after a successful 20th) means nothing to do. A rebuilt table that is
+    byte-identical to the committed one opens nothing.
+  - **The repository setting it needs**: Settings → Actions → General → Workflow permissions → "Allow GitHub
+    Actions to create and approve pull requests" (off as of 2026-11-20). While it is off, the run pushes the
+    branch, then fails with an error saying so and a compare link to open the pull request by hand; after turning
+    it on, re-run the job. The workflow asks only for `contents: write` and `pull-requests: write`, uses the run's
+    own `GITHUB_TOKEN` (no secrets), and pins every action to a commit SHA. A pull request opened by
+    `GITHUB_TOKEN` does not start other workflows, but Vercel still builds its preview.
+  - **The schedule is active only once the workflow file is on main** (GitHub runs `schedule` and offers
+    "Run workflow" only for the default branch's workflows).
+  - **By hand from the Actions tab**: Actions → "BTS on-time refresh" → "Run workflow". `dry_run` builds and checks
+    the table, prints the summary on the run's page and uploads the table and the summary as an artifact
+    (`bts-ontime-YYYY-MM`, kept 14 days), without a branch or pull request. `end_month` (`YYYY-MM`) builds the
+    twelve months ending there even when the table already ends there (to rebuild a period after BTS revises a
+    month, or to test: `2026-09` reproduces the committed Oct 2025–Sep 2026 table byte for byte).
+  - **Locally, the fallback** (if TranStats ever turns the runner away): from the repo root, with a new, empty
+    folder for the downloads (they are untrusted data; never commit them):
 
-  ```sh
-  mkdir -p /tmp/bts-raw && cd /tmp/bts-raw
-  for m in 2025_10 2025_11 2025_12 2026_1 2026_2 2026_3 2026_4 2026_5 2026_6 2026_7 2026_8 2026_9; do
-    curl -sS --fail -O "https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_$m.zip"; sleep 2
-  done
-  cd - && npx tsx backend/scripts/bts-ontime.ts --out backend/src/lib/onTime/bts-ontime.json /tmp/bts-raw/*.zip
-  ```
+    ```sh
+    npx tsx backend/scripts/bts-download.ts --dir /tmp/bts-raw   # add --end YYYY-MM to pick the last month
+    npx tsx backend/scripts/bts-ontime.ts --out backend/src/lib/onTime/bts-ontime.json /tmp/bts-raw/bts-*.zip
+    npm run test -w backend && npx tsx shared/scripts/check-on-time.ts
+    git show HEAD:backend/src/lib/onTime/bts-ontime.json > /tmp/bts-old.json
+    npx tsx backend/scripts/bts-summary.ts --old /tmp/bts-old.json --new backend/src/lib/onTime/bts-ontime.json
+    ```
 
-  The script streams each CSV out of its zip (no unzip, no new dependency; about 2 s a month), reads the months
-  from the rows, refuses a repeated or missing month, and prints the period, the industry figure, every carrier and
-  the size. Then `npm run test -w backend` (the bundled-table test checks twelve consecutive months) and commit the
-  JSON. Never commit the downloads.
+    then commit only the JSON on a branch and open the pull request with the summary. TranStats can be slow (a
+    month took about three minutes at home on 2026-11-20), so a full download can take half an hour.
+  - The precompute streams each CSV out of its zip (no unzip, no new dependency; about 2 s a month), reads the
+    months from the rows, refuses a repeated or missing month, and prints the period, the industry figure, every
+    carrier and the size. The bundled-table test checks twelve consecutive months. The example figures below and
+    the period named in this section describe the table as first built; the automation does not edit this file.
 - **Tests**: `backend/scripts/test.ts` counts a tiny fixture (`backend/fixtures/bts/tiny.csv` and the same file
   zipped beside a readme) and checks the definition, the floors, direction, the ZIP reader, the bundled table, the
   lookup and `GET /flights/day`'s `onTime`; `shared/scripts/check-on-time.ts` checks the copy (no banned words) and
