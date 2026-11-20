@@ -166,7 +166,7 @@ export function onTimeSource(period: string): string {
 export const ON_TIME_NOT_AVAILABLE = {
   main: "On-time record not available",
   short: "Not available",
-  sub: "The US DOT publishes on-time figures for the larger US airlines, for flights within the US",
+  sub: "The US DOT has no on-time figure covering the last 12 months for this airline",
   /** For a narrow cell (the compare table). */
   brief: "The US DOT has no figure for this airline",
 } as const;
@@ -193,8 +193,8 @@ export function onTimeTeaser(record: AirlineOnTime | null): string {
   return record && record.network !== null ? `${record.network}% on time, ${record.period}` : ON_TIME_NOT_AVAILABLE.main;
 }
 
-/** The line under the network figure: "Across the airline’s US flights · 79% on this route" (the route part only with a route figure). */
+/** The line under the network figure: "Across the airline’s flights · 79% on this route" (the route part only with a route figure). */
 export function onTimeDetail(record: AirlineOnTime): string {
-  const across = "Across the airline’s US flights";
+  const across = "Across the airline’s flights";
   return record.route === null ? across : `${across} · ${record.route}% on this route`;
 }

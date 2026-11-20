@@ -68,8 +68,8 @@ check(onTimePeriod("2026-09", "2026-09") === "Sep 2026", "a one-month period");
 check(onTimeSource("Oct 2025–Sep 2026") === "On-time: US DOT, BTS · Oct 2025–Sep 2026", "the credit");
 check(onTimeTeaser(both) === "84% on time, Oct 2025–Sep 2026", `teaser ${onTimeTeaser(both)}`);
 check(onTimeTeaser(none) === ON_TIME_NOT_AVAILABLE.main && onTimeTeaser(null) === ON_TIME_NOT_AVAILABLE.main, "teaser without a figure");
-check(onTimeDetail(both!) === "Across the airline’s US flights · 81% on this route", `detail ${onTimeDetail(both!)}`);
-check(onTimeDetail(networkOnly!) === "Across the airline’s US flights", "no route line without a route figure");
+check(onTimeDetail(both!) === "Across the airline’s flights · 81% on this route", `detail ${onTimeDetail(both!)}`);
+check(onTimeDetail(networkOnly!) === "Across the airline’s flights", "no route line without a route figure");
 check(onTimeMissing(none) === ON_TIME_NOT_AVAILABLE && onTimeMissing(null) === ON_TIME_NOT_LOADED, "which not-available copy");
 
 const strings: Array<[string, string]> = [

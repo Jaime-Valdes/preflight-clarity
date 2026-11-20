@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from "react";
 import { displayAircraftName } from "@preflight/shared/aircraft";
 import { addDays, formatDuration, formatTime12 } from "@preflight/shared/dates";
-import { onTimeMissing, onTimeSource } from "@preflight/shared/onTime";
+import { onTimeDetail, onTimeMissing, onTimeSource } from "@preflight/shared/onTime";
 import { forYouScore, rateFlight, type Rating, type RatingCategory } from "@preflight/shared/ratings";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
@@ -485,7 +485,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
                 return (
                   <Value
                     main={`${record.network}%`}
-                    sub={record.route === null ? "Across the airline’s US flights" : `Across the airline · ${record.route}% on this route`}
+                    sub={onTimeDetail(record)}
                     benchmark={<BenchmarkLine benchmark="onTimePct" value={record.network} against={record.industry} />}
                   />
                 );

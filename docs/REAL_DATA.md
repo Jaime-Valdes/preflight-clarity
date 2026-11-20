@@ -129,14 +129,15 @@ not the generator's. Built on branch `data/bts-ontime`; not on main or productio
   `shared/src/onTime.ts`. D's first load does not grow (the client bundle carries no table). The CDN keeps a
   `/flights/day` answer for 10 minutes, figures included.
 - **What D shows** (`frontend/lib/d/onTime.ts`, the flight page's Airline record card, More detail → Airline, the
-  compare table's On time row): the network figure ("79% on time" for Delta), "Across the airline’s US flights · 72% on
+  compare table's On time row): the network figure ("79% on time" for Delta), "Across the airline’s flights · 72% on
   this route" (the route part only with a route figure), the line against the industry figure for the same months, and
   the credit "On-time: US DOT, BTS · Oct 2025–Sep 2026" (under the figure on the flight page and in the airline section,
   under the compare table). The definition replaces "within 15 minutes" in the card's footnote. The figures are
   about the airline and the route, not the schedule, so the illustrative (generator) flights get them too when
   their carrier is a US reporting carrier. Where there is no figure: "On-time record not available · The US DOT
-  publishes on-time figures for the larger US airlines, for flights within the US" (non-US carriers, carriers too
-  small to report); the compare cell says "Not available · The US DOT has no figure for this airline". When a day
+  has no on-time figure covering the last 12 months for this airline" (non-US carriers, carriers too small to report,
+  and carriers that did not report every month, such as Hawaiian, whose flights report under Alaska from January
+  2026, and Spirit); the compare cell says "Not available · The US DOT has no figure for this airline". When a day
   came without figures (the browser's own illustrative day, when the API cannot be reached) the line says "The US
   DOT figures did not load this time". The generator's invented `airlineStats.onTimePct` and `onTimeRoutePct` are
   never shown in D; A, B and C still show them, unchanged.

@@ -41,7 +41,7 @@ function DOnTimeBlock({ flight, record }: { flight: SectionProps["flight"]; reco
       <BlockLabel>On-time arrivals</BlockLabel>
       <div className="mt-2 flex flex-col gap-3 rounded-2xl bg-canvas/70 p-4 ring-1 ring-inset ring-line/70">
         <MeterBar
-          label={`Across the airline’s US flights · ${record.period}`}
+          label={`Across the airline’s flights · ${record.period}`}
           value={record.network}
           hint={<BenchmarkLine benchmark="onTimePct" value={record.network} against={record.industry} />}
         />
