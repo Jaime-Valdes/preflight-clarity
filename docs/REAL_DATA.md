@@ -88,10 +88,10 @@ Fares and seat availability wait for a business decision (booking partner) and s
 - Fares (if ever shown as real): full price at the moment shown, code-share operator named on the first
   screen, quoted-at time visible.
 
-## Status (2026-11-20): airline on-time from BTS (branch `data/bts-ontime`)
+## Status (2026-11-20): airline on-time from BTS (live)
 
 Order of work item 4, first half (the source map's row 5): version D's airline on-time numbers are the US DOT's,
-not the generator's. Built on branch `data/bts-ontime`; not on main or production yet.
+not the generator's. Live in production since 2026-11-20 (commit d1f61b3); Next.js 16.4.6 followed (55cad1f).
 
 - **Source**: the US DOT Bureau of Transportation Statistics, TranStats "Reporting Carrier On-Time Performance
   (1987-present)", the monthly PREZIP files
