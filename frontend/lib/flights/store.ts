@@ -12,7 +12,7 @@ import type { FlightInput } from "@preflight/shared/types";
  * compare pages, the tray and the date strip all read the same frozen
  * SearchResults — "cheapest", the price ranks and the marks never disagree
  * between pages. When the API can't answer (no API_URL, so the path is a 404;
- * an error; a slow answer) the day is the generator's, marked so, and the app
+ * an error; a slow answer; a provider's day with no flights in it) the day is the generator's, marked so, and the app
  * works with no key. Reads are synchronous and never fetch: ensureRouteDay
  * starts a load from an effect or an event handler; useRouteDay keeps a
  * component current. Version C never comes here (lib/flights/source.ts).
@@ -140,14 +140,19 @@ function evict(keep: string): void {
 function settle(key: string, day: FlightInput, schedule: RouteDaySchedule | null): RouteDayState {
   if (schedule) {
     try {
-      const ready: RouteDayState = {
-        status: "ready",
-        results: optionsFromSchedule(schedule),
-        provider: schedule.provider,
-        fetchedAt: schedule.fetchedAt,
-        served: schedule.served ?? null,
-      };
-      return Object.freeze(ready);
+      const results = optionsFromSchedule(schedule);
+      // A provider's day with no flights in it is a day it has no data for (a 204, or nothing published for the
+      // day yet), not a day nobody flies: the illustrative day stands in below, and the page says so.
+      if (schedule.provider === "generator" || results.options.length > 0) {
+        const ready: RouteDayState = {
+          status: "ready",
+          results,
+          provider: schedule.provider,
+          fetchedAt: schedule.fetchedAt,
+          served: schedule.served ?? null,
+        };
+        return Object.freeze(ready);
+      }
     } catch (error) {
       // The generator stands in below; said in the console, so the fallback is never silent in development.
       console.warn(`day store: the schedule for ${key} could not be built; the illustrative day stands in`, error);
