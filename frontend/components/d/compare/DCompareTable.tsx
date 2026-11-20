@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from "react";
 import { displayAircraftName } from "@preflight/shared/aircraft";
 import { addDays, formatDuration, formatTime12 } from "@preflight/shared/dates";
+import { onTimeMissing, onTimeSource } from "@preflight/shared/onTime";
 import { forYouScore, rateFlight, type Rating, type RatingCategory } from "@preflight/shared/ratings";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
@@ -38,6 +39,7 @@ import { animateOnce } from "@/components/d/motion/motion";
 import { RatingButton } from "@/components/d/ratings/RatingSheet";
 import { CATEGORY_SHORT } from "@/components/d/ratings/tone";
 import { formatFare } from "@/lib/c/format";
+import { onTimeFor } from "@/lib/d/onTime";
 import { usePriorities } from "@/lib/d/priorities";
 import { priceDeltaText } from "@/lib/d/view";
 import { readRouteDay } from "@/lib/flights/store";
@@ -185,6 +187,9 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
   const tags = useMemo(() => flightTags(flights, names), [flights, names]);
   // Where each column's day came from (the store is read on every render; the table re-renders when a day settles).
   const attribution = scheduleAttributionFor(flights.map((c) => readRouteDay(c.item).provider));
+  // Each flight's on-time record from the US DOT figures its day came with (docs/REAL_DATA.md), and their credit once.
+  const onTimes = new Map(flights.map((c) => [c.id, onTimeFor(c.flight, [readRouteDay(c.item).onTime])]));
+  const onTimeShown = [...onTimes.values()].find((r) => r?.network != null);
   // Fares as shown: the base fare moved by each flight's own lead time (they can be on different dates).
   const fares = flights.map((c) => fareAt(c.option, c.daysUntil));
   const cheapestFare = fares.length ? Math.min(...fares) : null;
@@ -471,13 +476,20 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
 
             <tbody className="d-compare-group">
               {groupHead("Airline", <ShieldCheck />)}
-              {row("On time", (c) => (
-                <Value
-                  main={`${c.flight.airlineStats.onTimePct}%`}
-                  sub={`${c.flight.airlineStats.onTimeRoutePct}% on this route · last 12 months`}
-                  benchmark={<BenchmarkLine benchmark="onTimePct" value={c.flight.airlineStats.onTimePct} />}
-                />
-              ))}
+              {row("On time", (c) => {
+                const record = onTimes.get(c.id) ?? null;
+                if (!record || record.network === null) {
+                  const missing = onTimeMissing(record);
+                  return <Value main={missing.short} sub={missing.brief} />;
+                }
+                return (
+                  <Value
+                    main={`${record.network}%`}
+                    sub={record.route === null ? "Across the airline’s US flights" : `Across the airline · ${record.route}% on this route`}
+                    benchmark={<BenchmarkLine benchmark="onTimePct" value={record.network} against={record.industry} />}
+                  />
+                );
+              })}
             </tbody>
 
             <tbody className="d-compare-group">
@@ -542,6 +554,7 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
       </div>
       {/* Where the days' schedules came from (docs/REAL_DATA.md), on the sky under the table, clear of the fade. */}
       <p className="mt-2 px-1 text-xs leading-snug text-ink-mute">{attribution}</p>
+      {onTimeShown ? <p className="mt-1 px-1 text-xs leading-snug text-ink-mute">{onTimeSource(onTimeShown.period)}</p> : null}
       {/* The Flight Day Pack (docs/FLIGHT_DAY_PACK.md): its after_pick dialog, opened by a pick in the table (the same
           dialog whichever flight was picked), and the general feedback link. */}
       <FlightDayPackModal context="compare" />

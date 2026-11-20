@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { isRouteOnTime, type RouteOnTime } from "@preflight/shared/onTime";
 import { optionsFromSchedule, type RouteDaySchedule } from "@preflight/shared/schedule";
 import { hasNonstopService, searchFlights, type SearchResults } from "@preflight/shared/search";
 import type { FlightInput } from "@preflight/shared/types";
@@ -16,19 +17,22 @@ import type { FlightInput } from "@preflight/shared/types";
  * works with no key. Reads are synchronous and never fetch: ensureRouteDay
  * starts a load from an effect or an event handler; useRouteDay keeps a
  * component current. Version C never comes here (lib/flights/source.ts).
+ * A day also keeps the airline on-time figures the API sent with it (`onTime`,
+ * the US DOT's; shared/src/onTime.ts): null when the browser's own
+ * illustrative day stands in, or an older API sent none.
  */
 
 export type DayProvider = RouteDaySchedule["provider"];
 
 /** What is known about a route-day: loading until a load started by ensureRouteDay settles. */
 export type RouteDayState =
-  | { status: "loading"; results: null; provider: null; fetchedAt: null; served: null }
+  | { status: "loading"; results: null; provider: null; fetchedAt: null; served: null; onTime: null }
   /** `served`: the route has nonstop service (true), nobody flies it nonstop (false), or the provider could not say (null: a day with no rows). */
-  | { status: "ready"; results: SearchResults; provider: DayProvider; fetchedAt: string; served: boolean | null }
+  | { status: "ready"; results: SearchResults; provider: DayProvider; fetchedAt: string; served: boolean | null; onTime: RouteOnTime | null }
   /** Neither the API nor the generator could give the day (an invalid date, say): what the generator threw. */
-  | { status: "error"; results: null; provider: null; fetchedAt: null; served: null; error: unknown };
+  | { status: "error"; results: null; provider: null; fetchedAt: null; served: null; onTime: null; error: unknown };
 
-const LOADING: RouteDayState = Object.freeze({ status: "loading", results: null, provider: null, fetchedAt: null, served: null });
+const LOADING: RouteDayState = Object.freeze({ status: "loading", results: null, provider: null, fetchedAt: null, served: null, onTime: null });
 
 /** Settled days kept per session; past this the least recently asked-for days go (a page asks for its days again on its next render). */
 const CAPACITY = 48;
@@ -137,7 +141,10 @@ function evict(keep: string): void {
  * The day from the provider's rows, built in the browser; the generator's when the API gave
  * nothing (or rows the browser couldn't build on); an error only when the generator fails too.
  */
-function settle(key: string, day: FlightInput, schedule: RouteDaySchedule | null): RouteDayState {
+function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteDayState {
+  const schedule = answer?.schedule ?? null;
+  // The figures are about the airlines and the routes, not the rows: they hold for the illustrative day too.
+  const onTime = answer?.onTime ?? null;
   if (schedule) {
     try {
       const results = optionsFromSchedule(schedule);
@@ -150,6 +157,7 @@ function settle(key: string, day: FlightInput, schedule: RouteDaySchedule | null
           provider: schedule.provider,
           fetchedAt: schedule.fetchedAt,
           served: schedule.served ?? null,
+          onTime,
         };
         return Object.freeze(ready);
       }
@@ -166,21 +174,28 @@ function settle(key: string, day: FlightInput, schedule: RouteDaySchedule | null
       provider: "generator",
       fetchedAt: new Date().toISOString(),
       served: hasNonstopService(day.origin, day.destination),
+      onTime,
     };
     return Object.freeze(ready);
   } catch (error) {
-    const failed: RouteDayState = { status: "error", results: null, provider: null, fetchedAt: null, served: null, error };
+    const failed: RouteDayState = { status: "error", results: null, provider: null, fetchedAt: null, served: null, onTime: null, error };
     return Object.freeze(failed);
   }
 }
 
+/** What a 200 gave: the schedule, and the on-time figures when the API sent valid ones. */
+interface DayAnswer {
+  schedule: RouteDaySchedule;
+  onTime: RouteOnTime | null;
+}
+
 /**
- * GET /api/flights/day for the day, within TIMEOUT_MS: the schedule from a 200 with one in it,
+ * GET /api/flights/day for the day, within TIMEOUT_MS: the schedule (and the on-time figures) from a 200 with one in it,
  * else null (a 404 when no API is configured, an error status, a network failure, a timeout, a
  * body that isn't the contract's) — the caller falls back to the generator. A 404 is remembered:
  * the route isn't there, so no later day of the session asks again.
  */
-async function fetchSchedule(day: FlightInput): Promise<RouteDaySchedule | null> {
+async function fetchSchedule(day: FlightInput): Promise<DayAnswer | null> {
   if (apiMissing) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -197,7 +212,9 @@ async function fetchSchedule(day: FlightInput): Promise<RouteDaySchedule | null>
       return null;
     }
     const body: unknown = await response.json();
-    return isDayResponse(body) ? body.schedule : null;
+    if (!isDayResponse(body)) return null;
+    const onTime = (body as { onTime?: unknown }).onTime;
+    return { schedule: body.schedule, onTime: isRouteOnTime(onTime) ? onTime : null };
   } catch {
     return null;
   } finally {

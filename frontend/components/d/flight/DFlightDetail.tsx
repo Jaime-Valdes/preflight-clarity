@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } 
 import { displayAircraftName } from "@preflight/shared/aircraft";
 import { compareToBenchmark, type Comparison } from "@preflight/shared/benchmarks";
 import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
+import { ON_TIME_DEFINITION, onTimeDetail, onTimeMissing, onTimeSource, onTimeTeaser } from "@preflight/shared/onTime";
 import { orderByPriorities, rateFlight } from "@preflight/shared/ratings";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import type { BodyType, Flight, SectionContext } from "@preflight/shared/types";
@@ -33,12 +34,14 @@ import { track } from "@/lib/analytics";
 import { useCompareList } from "@/lib/c/compare-store";
 import { formatFare } from "@/lib/c/format";
 import { itemId, type CompareItem } from "@/lib/c/model";
+import { onTimeFor } from "@/lib/d/onTime";
 import { usePriorities } from "@/lib/d/priorities";
 import { priceDeltaText, ratingsByKey } from "@/lib/d/view";
 import { useRouteDay } from "@/lib/flights/store";
 import { useNowMs } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { ChooseButton, priceStanding, tierProps } from "./ChooseButton";
+import { DAirlineSection, DOnTimeContext } from "./DAirlineSection";
 import { DFlightHeader } from "./DFlightHeader";
 
 /*
@@ -75,14 +78,6 @@ const COMFORT_VERDICT: Record<Comparison["verdict"], string> = {
   better: "Comfort above average",
   "about average": "Comfort about average",
   worse: "Comfort a little below average",
-};
-
-/**
- * Under "More detail", the airline section is named plainly and its collapsed line gives the on-time
- * figure only: no score for a named airline at the surface of the detail layer (the score stays inside).
- */
-const SECTION_OVERRIDES: Partial<Record<CSectionId, SectionOverride>> = {
-  airline: { title: "Airline", teaser: (flight) => `${flight.airlineStats.onTimePct}% on time, last 12 months` },
 };
 
 /** "regulator oversight (FAA)"; a generic regulator name reads as is — the AirlineSection's wording. */
@@ -131,7 +126,19 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
   const aircraftRating = ratings.find((r) => r.category === "aircraft");
   const label = flightContext(flight, day);
   // Where this day's schedule came from, for the credit under the header.
-  const { provider } = useRouteDay({ origin: flight.origin.code, destination: flight.destination.code, date: day.date });
+  const flightDay = useRouteDay({ origin: flight.origin.code, destination: flight.destination.code, date: day.date });
+  const { provider } = flightDay;
+  // The airline's on-time record (the US DOT's figures the API sent with the day; the searched day's when the flight's own isn't loaded).
+  const searchedDay = useRouteDay(day);
+  const onTime = useMemo(() => onTimeFor(flight, [flightDay.onTime, searchedDay.onTime]), [flight, flightDay.onTime, searchedDay.onTime]);
+  // Under "More detail", the airline section is named plainly and its collapsed line gives the on-time figure only: no
+  // score for a named airline at the surface of the detail layer (the score stays inside). The figure is the US DOT's
+  // (DAirlineSection reads it from DOnTimeContext), or a plain line where there is none.
+  const overrides = useMemo<Partial<Record<CSectionId, SectionOverride>>>(
+    () => ({ airline: { title: "Airline", teaser: () => onTimeTeaser(onTime), Body: DAirlineSection } }),
+    [onTime],
+  );
+  const missing = onTimeMissing(onTime);
 
   // Where this flight stands among the day's flights still to leave (the "vs cheapest" line and analytics):
   // its fare at this lead time, its rank and the dollars over the cheapest. Flights that left earlier today
@@ -381,14 +388,21 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
                 tint="cream"
                 title="Airline record"
                 // The airline's safety basis, worded as the airline section does — a footnote, never a rating or a figure here.
-                foot={`On time means arriving within 15 minutes of schedule. The airline section under More detail also covers the airline’s IOSA safety-audit status, ${oversightLabel(flight.crew.regulator)}, accident record and fleet age.`}
+                foot={`${onTime?.network != null ? `${ON_TIME_DEFINITION} ` : ""}The airline section under More detail ${onTime?.network != null ? "also " : ""}covers the airline’s IOSA safety-audit status, ${oversightLabel(flight.crew.regulator)}, accident record and fleet age.`}
               >
                 <Facts>
-                  <Fact
-                    main={`${stats.onTimePct}% on time`}
-                    sub={`Across the airline, last 12 months · ${stats.onTimeRoutePct}% on this route`}
-                    benchmark={<BenchmarkLine benchmark="onTimePct" value={stats.onTimePct} />}
-                  />
+                  {/* The US DOT's figures (docs/REAL_DATA.md): the network figure, the route's where it has one, the
+                      all-airline figure for the same months, and the credit; a plain line where there is no figure. */}
+                  {onTime && onTime.network !== null ? (
+                    <Fact
+                      main={`${onTime.network}% on time`}
+                      sub={onTimeDetail(onTime)}
+                      benchmark={<BenchmarkLine benchmark="onTimePct" value={onTime.network} against={onTime.industry} />}
+                      source={onTimeSource(onTime.period)}
+                    />
+                  ) : (
+                    <Fact main={missing.main} sub={missing.sub} />
+                  )}
                   <Fact
                     main={COMFORT_VERDICT[comfort.verdict]}
                     sub={`Legroom, seat width, cabin noise and what’s on board · ${stats.comfortScore.toFixed(1)} / 10`}
@@ -449,7 +463,9 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
             className="min-w-0 lg:col-start-1"
           />
 
-          <MoreDetail flight={flight} ctx={ctx} className="min-w-0 lg:col-start-1" />
+          <DOnTimeContext.Provider value={onTime}>
+            <MoreDetail flight={flight} ctx={ctx} overrides={overrides} className="min-w-0 lg:col-start-1" />
+          </DOnTimeContext.Provider>
 
           <OtherFlights
             id={OTHERS_ID}
@@ -518,13 +534,14 @@ function Facts({ children, className }: { children: ReactNode; className?: strin
   return <ul className={cn("flex flex-col gap-2.5", className)}>{children}</ul>;
 }
 
-/** One fact: the plain line, what it rests on, and (where one exists) the figure against its industry benchmark. */
-function Fact({ main, sub, benchmark }: { main: ReactNode; sub?: ReactNode; benchmark?: ReactNode }) {
+/** One fact: the plain line, what it rests on, (where one exists) the figure against its industry benchmark, and its source. */
+function Fact({ main, sub, benchmark, source }: { main: ReactNode; sub?: ReactNode; benchmark?: ReactNode; source?: ReactNode }) {
   return (
     <li>
       <span className="block text-[15px] font-bold leading-snug text-ink tabular-nums [overflow-wrap:anywhere]">{main}</span>
       {sub ? <span className="mt-0.5 block text-[13px] leading-snug text-ink-soft">{sub}</span> : null}
       {benchmark ? <span className="mt-1 block">{benchmark}</span> : null}
+      {source ? <span className="mt-1 block text-xs leading-snug text-ink-mute">{source}</span> : null}
     </li>
   );
 }
@@ -535,7 +552,17 @@ function Fact({ main, sub, benchmark }: { main: ReactNode; sub?: ReactNode; benc
  * collapsed disclosure — the deep detail, never the headline. Mounted on first
  * open and kept, so a section's state survives closing the block again.
  */
-function MoreDetail({ flight, ctx, className }: { flight: Flight; ctx: SectionContext; className?: string }) {
+function MoreDetail({
+  flight,
+  ctx,
+  overrides,
+  className,
+}: {
+  flight: Flight;
+  ctx: SectionContext;
+  overrides: Partial<Record<CSectionId, SectionOverride>>;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [opened, setOpened] = useState(false);
   const bodyId = useId();
@@ -577,7 +604,7 @@ function MoreDetail({ flight, ctx, className }: { flight: Flight; ctx: SectionCo
             <p className="mb-3 px-1 text-[13px] leading-snug text-ink-mute">
               The full sections for this flight. Open as much or as little as you like.
             </p>
-            <FlightSections flight={flight} ctx={ctx} overrides={SECTION_OVERRIDES} />
+            <FlightSections flight={flight} ctx={ctx} overrides={overrides} />
           </>
         ) : null}
       </div>

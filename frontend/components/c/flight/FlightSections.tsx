@@ -17,10 +17,12 @@ import type { Tone } from "@/lib/theme";
 /** The dashboard sections version C shows — not "Compare smoother options" or "Forecast alerts" (A/B only). */
 export type CSectionId = Exclude<SectionId, "compare" | "alerts">;
 
-/** Another title and/or teaser for one section (see FlightSectionsProps.overrides). */
+/** Another title, teaser and/or body for one section (see FlightSectionsProps.overrides). */
 export interface SectionOverride {
   title?: string;
   teaser?: (flight: Flight, ctx: SectionContext) => string;
+  /** A module-level component, so the body keeps its state across renders. */
+  Body?: ComponentType<SectionProps>;
 }
 
 interface CSection {
@@ -122,13 +124,19 @@ export function FlightSections({ flight, ctx, overrides }: FlightSectionsProps) 
             onToggle={(next) => toggle(section.id, next)}
           >
             <SectionBoundary>
-              <section.Body flight={flight} ctx={ctx} />
+              <BodyOf section={section} override={overrides?.[section.id]} flight={flight} ctx={ctx} />
             </SectionBoundary>
           </SectionCard>
         </div>
       ))}
     </div>
   );
+}
+
+/** The section's body, or the one its override names. */
+function BodyOf({ section, override, flight, ctx }: { section: CSection; override?: SectionOverride } & SectionProps) {
+  const Body = override?.Body ?? section.Body;
+  return <Body flight={flight} ctx={ctx} />;
 }
 
 /** One broken section body must not take the whole page down. */

@@ -50,10 +50,13 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
  * Compares a flight's figure with a benchmark. `tolerance` is the band treated as
- * "about average" (defaults to 3% of the benchmark, at least 0.5 unit).
+ * "about average" (defaults to 3% of the benchmark, at least 0.5 unit). `against`
+ * replaces the benchmark's figure with a measured one for the same thing (version D's
+ * on-time line compares with the US DOT's all-airline figure for the same months,
+ * shared/src/onTime.ts); left out, the table's figure stands, as in A, B and C.
  */
-export function compareToBenchmark(key: BenchmarkKey, value: number, tolerance?: number): Comparison {
-  const b = BENCHMARKS[key];
+export function compareToBenchmark(key: BenchmarkKey, value: number, tolerance?: number, against?: number): Comparison {
+  const b = against === undefined ? BENCHMARKS[key] : { ...BENCHMARKS[key], value: against };
   const diff = round1(value - b.value);
   const band = tolerance ?? Math.max(0.5, b.value * 0.03);
   const magnitude = Math.abs(diff);

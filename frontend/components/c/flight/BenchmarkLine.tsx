@@ -17,10 +17,11 @@ const VERDICT_UI: Record<Comparison["verdict"], { className: string; Icon: typeo
   "about average": { className: "text-ink-500", Icon: Minus },
 };
 
-/** "78%", "13 years", "31 in", "82 dB", "7.6/10", "83/100". */
-export function benchmarkValue(key: BenchmarkKey): string {
+/** "78%", "13 years", "31 in", "82 dB", "7.6/10", "83/100"; `against` stands in for the table's figure (see compareToBenchmark). */
+export function benchmarkValue(key: BenchmarkKey, against?: number): string {
   const b = BENCHMARKS[key];
-  return b.unit === "years" ? `${b.value} years` : b.unit === "in" || b.unit === "dB" ? `${b.value} ${b.unit}` : `${b.value}${b.unit}`;
+  const value = against ?? b.value;
+  return b.unit === "years" ? `${value} years` : b.unit === "in" || b.unit === "dB" ? `${value} ${b.unit}` : `${value}${b.unit}`;
 }
 
 /**
@@ -28,15 +29,15 @@ export function benchmarkValue(key: BenchmarkKey): string {
  * US industry average (78%)". `approx` softens a difference to "about 4 dB quieter…" where the
  * figure itself is a band rather than a reading (cabin noise — docs/FEASIBILITY.md).
  */
-export function benchmarkText(key: BenchmarkKey, value: number, approx = false): { comparison: Comparison; text: string } {
-  const comparison = compareToBenchmark(key, value);
+export function benchmarkText(key: BenchmarkKey, value: number, approx = false, against?: number): { comparison: Comparison; text: string } {
+  const comparison = compareToBenchmark(key, value, undefined, against);
   const lead = approx && comparison.verdict !== "about average" ? "about " : "";
   // Scores out of 10 or 100 come back as a bare number ("9 above …"): say "point(s)", as the on-time line does.
   const worded = /^\/\d+$/.test(BENCHMARKS[key].unit)
     ? comparison.text.replace(/^([\d.]+) (above|below)/, (_, n: string, dir: string) => `${n} ${Number(n) === 1 ? "point" : "points"} ${dir}`)
     : comparison.text;
   const sentence = `${lead}${worded}`;
-  return { comparison, text: `${sentence[0]!.toUpperCase()}${sentence.slice(1)} (${benchmarkValue(key)})` };
+  return { comparison, text: `${sentence[0]!.toUpperCase()}${sentence.slice(1)} (${benchmarkValue(key, against)})` };
 }
 
 interface BenchmarkLineProps {
@@ -44,11 +45,13 @@ interface BenchmarkLineProps {
   value: number;
   /** See benchmarkText. */
   approx?: boolean;
+  /** A measured figure for the benchmark in place of the table's (version D's on-time line; see compareToBenchmark). */
+  against?: number;
   className?: string;
 }
 
-export function BenchmarkLine({ benchmark, value, approx, className }: BenchmarkLineProps) {
-  const { comparison, text } = benchmarkText(benchmark, value, approx);
+export function BenchmarkLine({ benchmark, value, approx, against, className }: BenchmarkLineProps) {
+  const { comparison, text } = benchmarkText(benchmark, value, approx, against);
   const ui = VERDICT_UI[comparison.verdict];
   return (
     <span className={cn("flex items-start gap-1 text-xs leading-snug", ui.className, className)}>

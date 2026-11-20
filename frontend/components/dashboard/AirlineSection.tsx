@@ -40,8 +40,10 @@ function oversightLabel(regulator: string): string {
  * model-level data that exists any time before the flight, and each one that has
  * an industry benchmark (shared/src/benchmarks.ts) sits next to it — "2 points
  * below the US industry average (78%)" — so the number means something.
+ * `onTime` replaces the on-time block (version D shows the US DOT's figures, or says there are
+ * none); left out, the block is the generator's, as in A, B and C.
  */
-export function AirlineSection({ flight }: SectionProps) {
+export function AirlineSection({ flight, onTime }: SectionProps & { onTime?: ReactNode }) {
   const stats = flight.airlineStats;
   const routeLabel = `${flight.origin.code} → ${flight.destination.code}`;
   const noise = cabinNoiseBand(stats.cabinNoiseDb);
@@ -68,25 +70,27 @@ export function AirlineSection({ flight }: SectionProps) {
       </div>
 
       {/* On-time arrivals */}
-      <div>
-        <BlockLabel>On-time arrivals</BlockLabel>
-        <div className="mt-2 flex flex-col gap-3 rounded-2xl bg-canvas/70 p-4 ring-1 ring-inset ring-line/70">
-          <MeterBar
-            label="Across the airline · last 12 months"
-            value={stats.onTimePct}
-            hint={<BenchmarkLine benchmark="onTimePct" value={stats.onTimePct} />}
-          />
-          <MeterBar
-            label={`On this route · ${routeLabel} · last 12 months`}
-            value={stats.onTimeRoutePct}
-            hint={<BenchmarkLine benchmark="onTimePct" value={stats.onTimeRoutePct} />}
-          />
-          <p className="text-xs leading-snug text-ink-500">
-            Share of flights arriving within 15 minutes of schedule over the last 12 months. The US industry average
-            counts every airline&rsquo;s flights.
-          </p>
+      {onTime ?? (
+        <div>
+          <BlockLabel>On-time arrivals</BlockLabel>
+          <div className="mt-2 flex flex-col gap-3 rounded-2xl bg-canvas/70 p-4 ring-1 ring-inset ring-line/70">
+            <MeterBar
+              label="Across the airline · last 12 months"
+              value={stats.onTimePct}
+              hint={<BenchmarkLine benchmark="onTimePct" value={stats.onTimePct} />}
+            />
+            <MeterBar
+              label={`On this route · ${routeLabel} · last 12 months`}
+              value={stats.onTimeRoutePct}
+              hint={<BenchmarkLine benchmark="onTimePct" value={stats.onTimeRoutePct} />}
+            />
+            <p className="text-xs leading-snug text-ink-500">
+              Share of flights arriving within 15 minutes of schedule over the last 12 months. The US industry average
+              counts every airline&rsquo;s flights.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Comfort */}
       <div>
