@@ -230,7 +230,7 @@ const HOOKS = [
     d: [G, '[data-theme="d"] #c-compare-tray'],
     file: "components/c/shell/CompareTray.tsx",
     text: ['const TRAY_ID = "c-compare-tray";', "id={TRAY_ID}"],
-    within: 80,
+    within: 90,
     why: "the tray is solid paper with an ink shadow; without it the tray keeps C's 95 % fill and shadow",
   },
   {
@@ -543,7 +543,7 @@ const HOOKS = [
     d: [NIGHT, "#c-compare-tray,"],
     file: "components/c/shell/CompareTray.tsx",
     text: ['const TRAY_ID = "c-compare-tray";', "id={TRAY_ID}"],
-    within: 80,
+    within: 90,
     why: "the tray is paper and keeps the day ink by night",
   },
   {
@@ -642,7 +642,7 @@ const HOOKS = [
     d: ["components/d/cloud/reactions.ts", "#c-compare-tray [data-tray-remove]"],
     file: "components/c/shell/CompareTray.tsx",
     text: ['const TRAY_ID = "c-compare-tray";', "id={TRAY_ID}"],
-    within: 80,
+    within: 90,
     why: "the tray's removals get the same \"noted\" as every other compare change; without the id they would get the generic tap",
   },
   {

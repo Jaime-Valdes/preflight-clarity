@@ -394,7 +394,9 @@ for (const o of real.options) {
   const f = o.flight;
   check(o.key === optionKey(f) && f.id === hashId(`c|JFK|LAX|${REAL_DAY}|${o.key}`) && JSON.stringify(f.input) === JSON.stringify({ origin: "JFK", destination: "LAX", date: REAL_DAY }), `${tag}: key / id / input`);
   check(Number.isInteger(o.fareUsd) && o.fareUsd >= 39 && [0, 1, 35, 63, 330].every((d) => Number.isInteger(fareAt(o, d)) && fareAt(o, d) >= 39) && fareAt(o, 63) === o.fareUsd, `${tag}: fare ${o.fareUsd}`);
-  check(f.airborneMin === realDay.airborneMin && f.origin.code === "JFK" && f.destination.code === "LAX", `${tag}: the day's shared facts`);
+  // AA2's published block is shorter than the day's air time: its air time fits inside the block (checked below).
+  const airborneOk = o.key === "AA2" ? f.airborneMin < realDay.airborneMin : f.airborneMin === realDay.airborneMin;
+  check(airborneOk && f.origin.code === "JFK" && f.destination.code === "LAX", `${tag}: the day's shared facts`);
   checkFlightShape(tag, f);
 }
 check(new Set(real.options.map((o) => o.flight.id)).size === real.options.length, "real rows: flight ids unique");
