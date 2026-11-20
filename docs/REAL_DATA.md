@@ -23,7 +23,7 @@ contracts only. Everything below is built on what a small team can actually sign
 | 2 | Airport weather at both ends: condition, temperature (7 days), wind, gusts, direction, visibility (2 days) | **NOAA AWC data API** (TAF, METAR), **NWS API** (US airports), **Open-Meteo** (airports abroad) | Free, no key. AWC: 100 requests/minute, 30 days of history. Open-Meteo free tier is non-commercial (paid plans exist). | NOAA data is public domain: store it freely. Open-Meteo needs attribution (CC BY 4.0). |
 | 3 | Cruise turbulence forecast within 2 days (the "forecast" basis of the cruise rating) | **NOAA GTG 3-km CONUS grids** on NOMADS (EDR along the great-circle path, 18-hour horizon, hourly cycles); AWC G-AIRMET Tango, SIGMETs and PIREPs as the simpler first pass | Free. GRIB2 files 150–170 MB per forecast hour (use the `.idx` byte ranges); 120 requests/minute per IP; only about two days are kept online, so archive what we sample. | US domestic only. International and oceanic routes need WAFS (eligibility unclear) or a paid EDR API (Meteomatics, Met Office). |
 | 4 | Route history for booking-time ratings: smooth share by route and month, the usual bumpy phase, the calmest departure window; airport wind and gust patterns by month and hour | **IEM PIREP archive** (counts of turbulence reports near the path by month and hour), **IEM METAR archive** (airport climatology), BTS T-100 for traffic normalisation | Free, public domain. 1 request per second per IP; precompute monthly tables. | A bias to note: pilots report bumps, rarely smooth air; normalise by traffic. |
-| 5 | Airline record: on-time across the network and on this route, last 12 months | **BTS On-Time Performance** (marketing-carrier monthly files, about 38 MB each) and UK CAA punctuality CSVs for UK routes | Free, public domain; 2–3 months behind. | US domestic and UK routes only; other carriers get a network figure from annual reports or "not available". |
+| 5 | Airline record: on-time across the network and on this route, last 12 months | **BTS On-Time Performance** (reporting-carrier monthly files, about 30 MB each; built 2026-11-20, see "Status: airline on-time from BTS") and UK CAA punctuality CSVs for UK routes | Free, public domain; 2–3 months behind. | US domestic and UK routes only; other carriers get a network figure from annual reports or "not available". |
 | 5 | The safety basis | IOSA registry (hand-checked quarterly), FAA IASA categories, EU Air Safety List, NTSB | Free to read; no APIs. | Show facts (registered, overseen by, not on the EU list), never a number. The 92–99 "safety score" goes. |
 | 6 | Aircraft: fleet-average age per airline and type; the assigned tail, its age and delivery year a day out | **AeroDataBox** aircraft-by-registration and fleet endpoints; **FAA registry** (US tails, free); airline 10-K fleet tables | Included in the AeroDataBox plan; FAA registry is a free weekly download. | Fleet ages recomputed within the 7-day cache window unless on a higher plan. |
 | 6 | Seat pitch, width, layout, seat count | A hand-maintained table per airline and subfleet from the airlines' own aircraft pages (about 150 rows), seatmaps.com later | Free (manual) or quote. | No free machine-readable source exists; SeatGuru is stale and unlicensed. |
@@ -69,7 +69,8 @@ family, the A-check explainer, the seat-zone model (over the wing is smoothest).
 2. Real airport weather (free): the takeoff and landing rating within 7 and 2 days.
 3. Real route history (free archives, precomputed monthly): booking-time ratings for cruise and
    takeoff/landing on real climatology.
-4. Airline on-time from BTS (free, monthly job) and the factual safety basis; drop the invented scores.
+4. Airline on-time from BTS (free, monthly job; built on branch `data/bts-ontime`, 2026-11-20) and the factual
+   safety basis; drop the invented scores.
 5. Aircraft and airframe facts (AeroDataBox + FAA registry) and the seat-spec table.
 6. Cruise turbulence forecast from GTG grids (US domestic), the heaviest build.
 7. Day-of status (gate, delays) on the flight page.
@@ -86,6 +87,94 @@ Fares and seat availability wait for a business decision (booking partner) and s
 - Open-Meteo: attribution; paid plan once commercial.
 - Fares (if ever shown as real): full price at the moment shown, code-share operator named on the first
   screen, quoted-at time visible.
+
+## Status (2026-11-20): airline on-time from BTS (branch `data/bts-ontime`)
+
+Order of work item 4, first half (the source map's row 5): version D's airline on-time numbers are the US DOT's,
+not the generator's. Built on branch `data/bts-ontime`; not on main or production yet.
+
+- **Source**: the US DOT Bureau of Transportation Statistics, TranStats "Reporting Carrier On-Time Performance
+  (1987-present)", the monthly PREZIP files
+  (`https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_YYYY_M.zip`, about
+  30 MB each, a 275 MB CSV inside). Public domain, free, no key. US domestic flights of the reporting carriers only.
+- **Why the Reporting Carrier file, not the Marketing Carrier file** (the source map said marketing): AeroDataBox's
+  rows name the *operating* carrier (the JFK fixture lists "YX 4512, Republic Airways" for an American Eagle
+  flight), and so does the generator. The Reporting Carrier file is keyed by the operating carrier
+  (`IATA_CODE_Reporting_Airline`), so a schedule row's code finds its figure directly, and the network figures are
+  the ones DOT's Air Travel Consumer Report ranks. With the Marketing file a Republic row would have found no
+  figure, and "American" would have mixed in Envoy, PSA, Piedmont, Republic and SkyWest flights.
+- **Definition** (DOT's, as the Air Travel Consumer Report applies it): on time is arriving less than 15 minutes
+  after the scheduled arrival (`ArrDel15 = 0`). Every scheduled flight in the file counts; a cancelled or diverted
+  flight counts as not on time. (A flown flight without an arrival indicator would also count as not on time; the
+  current period has none.)
+- **Period**: October 2025 to September 2026 (`2025-10` to `2026-09`), the latest twelve months published on 2026-11-20 (September 2026
+  was posted on 19 November; BTS runs about two months behind). 7,057,696 scheduled flights.
+- **Industry figure** (every reporting carrier together, the benchmark line in D): **75.1%** (shown as
+  75%). It replaces the hard-coded 78% ("DOT ATCR 2024") in D only; A, B and C keep 78%
+  (`BENCHMARKS.onTimePct` is unchanged; D passes the measured figure through `BenchmarkLine`'s `against`).
+- **Sample floors**: a carrier's network figure needs flights in every month of the period and 1,000 scheduled
+  flights (every reporting carrier has far more). Two carriers reported in only part of it and are left out, so no
+  figure claims months it does not cover: Hawaiian (HA, October to December 2025; its flights are reported under
+  Alaska from January 2026) and Spirit (NK, October 2025 to May 2026). Their flights still count in the industry
+  figure. A Hawaiian or Spirit row shows "not available". A carrier's figure on one route (origin → destination,
+  one direction) needs **200** flights, about four a week for a year: at an on-time share near 80% the standard error is then under 3 points, and no single
+  day's flights move it by more than a point or two. Below that the route line is left out and the network figure
+  stays.
+- **The table**: `backend/src/lib/onTime/bts-ontime.json`, 177,068 bytes (52,878 gzipped): the period, the
+  industry figure, 12 carriers and 4,765 routes with 7,399 carrier-route figures, each as
+  `[on-time %, flights]`. It is bundled into the API only. `GET /flights/day` adds `onTime` beside `schedule`
+  (`{ source: "bts", from, to, industry, carriers, routes }`: every network figure and the day's own routes, about
+  640 bytes for JFK→LAX), computed on the way out and never stored with the cached day, so a refreshed table
+  shows at once; a client that predates it ignores the field, and the type is `RouteOnTime` in
+  `shared/src/onTime.ts`. D's first load does not grow (the client bundle carries no table). The CDN keeps a
+  `/flights/day` answer for 10 minutes, figures included.
+- **What D shows** (`frontend/lib/d/onTime.ts`, the flight page's Airline record card, More detail → Airline, the
+  compare table's On time row): the network figure ("79% on time" for Delta), "Across the airline’s US flights · 72% on
+  this route" (the route part only with a route figure), the line against the industry figure for the same months, and
+  the credit "On-time: US DOT, BTS · Oct 2025–Sep 2026" (under the figure on the flight page and in the airline section,
+  under the compare table). The definition replaces "within 15 minutes" in the card's footnote. The figures are
+  about the airline and the route, not the schedule, so the illustrative (generator) flights get them too when
+  their carrier is a US reporting carrier. Where there is no figure: "On-time record not available · The US DOT
+  publishes on-time figures for the larger US airlines, for flights within the US" (non-US carriers, carriers too
+  small to report); the compare cell says "Not available · The US DOT has no figure for this airline". When a day
+  came without figures (the browser's own illustrative day, when the API cannot be reached) the line says "The US
+  DOT figures did not load this time". The generator's invented `airlineStats.onTimePct` and `onTimeRoutePct` are
+  never shown in D; A, B and C still show them, unchanged.
+- **Refresh monthly** (after BTS posts a month, usually mid-month): download the latest twelve months into a new,
+  empty folder, then run the script from the repo root with the files as arguments:
+
+  ```sh
+  mkdir -p /tmp/bts-raw && cd /tmp/bts-raw
+  for m in 2025_10 2025_11 2025_12 2026_1 2026_2 2026_3 2026_4 2026_5 2026_6 2026_7 2026_8 2026_9; do
+    curl -sS --fail -O "https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_$m.zip"; sleep 2
+  done
+  cd - && npx tsx backend/scripts/bts-ontime.ts --out backend/src/lib/onTime/bts-ontime.json /tmp/bts-raw/*.zip
+  ```
+
+  The script streams each CSV out of its zip (no unzip, no new dependency; about 2 s a month), reads the months
+  from the rows, refuses a repeated or missing month, and prints the period, the industry figure, every carrier and
+  the size. Then `npm run test -w backend` (the bundled-table test checks twelve consecutive months) and commit the
+  JSON. Never commit the downloads.
+- **Tests**: `backend/scripts/test.ts` counts a tiny fixture (`backend/fixtures/bts/tiny.csv` and the same file
+  zipped beside a readme) and checks the definition, the floors, direction, the ZIP reader, the bundled table, the
+  lookup and `GET /flights/day`'s `onTime`; `shared/scripts/check-on-time.ts` checks the copy (no banned words) and
+  the lookup's edge cases.
+
+Example figures (Oct 2025–Sep 2026): network: DL 79.0%, AS 78.4%, MQ 78.7%, UA 77.2%, OO 76.7%, WN 74.0%, YX 73.8%, G4 72.9%,
+AA 72.5%, F9 70.8%, OH 69.2%, B6 68.1%. JFK→LAX: AA 75.6% (3,335 flights), DL 72.4% (3,375), B6 69.5% (3,482);
+LAX→JFK: DL 76.0%, B6 73.8%, AA 71.6%. LGA→ORD: AA 64.7%, YX 61.6%, UA 60.3%, DL 59.2%. The route figures run from
+200 to several thousand flights (median 643).
+
+Not done in this step: the factual safety basis (the other half of item 4: IOSA, FAA IASA, the EU list) and
+dropping the invented safety score and cabin-crew rating, which the airline section under More detail still shows;
+UK CAA punctuality for UK routes.
+
+## Status (2026-11-20): step 1 is live in production
+
+Step 1 (real schedules, `ec2d358`) went to production on 2026-11-20 at 06:29:43 UTC (the GitHub deployment
+"Production – preflight-clarity", status success). `GET /flights/day` answers with `Cache-Control: public,
+max-age=600`, so Vercel's CDN keeps a route-day for 10 minutes; the server's own route-day cache (memory, then
+Supabase `route_days`, 24 hours) was verified live: a CDN miss came back with `cached: true`.
 
 ## Status (2026-11-19): step 1 is brought onto main
 
