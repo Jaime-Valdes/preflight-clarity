@@ -157,6 +157,13 @@ not the generator's. Built on branch `data/bts-ontime`; not on main or productio
     A failed download, precompute or check fails the job (GitHub emails the owner) and opens nothing. An open pull
     request for the same month (the 27th after a successful 20th) means nothing to do. A rebuilt table that is
     byte-identical to the committed one opens nothing.
+  - **Tested on 2026-11-20** (branch `ci/bts-refresh`, a dry run with `end_month` 2026-09,
+    [run 44789424904](https://github.com/Jaime-Valdes/preflight-clarity/actions/runs/44789424904)): the runner
+    downloads from transtats.bts.gov without trouble (twelve months in 221 s, 14–20 s each), and the whole job takes
+    about 4½ minutes; the rebuilt table was byte-identical to the committed one (sha256 `c47f4cd8…`), as it was
+    locally. The install step runs `npm ci` with npm 11.6.1 (the version that wrote `package-lock.json`): npm 10
+    and the runner's npm 11.19.1 refuse the lockfile ("Missing: @emnapi/core@1.11.3 from lock file"), so the first
+    two test runs stopped there. Once the lockfile is rewritten by a current npm, plain `npm ci` will do.
   - **The repository setting it needs**: Settings → Actions → General → Workflow permissions → "Allow GitHub
     Actions to create and approve pull requests" (off as of 2026-11-20). While it is off, the run pushes the
     branch, then fails with an error saying so and a compare link to open the pull request by hand; after turning
@@ -181,8 +188,8 @@ not the generator's. Built on branch `data/bts-ontime`; not on main or productio
     npx tsx backend/scripts/bts-summary.ts --old /tmp/bts-old.json --new backend/src/lib/onTime/bts-ontime.json
     ```
 
-    then commit only the JSON on a branch and open the pull request with the summary. TranStats can be slow (a
-    month took about three minutes at home on 2026-11-20), so a full download can take half an hour.
+    then commit only the JSON on a branch and open the pull request with the summary. TranStats can be slow from
+    home (about three minutes a month on 2026-11-20, 35 minutes for the twelve, against 16 s a month on the runner).
   - The precompute streams each CSV out of its zip (no unzip, no new dependency; about 2 s a month), reads the
     months from the rows, refuses a repeated or missing month, and prints the period, the industry figure, every
     carrier and the size. The bundled-table test checks twelve consecutive months. The example figures below and
