@@ -486,3 +486,69 @@ export function makeFlightNumber(rng: Rng, airline: Airline, longHaul: boolean):
 export function toAirline(profile: AirlineProfile): Airline {
   return { code: profile.code, name: profile.name, country: profile.country };
 }
+
+// ── Carriers outside the catalogue (version D) ──────────────────────────────
+//
+// A published schedule (schedule.ts) can name a carrier AIRLINES doesn't list: a regional partner
+// flying under its own code, a low-cost carrier. fallbackAirlineProfile gives it a plain profile so
+// buildScheduledFlight can build the flight: standard fare tier, no hubs or fleet, the pilots' rules
+// from its home country (crewFor), a registration in that country's style. The country comes from
+// the caller, or from the short list below of carriers real schedules name on the catalogue's
+// routes; otherwise it is unknown and the crew copy falls back to "the national aviation authority".
+
+/** Home countries of carriers outside the catalogue that real schedules name on the catalogue's routes. */
+const CARRIER_COUNTRIES: Readonly<Record<string, string>> = {
+  // US regional partners and point-to-point carriers
+  OO: "US", YX: "US", MQ: "US", OH: "US", PT: "US", "9E": "US", YV: "US", G7: "US", ZW: "US", C5: "US", QX: "US",
+  NK: "US", F9: "US", G4: "US", SY: "US", MX: "US", XP: "US",
+  // Canada and Mexico
+  WS: "CA", PD: "CA", F8: "CA", VB: "MX", Y4: "MX",
+  // Europe
+  U2: "GB", LS: "GB", BY: "GB", FR: "IE", W6: "HU", VY: "ES", UX: "ES", EW: "DE", DE: "DE", HV: "NL", TO: "FR",
+  DY: "NO", D8: "NO", OK: "CZ", SN: "BE", BT: "LV", WK: "CH", PC: "TR",
+  // Middle East
+  FZ: "AE", G9: "AE", SV: "SA", WY: "OM", GF: "BH", RJ: "JO",
+  // Asia and Oceania
+  AI: "IN", SG: "IN", IX: "IN", QP: "IN", MU: "CN", CZ: "CN", HU: "CN", "3U": "CN", ZH: "CN", MF: "CN",
+  OZ: "KR", "7C": "KR", LJ: "KR", TW: "KR", MM: "JP", GK: "JP", CI: "TW", JX: "TW", HX: "HK", UO: "HK", TR: "SG",
+  AK: "MY", D7: "MY", OD: "MY", FD: "TH", "5J": "PH", VJ: "VN", JT: "ID", QG: "ID", JQ: "AU", VA: "AU", FJ: "FJ",
+  // Latin America and Africa
+  G3: "BR", AD: "BR", H2: "CL", JA: "CL", P5: "CO", FA: "ZA", "4Z": "ZA", WB: "RW", MK: "MU",
+};
+
+/** Registration patterns by country, for makeTailNumber ("#" → digit, "L" → letter). Unknown countries get a US-style tail. */
+const REGISTRATIONS: Readonly<Record<string, readonly string[]>> = {
+  US: ["N###LL"], CA: ["C-FLLL", "C-GLLL"], MX: ["XA-LLL"], GB: ["G-LLLL"], IE: ["EI-LLL"], FR: ["F-HLLL"], DE: ["D-ALLL"],
+  NL: ["PH-LLL"], BE: ["OO-SLL"], ES: ["EC-LLL"], PT: ["CS-TLL"], IT: ["I-LLLL"], CH: ["HB-JLL"], AT: ["OE-LLL"], DK: ["OY-LLL"],
+  NO: ["LN-LLL"], SE: ["SE-LLL"], FI: ["OH-LLL"], IS: ["TF-LLL"], PL: ["SP-LLL"], CZ: ["OK-LLL"], HU: ["HA-LLL"], GR: ["SX-LLL"],
+  TR: ["TC-LLL"], LV: ["YL-LLL"], AE: ["A6-LLL"], QA: ["A7-LLL"], SA: ["HZ-LLL"], OM: ["A4O-LL"], BH: ["A9C-LL"], JO: ["JY-LLL"],
+  IL: ["4X-LLL"], IN: ["VT-LLL"], JP: ["JA###L"], KR: ["HL####"], CN: ["B-####"], HK: ["B-LLL"], TW: ["B-#####"], SG: ["9V-LLL"],
+  MY: ["9M-LLL"], TH: ["HS-LLL"], ID: ["PK-LLL"], PH: ["RP-C####"], VN: ["VN-A###"], AU: ["VH-LLL"], NZ: ["ZK-LLL"], FJ: ["DQ-FLL"],
+  BR: ["PR-LLL"], CO: ["HK-####"], CL: ["CC-LLL"], AR: ["LV-LLL"], PE: ["OB-####"], PA: ["HP-####"], ZA: ["ZS-LLL"], EG: ["SU-LLL"],
+  ET: ["ET-ALL"], KE: ["5Y-LLL"], MA: ["CN-LLL"], NG: ["5N-LLL"], RW: ["9XR-LL"], MU: ["3B-LLL"],
+};
+
+/** What a fallback profile lists as amenities: things most airlines offer, said loosely. */
+const FALLBACK_AMENITIES: readonly string[] = ["Snacks and drinks on board", "Wi-Fi on many flights", "Streaming entertainment on many flights"];
+
+/**
+ * A plain profile for a carrier outside the catalogue: standard fare tier, no hubs, no fleet, the
+ * regulator by country (the caller's, else CARRIER_COUNTRIES, else unknown). `name` as the provider
+ * gives it, the code when it gives none. Deterministic: the same inputs give an equal profile.
+ */
+export function fallbackAirlineProfile(code: string, name?: string, country?: string): AirlineProfile {
+  const iata = code.trim().toUpperCase();
+  const home = country?.trim().toUpperCase() || CARRIER_COUNTRIES[iata] || "";
+  return {
+    code: iata,
+    name: name?.trim() || iata,
+    country: home,
+    region: regionOf(home),
+    hubs: [],
+    fleet: [],
+    tailPatterns: REGISTRATIONS[home] ?? REGISTRATIONS.US,
+    amenities: FALLBACK_AMENITIES.slice(),
+    // Nothing reads the network flags of a fallback (it never enters the nonstop rule); off is the honest value.
+    longHaul: false,
+  };
+}

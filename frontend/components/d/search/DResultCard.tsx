@@ -3,6 +3,7 @@
 import { ArrowRight, Check, ChevronDown, Plus } from "lucide-react";
 import Link from "next/link";
 import { useId, useRef, useState } from "react";
+import { displayAircraftName } from "@preflight/shared/aircraft";
 import { formatDuration, formatTime12 } from "@preflight/shared/dates";
 import type { Rating } from "@preflight/shared/ratings";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
@@ -156,7 +157,7 @@ export function DResultCard({
             </span>
           </h3>
           <p className="mt-0.5 text-[13px] leading-snug text-ink-mute">
-            <span className="tabular-nums">{flight.flightNumber}</span> · {flight.aircraft.fullName}
+            <span className="tabular-nums">{flight.flightNumber}</span> · {displayAircraftName(flight.aircraft)}
             {flight.aircraft.bodyType === "wide" ? " · wide-body" : ""}
             <span className="sr-only"> · {airframe ? "assigned aircraft" : "scheduled aircraft"}</span>
           </p>

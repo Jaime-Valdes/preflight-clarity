@@ -903,7 +903,7 @@ function rateApproachForecast(f: Flight, availability: Availability): Rating {
 // ── Aircraft size ───────────────────────────────────────────────────────────
 
 /** The stretched single-aisle types: longer and heavier than their siblings (said in the Size factor; the tier follows the seats). */
-const STRETCHED_NARROW_BODIES = new Set(["A321neo", "757-200", "737-900ER"]);
+const STRETCHED_NARROW_BODIES = new Set(["A321neo", "757-200", "737-900ER", "A321-200", "737 MAX 9"]);
 /** A single-aisle jet with at least this many seats in the airline's configuration is a Mid-size jet. */
 const MID_SIZE_SEATS = 185;
 

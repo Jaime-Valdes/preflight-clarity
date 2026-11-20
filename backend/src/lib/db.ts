@@ -11,6 +11,7 @@
  */
 import { resolve } from "node:path";
 import type { DFeedback, SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
+import type { RouteDayStore } from "./flights/types";
 import { createFileStore, type FileStore } from "./store/file";
 import { createSupabaseStore, supabaseConfig } from "./store/supabase";
 import type { ResponseStore } from "./store/types";
@@ -71,4 +72,9 @@ export async function upsertDFeedback(feedback: DFeedback): Promise<void> {
 /** All d_feedback rows, newest first. Throws on error. */
 export async function listDFeedback(): Promise<DFeedback[]> {
   return store().listDFeedback();
+}
+
+/** The durable layer of the route-day cache (lib/flights/cache.ts): Supabase or the local file; null without storage, when the memory cache works alone. */
+export function routeDayStore(): RouteDayStore | null {
+  return storageKind() === "none" ? null : store();
 }

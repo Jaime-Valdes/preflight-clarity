@@ -168,9 +168,10 @@ function seasonOf(date: string): Season {
 /**
  * Two-hour air blocks on odd hours (05–07, 07–09, … 23–01), so no block straddles the 11:00 and
  * 17:00 edges of the time-of-day windows. Every flight in a block flies in one bump draw, made for
- * a departure in its middle (the last block's at 23:30).
+ * a departure in its middle (the last block's at 23:30). Exported for schedule.ts, which gives a
+ * published flight the same block as a generated one at that time.
  */
-function airBlockOf(departMin: number): { start: number; airMin: number } {
+export function airBlockOf(departMin: number): { start: number; airMin: number } {
   const start = 60 + Math.floor((departMin - 60) / 120) * 120;
   return { start, airMin: Math.min(start + 60, LAST_DEPARTURE) };
 }
@@ -678,4 +679,42 @@ export function dayOverview(query: FlightInput, date: string): DayOverview {
       bestScore: options.reduce((max, o) => Math.max(max, o.flight.smoothness.score), 0),
     }),
   );
+}
+
+// ── Published schedules (version D) ────────────────────────────────────────
+//
+// schedule.ts turns a provider's rows into the FlightOption shape above. These give it the two
+// pieces of this file it needs: the generator's own departures for a day, so the backend's generator
+// provider and the tests share one path with searchFlights, and the fare path searchFlights uses.
+// Additive: nothing above changes.
+
+/** One departure of the generator's timetable on a day: the facts a schedule publishes. */
+export interface ScheduledDeparture {
+  /** Operating carrier, IATA. */
+  airline: string;
+  /** "DL 1423" */
+  flightNumber: string;
+  /** Catalogue model key. */
+  aircraft: string;
+  /** Local "HH:MM". */
+  departTime: string;
+  /** Published gate-to-gate minutes. */
+  blockMin: number;
+}
+
+/** The generator's departures for a route-day, by departure time: what searchFlights builds its options from. */
+export function scheduledDepartures(query: FlightInput): ScheduledDeparture[] {
+  const day = routeDay(normalizeInput(query));
+  return departuresFor(day).map((d) => ({
+    airline: d.carrier.airline.code,
+    flightNumber: d.flightNumber,
+    aircraft: d.aircraft,
+    departTime: minutesToTime(d.departMin),
+    blockMin: d.blockMin,
+  }));
+}
+
+/** The illustrative base fare of a scheduled flight, through the path searchFlights uses (fareFor). */
+export function illustrativeFare(day: RouteDay, airline: AirlineProfile, departMin: number, key: string): number {
+  return fareFor(day, airline, departMin, key);
 }
