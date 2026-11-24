@@ -19,6 +19,7 @@ import {
 import type { DFeedback, SessionRecord, Signup, StorageKind } from "@preflight/shared/types";
 import { useHydrated } from "@/lib/hooks";
 import { ChangeBlock } from "./ChangeBlock";
+import { DResultsTab } from "./DResultsTab";
 import { ChangeByAnswerBlock } from "./ChangeByAnswerBlock";
 import { DistributionsBlock } from "./DistributionsBlock";
 import { EngagementBlock } from "./EngagementBlock";
@@ -31,6 +32,7 @@ import { PartsBlock } from "./PartsBlock";
 import { PrePostBlock } from "./PrePostBlock";
 import { ResponsesTable } from "./ResponsesTable";
 import { ResultsSkeleton } from "./ResultsSkeleton";
+import { ResultsTabBar, useResultsTab } from "./ResultsTabs";
 import { SignupsTable } from "./SignupsTable";
 import { Notice } from "./bits";
 import { downloadCsv } from "./download";
@@ -78,6 +80,7 @@ function isPlausibleSignup(value: unknown): value is Signup {
  */
 export function ResultsDashboard({ records, signups, signupsNote, dFeedback = NO_FEEDBACK, storage, banner }: ResultsDashboardProps) {
   const hydrated = useHydrated();
+  const [tab, setTab] = useResultsTab();
   const [filters, setFilters] = useState<StatsFilters>(DEFAULT_FILTERS);
 
   const all = useMemo(() => sortNewestFirst(records.filter(isPlausibleRecord)), [records]);
@@ -111,6 +114,12 @@ export function ResultsDashboard({ records, signups, signupsNote, dFeedback = NO
     [dFeedback, filters.includeTest],
   );
 
+  /** Every well-formed Flight Day Pack row, for the Version D tab (which has its own filters). */
+  const shownAllFeedback = useMemo(
+    () => dFeedback.filter((f) => typeof f === "object" && f !== null && typeof f.id === "string"),
+    [dFeedback],
+  );
+
   if (!hydrated) return <ResultsSkeleton />;
 
   // ph-no-capture: PostHog starts on every route (root layout). This page shows
@@ -118,47 +127,57 @@ export function ResultsDashboard({ records, signups, signupsNote, dFeedback = NO
   // left out of autocapture (docs/ANALYTICS.md).
   return (
     <div className="ph-no-capture mx-auto w-full max-w-6xl animate-fade-up px-4 pb-16 pt-6 sm:px-6 sm:pt-10 lg:px-8">
-      <ResultsHeader
-        total={all.length}
-        shown={filtered.length}
-        storage={storage}
-        filters={filters}
-        onFiltersChange={setFilters}
-        onDownload={(scope) => downloadCsv(recordsToCsv(scope === "all" ? all : filtered), `preflight-clarity-sessions-${scope}`)}
-      />
+      <ResultsTabBar tab={tab} onChange={setTab} />
 
-      {banner || storage === "file" ? (
-        <div className="mt-5 flex flex-col gap-2">
-          {banner ? <Notice icon={<Info aria-hidden />}>{banner}</Notice> : null}
-          {storage === "file" ? (
-            <Notice tone="sand" icon={<HardDrive aria-hidden />}>
-              {FILE_BANNER}
-            </Notice>
-          ) : null}
+      {tab === "d" ? (
+        <div role="tabpanel" id="results-panel-d" aria-labelledby="results-tab-d">
+          <DResultsTab signups={signups.filter(isPlausibleSignup)} dFeedback={shownAllFeedback} />
         </div>
-      ) : null}
+      ) : (
+        <div role="tabpanel" id="results-panel-study" aria-labelledby="results-tab-study" className="mt-6">
+          <ResultsHeader
+            total={all.length}
+            shown={filtered.length}
+            storage={storage}
+            filters={filters}
+            onFiltersChange={setFilters}
+            onDownload={(scope) => downloadCsv(recordsToCsv(scope === "all" ? all : filtered), `preflight-clarity-sessions-${scope}`)}
+          />
 
-      <KpiRow counts={counts} filtered={filtered} />
+          {banner || storage === "file" ? (
+            <div className="mt-5 flex flex-col gap-2">
+              {banner ? <Notice icon={<Info aria-hidden />}>{banner}</Notice> : null}
+              {storage === "file" ? (
+                <Notice tone="sand" icon={<HardDrive aria-hidden />}>
+                  {FILE_BANNER}
+                </Notice>
+              ) : null}
+            </div>
+          ) : null}
 
-      {/*
-        Dense flow so the full-width breakdown can follow "Anxiety change" in
-        reading order while "Which parts" still fills the half-column beside it
-        on desktop (no empty cell).
-      */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-flow-row-dense lg:grid-cols-2">
-        <PrePostBlock reports={measures} className="lg:col-span-2" />
-        <ChangeBlock records={filtered} />
-        <ChangeByAnswerBlock records={filtered} className="lg:col-span-2" />
-        <PartsBlock feedback={feedback} />
-        <EngagementBlock records={filtered} />
-        <DistributionsBlock records={filtered} />
-        <ExplorationBlock records={filtered} className="lg:col-span-2" />
-        <OpenTextBlock answers={texts} className="lg:col-span-2" />
-        <InterestBlock stats={interest} records={base} note={signupsNote} className="lg:col-span-2" />
-        <SignupsTable signups={shownSignups} dFeedback={shownFeedback} className="lg:col-span-2" />
-        <ResponsesTable records={filtered} className="lg:col-span-2" />
-        <InterpretationNote className="lg:col-span-2" />
-      </div>
+          <KpiRow counts={counts} filtered={filtered} />
+
+          {/*
+            Dense flow so the full-width breakdown can follow "Anxiety change" in
+            reading order while "Which parts" still fills the half-column beside it
+            on desktop (no empty cell).
+          */}
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-flow-row-dense lg:grid-cols-2">
+            <PrePostBlock reports={measures} className="lg:col-span-2" />
+            <ChangeBlock records={filtered} />
+            <ChangeByAnswerBlock records={filtered} className="lg:col-span-2" />
+            <PartsBlock feedback={feedback} />
+            <EngagementBlock records={filtered} />
+            <DistributionsBlock records={filtered} />
+            <ExplorationBlock records={filtered} className="lg:col-span-2" />
+            <OpenTextBlock answers={texts} className="lg:col-span-2" />
+            <InterestBlock stats={interest} records={base} note={signupsNote} className="lg:col-span-2" />
+            <SignupsTable signups={shownSignups} dFeedback={shownFeedback} className="lg:col-span-2" />
+            <ResponsesTable records={filtered} className="lg:col-span-2" />
+            <InterpretationNote className="lg:col-span-2" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

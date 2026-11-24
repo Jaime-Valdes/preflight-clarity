@@ -34,7 +34,7 @@ interface ResultsHeaderProps {
   onDownload: (scope: "filtered" | "all") => void;
 }
 
-function FilterChip({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
+export function FilterChip({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
   return (
     <button
       type="button"
