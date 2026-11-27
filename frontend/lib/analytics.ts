@@ -1,6 +1,7 @@
 "use client";
 
 import posthog from "posthog-js";
+import { LANDING_VERSION } from "@/lib/d/landing";
 import { armProps } from "@/lib/d/priceArm";
 import { isTestMode, touchTestMode } from "@/lib/testMode";
 import { toolForPath } from "@/lib/tool";
@@ -75,7 +76,8 @@ export function startAnalytics(): void {
       // visitor's price arm (and arm_forced while ?arm= forces it), stamped by URL like `variant`, so the
       // study's and version C's events never get it. lib/d/priceArm.ts draws the arm on its first use, which
       // can be this, D's first pageview: PostHog may start before D's layout has run its effects.
-      if (tool?.variant === "D") event.properties = { ...event.properties, ...armProps() };
+      // `landing_version` (lib/d/landing.ts): which /d landing the event comes from, stamped the same way.
+      if (tool?.variant === "D") event.properties = { ...event.properties, ...armProps(), landing_version: LANDING_VERSION };
       if (tool?.is_test) {
         // A test run in progress: keep its mark alive, and make sure none of it is recorded.
         touchTestMode();

@@ -8,10 +8,10 @@ export const metadata: Metadata = {
 };
 
 /**
- * /d — version D home (docs/ITERATION_2.md): a short hero, "What matters to
- * you" (the four priorities, tap to order, skippable, remembered per browser),
- * then the search form. Static; the client parts render once the browser's
- * answer and today's date are known. The transition stage stays the first
+ * /d — version D's landing, v3 (lib/d/landing.ts): the headline, then the
+ * search form, three example routes and a sample flight on the first screen.
+ * What matters to the visitor is asked on the results page, if they want to.
+ * Static; the client parts render once today's date is known. The transition stage stays the first
  * child of the fragment: anywhere else the plane never flies.
  */
 export default function DHomePage() {

@@ -17,6 +17,7 @@ import { transitionRunning } from "@/components/d/motion/motion";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { isTestRun, newUuid, offerSurfaceOpen } from "@/lib/d/flightDayPack";
+import { hasSearched } from "@/lib/d/landing";
 import { saveSignup } from "@/lib/storage";
 import { NO_THANKS } from "./copy";
 import { DModal } from "./DModal";
@@ -26,7 +27,8 @@ import { PrivacyNote } from "./PrivacyNote";
 /*
  * The waitlist as a dialog (docs/INTEREST.md, placement `d_popup`; iteration 2 of docs/FLIGHT_DAY_PACK.md, the
  * owner's request of 2026-11-19): D's "Want this for your real flights?" card, with the same copy and form,
- * centred over a dimmed page after 30 s of this tab's visible time on D's pages (counted across page moves).
+ * centred over a dimmed page after 30 s of this tab's visible time on D's pages (counted across page moves),
+ * counted only from the browser's first search (landing v3, 2026-11-27: never over the landing before one).
  * The visitor signs up or says "No thanks" (Escape counts as "No thanks"); no ✕, the backdrop does nothing.
  *
  * Once per browser (localStorage, marked when it opens), and never for a browser that has already signed up.
@@ -81,6 +83,9 @@ export function DInterestPopup() {
       const step = Math.min(now - last, TICK_MS * 1.5);
       last = now;
       if (document.visibilityState !== "visible") return;
+      // Landing v3: nothing before the visitor's first search, so the landing page is never covered.
+      // The 30 s count only starts once they have opened results (lib/d/landing.ts).
+      if (!hasSearched()) return;
       const total = Number(read(sessionStorage, VISIBLE_KEY)) + step;
       write(sessionStorage, VISIBLE_KEY, String(Math.round(total)));
       if (total < POPUP_AFTER_MS) return;

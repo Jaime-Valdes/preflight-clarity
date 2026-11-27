@@ -72,6 +72,14 @@
   }
 }
 
+/* Landing v3 (components/d/home/DHome.tsx): phones and tablets have no scene band, so the search form
+   sits right under the words on the first screen. From 1024 px the two columns above still apply. */
+@media (max-width: 1023.98px) {
+  .d-home-hero-v3 .d-home-scene {
+    display: none;
+  }
+}
+
 /* ── 2. The scene ────────────────────────────────────────────────────────────────────────── */
 
 /* The stage: a box of fixed proportions. Everything in the picture is placed in it by percentages

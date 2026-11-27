@@ -61,6 +61,8 @@ import {
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { FlightDayPackPopIn } from "@/components/d/offer/FlightDayPackOffer";
+import { PrioritiesTuner, type TuneClose } from "@/components/d/setup/PrioritiesSetup";
+import { markSearched } from "@/lib/d/landing";
 import { DResultCard } from "./DResultCard";
 import { carryFor, signupContext, smoothestForYou } from "./marks";
 import { usePopOnChange } from "./usePopOnChange";
@@ -133,7 +135,13 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   const priorities = usePriorities();
   const [, startTransition] = useTransition();
   const [filtersOpen, setFiltersOpen] = useSheetState();
+  // "Tune this to what worries you most" (landing v3): the priorities, opened in place over the list.
+  const [tuneOpen, setTuneOpen] = useState(false);
   const nowMs = useNowMs();
+  // The waitlist pop-up waits for a first search (components/d/offer/DInterestPopup.tsx): this is one.
+  useEffect(() => {
+    markSearched();
+  }, []);
   // Where focus goes once a filter change has rendered (the control used may be gone).
   const focusNext = useRef<string | null>(null);
   const { origin, destination, date } = day;
@@ -264,7 +272,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
     return (
       <div className="flex flex-col gap-4 sm:gap-5">
         <SearchSummary day={day} today={today} carry={carry} />
-        <PrioritiesStrip priorities={priorities} />
+        <PrioritiesStrip priorities={priorities} open={tuneOpen} onOpenChange={setTuneOpen} />
         <DateStrip day={day} stripDay={stripDay} today={today} nowMs={nowMs} hrefFor={hrefFor} showScores={false} />
         <DLoading />
       </div>
@@ -295,7 +303,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
     <div className="flex flex-col gap-4 sm:gap-5">
       <SearchSummary day={day} today={today} carry={carry} />
 
-      <PrioritiesStrip priorities={priorities} />
+      <PrioritiesStrip priorities={priorities} open={tuneOpen} onOpenChange={setTuneOpen} />
 
       <DateStrip day={day} stripDay={stripDay} today={today} nowMs={nowMs} hrefFor={hrefFor} showScores={false} />
 
@@ -552,12 +560,24 @@ function sentenceCase(text: string): string {
  * card's ratings stay on the first screen. Before the visitor has ranked
  * anything, the usual order and an invitation rather than "Change".
  */
-function PrioritiesStrip({ priorities }: { priorities: Priorities }) {
-  const hrefs = useHrefs();
+function PrioritiesStrip({ priorities, open, onOpenChange }: { priorities: Priorities; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const panelId = "d-tune-panel";
+  function toggle() {
+    if (!open) track("d_tune_open", { chosen_before: priorities.chosen });
+    else track("d_tune_close", { how: "close" });
+    onOpenChange(!open);
+  }
+  function closed(how: TuneClose) {
+    track("d_tune_close", { how });
+    onOpenChange(false);
+    // Back to the control that opened it, so a keyboard visitor lands where they were.
+    window.requestAnimationFrame(() => document.getElementById("d-tune-button")?.focus({ preventScroll: true }));
+  }
   const { chosen, order } = priorities;
   const [first = "", second = "", third = "", fourth = ""] = order.map((category) => PRIORITY_WORDS[category]);
   const heading = chosen ? "Rated for you" : "Rated in the usual order";
   return (
+    <>
     <div className="flex items-center gap-3 rounded-[20px] bg-surface py-2.5 pl-3.5 pr-4 shadow-soft">
       <CloudMascot data-cloud-home className="w-10 shrink-0 sm:w-11" />
       <p className="min-w-0 text-[13px] leading-snug text-ink-soft sm:text-[14px]">
@@ -572,14 +592,24 @@ function PrioritiesStrip({ priorities }: { priorities: Priorities }) {
           </span>
           {" · "}
         </span>
-        <Link
-          href={hrefs.home}
-          className={cn(D_LINK, "relative inline-block whitespace-nowrap before:absolute before:inset-x-0 before:-inset-y-3.5 before:content-['']")}
+        <button
+          id="d-tune-button"
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={toggle}
+          className={cn(D_LINK, "relative inline text-left before:absolute before:inset-x-0 before:-inset-y-3.5 before:content-['']")}
         >
-          {chosen ? "Change what matters" : "Choose what matters"}
-        </Link>
+          {chosen ? "Change what matters" : "Tune this to what worries you most"}
+        </button>
       </p>
     </div>
+    {open ? (
+      <div id={panelId}>
+        <PrioritiesTuner onClose={closed} />
+      </div>
+    ) : null}
+    </>
   );
 }
 

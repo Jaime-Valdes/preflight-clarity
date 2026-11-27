@@ -38,8 +38,12 @@ the same-origin `/ingest` proxy (`next.config.ts`), so ad blockers don't drop th
 | `interest_cta_view` | the "notify me when it's live" card scrolls into view (once per page view; study placements count a view when 40% of the card is on screen, versions C and D from the first visible pixel) | `source` (study, c, d), `placement` (dashboard, debrief, c_home, c_results, c_flight, c_compare, d_home, d_results, d_flight, d_compare; `d_popup` from 2026-11-19, when D's waitlist dialog opens) |
 | `interest_signup` | a sign-up is submitted successfully | `source`, `placement`, `interview` (ticked the interview box), `is_test` |
 | `interest_dismiss` | "No thanks" (or Escape) on version D's waitlist dialog (from 2026-11-19) | `placement` (d_popup) |
-| `d_setup` | the "What matters to you" setup on /d is answered | `completed` (false = skipped), `order` ("cruise,takeoff_landing,aircraft,space" — the four categories, most important first), `changed` (an earlier answer was replaced) |
-| `d_search`, `d_results_view`, `d_compare_toggle`, `d_compare_view` | version D's counterparts of the `c_*` events above (same properties; `d_results_view` has no `min_score`, D has no score filter) | |
+| `d_setup` | the priorities are answered. Until landing v3 (2026-11-27) the setup step on the /d home; from v3 the "Tune this to what worries you most" panel on the results page | `completed` (false = skipped), `order` ("cruise,takeoff_landing,aircraft,space" — the four categories, most important first), `changed` (an earlier answer was replaced), `from` ("results"; from v3 only — absent means the old home step) |
+| `d_tune_open` | landing v3: "Tune this to what worries you most" (or "Change what matters") is opened on the results page | `chosen_before` (the visitor had ranked their priorities before) |
+| `d_tune_close` | landing v3: the tune panel closes | `how` (done = saved an order, skip = "Skip for now", close = the ✕ or the control tapped again, nothing saved) |
+| `d_example_route` | landing v3: one of the three example routes under the /d search is tapped (it also sends `d_search` with `from: "example"`) | `origin`, `destination`, `date` (the first Friday at least 7 days out), `position` (1–3) |
+| `d_sample_flight` | landing v3: the sample flight card on /d is tapped (it also sends `d_search` with `from: "sample"`) | `origin`, `destination`, `date`, `tier` (the cruise rating shown) |
+| `d_search`, `d_results_view`, `d_compare_toggle`, `d_compare_view` | version D's counterparts of the `c_*` events above (same properties; `d_results_view` has no `min_score`, D has no score filter). `d_search`'s `from` is form, popular (the old home's eight routes, until v3), example or sample (from v3) | |
 | `d_sort` | a sort tab is picked on /d/search | `sort` (foryou, cheapest, fastest, departure), `from` |
 | `d_rating_open` | a rating's detail sheet is opened (the numbers and "how this is worked out") | `category` (cruise, takeoff_landing, aircraft, space), `tier`, `basis` (history, forecast, aircraft, cabin), `from` (results, flight, compare) |
 | `d_flight_view` | a /d flight page is shown | `key`, `origin`, `destination`, `days_until`, `has_scores`, `price`, `is_cheapest`, `position`, `price_rank`, `dollars_over_cheapest`, `cruise_tier`, `takeoff_landing_tier`, `aircraft_tier`, `space_tier` |
@@ -103,6 +107,15 @@ rows with `airline` still export, in their own CSV column `item_airline_v1`. Pla
 Version D (docs/ITERATION_2.md) funnel: `$pageview` /d → `d_setup` → `d_search` → `d_flight_view` →
 `d_flight_chosen`, broken down by `priorities`; `d_rating_open` by `category` shows which ratings
 people look into; `interest_signup` with placement `d_flight` is the concrete ask on the flight page.
+
+**Landing v3** (2026-11-27, `frontend/lib/d/landing.ts`): after the Nov 19–23 ad test (about 5 % of
+visitors searched), /d puts the search on the first screen with three example routes and a sample
+flight, drops the "Let's begin" intro and the home's priorities step, moves the priorities to an
+optional panel on the results page (`d_setup` with `from: "results"`, `d_tune_open`, `d_tune_close`),
+and keeps the waitlist pop-up (`d_popup`) away until the browser's first search. Every event from a /d
+page carries `landing_version: "v3"`, stamped by URL like `variant`; **a missing `landing_version`
+means the earlier landing**. From v3 the D funnel is `$pageview` /d → `d_search` → `d_flight_view` →
+`d_flight_chosen`; `d_setup` is no longer a step before the search.
 
 **Version D's "Window Seat" look** (built on the branch `ui/d-cinematic`, `docs/ui-d-cinematic.md`)
 changes no event, property or route, but it shifts some measurements. It reached production on the
