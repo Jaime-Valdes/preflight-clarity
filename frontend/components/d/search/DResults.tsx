@@ -61,7 +61,7 @@ import {
 import { useNowMs, useTodayISO } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { FlightDayPackPopIn } from "@/components/d/offer/FlightDayPackOffer";
-import { PrioritiesTuner, type TuneClose } from "@/components/d/setup/PrioritiesSetup";
+import { PrioritiesTuner, TUNE_TITLE_ID, type TuneClose } from "@/components/d/setup/PrioritiesSetup";
 import { markSearched } from "@/lib/d/landing";
 import { DResultCard } from "./DResultCard";
 import { carryFor, signupContext, smoothestForYou } from "./marks";
@@ -135,7 +135,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   const priorities = usePriorities();
   const [, startTransition] = useTransition();
   const [filtersOpen, setFiltersOpen] = useSheetState();
-  // "Tune this to what worries you most" (landing v3): the priorities, opened in place over the list.
+  // "Change what matters to you" (landing v3): the priorities, on the back of the "Rated for you" card.
   const [tuneOpen, setTuneOpen] = useState(false);
   const nowMs = useNowMs();
   // The waitlist pop-up waits for a first search (components/d/offer/DInterestPopup.tsx): this is one.
@@ -542,18 +542,23 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 }
 
 /**
- * What the flights are rated for, above the cards: a heading, the visitor's
- * order from the home's setup as a numbered list (one priority a line, on gold
- * coins like the setup's ranked tiles), and the way back to change it below.
- * Before the visitor has ranked anything, the usual order on plain sky discs
- * and an invitation rather than "Change".
+ * What the flights are rated for, above the cards: a two-sided card. The front has a heading, the
+ * visitor's order from the home's setup as a numbered list (one priority a line, gold coins like the
+ * setup's ranked tiles; sky discs before anything is ranked) and the way to change it. That link
+ * turns the card over to the ranking question (PrioritiesTuner) and saving or closing turns it back,
+ * so changing the order never pushes the flights down: both sides share one grid cell and the card is
+ * as tall as the taller side. The side facing away is inert. Without motion the sides simply swap.
  */
 function PrioritiesStrip({ priorities, open, onOpenChange }: { priorities: Priorities; open: boolean; onOpenChange: (open: boolean) => void }) {
   const panelId = "d-tune-panel";
-  function toggle() {
-    if (!open) track("d_tune_open", { chosen_before: priorities.chosen });
-    else track("d_tune_close", { how: "close" });
-    onOpenChange(!open);
+  // A fresh question each time the card turns over (the order as saved, nothing half-tapped from last time).
+  const [round, setRound] = useState(0);
+  function openTuner() {
+    track("d_tune_open", { chosen_before: priorities.chosen });
+    setRound((n) => n + 1);
+    onOpenChange(true);
+    // The heading on the back, so a keyboard or screen reader visitor turns over with the card.
+    window.requestAnimationFrame(() => document.getElementById(TUNE_TITLE_ID)?.focus({ preventScroll: true }));
   }
   function closed(how: TuneClose) {
     track("d_tune_close", { how });
@@ -564,53 +569,63 @@ function PrioritiesStrip({ priorities, open, onOpenChange }: { priorities: Prior
   const { chosen, order } = priorities;
   const headingId = "d-rated-for";
   return (
-    <>
-    <section aria-labelledby={headingId} className="flex items-start gap-3.5 rounded-[20px] bg-surface pb-2 pl-4 pr-5 pt-4 shadow-soft">
-      <CloudMascot data-cloud-home className="w-11 shrink-0 sm:w-12" />
-      <div className="min-w-0">
-        <h2 id={headingId} className="text-[17px] font-extrabold leading-tight tracking-tight text-ink sm:text-[18px]">
-          {chosen ? "Rated for you" : "Rated in the usual order"}
-        </h2>
-        <p className="mt-0.5 text-[13px] leading-snug text-ink-mute">
-          {chosen ? "Every flight is scored in your order:" : "Every flight is scored in this order:"}
-        </p>
-        <ol className="mt-2.5 grid gap-1.5">
-          {order.map((category, i) => (
-            <li key={category} className="flex items-center gap-2.5">
-              <span
-                aria-hidden
-                className={cn(
-                  "flex size-6 shrink-0 items-center justify-center rounded-full text-[13px] font-extrabold tabular-nums text-ink",
-                  chosen ? "bg-gold shadow-[inset_0_0_0_1.5px_var(--color-gold-deep)]" : "bg-sky",
-                )}
-              >
-                {i + 1}
-              </span>
-              <span className="text-[15px] font-bold leading-snug text-ink">
-                <span className="sr-only">{i + 1}. </span>
-                {CATEGORY_LABELS[category]}
-              </span>
-            </li>
-          ))}
-        </ol>
-        <button
-          id="d-tune-button"
-          type="button"
-          aria-expanded={open}
-          aria-controls={panelId}
-          onClick={toggle}
-          className={cn(D_LINK, "mt-1 inline-flex min-h-11 items-center text-left text-[14px]")}
+    <div className="d-results-flip" data-turned={open ? "" : undefined}>
+      <div className="d-results-flip-card">
+        <section
+          aria-labelledby={headingId}
+          inert={open}
+          className="d-results-face flex items-start gap-3 rounded-[20px] bg-surface pb-1 pl-4 pr-5 pt-3.5 shadow-soft"
         >
-          {chosen ? "Change what matters to you" : "Tune this to what worries you most"}
-        </button>
+          <CloudMascot data-cloud-home className="w-10 shrink-0 sm:w-11" />
+          <div className="flex min-w-0 flex-col self-stretch">
+            <h2 id={headingId} className="text-[17px] font-extrabold leading-tight tracking-tight text-ink sm:text-[18px]">
+              {chosen ? "Rated for you" : "Rated in the usual order"}
+            </h2>
+            <p className="mt-0.5 text-[13px] leading-snug text-ink-mute">
+              {chosen ? "Every flight is scored in your order:" : "Every flight is scored in this order:"}
+            </p>
+            <ol className="mt-2 grid gap-1">
+              {order.map((category, i) => (
+                <li key={category} className="flex items-center gap-2.5">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "flex size-6 shrink-0 items-center justify-center rounded-full text-[13px] font-extrabold tabular-nums text-ink",
+                      chosen ? "d-home-coin" : "bg-sky",
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="text-[15px] font-bold leading-snug text-ink">
+                    <span className="sr-only">{i + 1}. </span>
+                    {CATEGORY_LABELS[category]}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {/* At the foot of the side, so a front shorter than the back keeps its spare room above the link. */}
+            <button
+              id="d-tune-button"
+              type="button"
+              aria-expanded={open}
+              aria-controls={panelId}
+              onClick={openTuner}
+              className={cn(D_LINK, "mt-auto inline-flex min-h-11 items-center self-start text-left text-[14px]")}
+            >
+              {chosen ? "Change what matters to you" : "Tune this to what worries you most"}
+            </button>
+          </div>
+        </section>
+        <div
+          id={panelId}
+          inert={!open}
+          data-cloud-seat={open ? "" : undefined}
+          className="d-results-face d-results-face-back rounded-[20px] bg-surface px-4 pb-2.5 pt-3.5 shadow-soft sm:px-5"
+        >
+          <PrioritiesTuner key={round} onClose={closed} />
+        </div>
       </div>
-    </section>
-    {open ? (
-      <div id={panelId}>
-        <PrioritiesTuner onClose={closed} />
-      </div>
-    ) : null}
-    </>
+    </div>
   );
 }
 

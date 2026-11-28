@@ -58,3 +58,54 @@
   flex-wrap: wrap;
   row-gap: 0.5rem;
 }
+
+/* ── "Rated for you": the card that turns over to the ranking question ───────────────────── */
+
+/*
+ * Two sides in one grid cell, so the card is as tall as the taller side and turning it never moves the
+ * flights below. The card turns about its vertical axis with the kit's ease-out; the side facing away is
+ * hidden by its back face (and inert in the markup). Without motion the sides swap at once.
+ */
+.d-results-flip {
+  display: grid;
+  perspective: 1600px;
+}
+.d-results-flip-card {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 620ms var(--d-ease-out);
+}
+.d-results-flip[data-turned] > .d-results-flip-card {
+  transform: rotateY(180deg);
+}
+.d-results-face {
+  grid-area: 1 / 1;
+  min-width: 0;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.d-results-face-back {
+  transform: rotateY(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .d-results-flip-card {
+    transition: none;
+  }
+}
+
+/*
+ * The question's tiles: app/d/d-home.css's priority tile, smaller to fit two across a phone. The disc is
+ * 1.5rem at 0.5rem from the edge, and the royal fill grows from its centre (1.25rem in).
+ */
+[data-theme="d"] .d-home-tile.d-results-tile::before {
+  clip-path: circle(0 at 1.25rem 50%);
+}
+[data-theme="d"] .d-home-tile.d-results-tile[aria-pressed="true"]::before {
+  clip-path: circle(142% at 1.25rem 50%);
+}
+[data-theme="d"] .d-home-tile.d-results-tile::after {
+  left: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: -0.75rem;
+}
