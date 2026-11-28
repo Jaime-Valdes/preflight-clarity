@@ -15,7 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { getAirport } from "@preflight/shared/airports";
-import { CATEGORY_LABELS, orderByPriorities, type Rating, type RatingCategory } from "@preflight/shared/ratings";
+import { CATEGORY_LABELS, orderByPriorities, type Rating } from "@preflight/shared/ratings";
 import type { FlightOption, SearchResults as DayResults } from "@preflight/shared/search";
 import { availabilityAt, daysToDeparture, hasLeft } from "@/components/c/common/availability";
 import { Sheet } from "@/components/c/common/Sheet";
@@ -541,24 +541,12 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   );
 }
 
-/** The categories as they read mid-sentence: "Space & quiet first, then takeoff & landing". */
-const PRIORITY_WORDS: Record<RatingCategory, string> = {
-  cruise: "smooth cruise",
-  takeoff_landing: "takeoff & landing",
-  aircraft: "aircraft size",
-  space: "space & quiet",
-};
-
-function sentenceCase(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 /**
- * One quiet sentence saying what the flights are rated for — the visitor's
- * order from the home's setup — with the way back to change it. Short on
- * phones (the two categories the cards show; all four from sm), so the first
- * card's ratings stay on the first screen. Before the visitor has ranked
- * anything, the usual order and an invitation rather than "Change".
+ * What the flights are rated for, above the cards: a heading, the visitor's
+ * order from the home's setup as a numbered list (one priority a line, on gold
+ * coins like the setup's ranked tiles), and the way back to change it below.
+ * Before the visitor has ranked anything, the usual order on plain sky discs
+ * and an invitation rather than "Change".
  */
 function PrioritiesStrip({ priorities, open, onOpenChange }: { priorities: Priorities; open: boolean; onOpenChange: (open: boolean) => void }) {
   const panelId = "d-tune-panel";
@@ -574,36 +562,49 @@ function PrioritiesStrip({ priorities, open, onOpenChange }: { priorities: Prior
     window.requestAnimationFrame(() => document.getElementById("d-tune-button")?.focus({ preventScroll: true }));
   }
   const { chosen, order } = priorities;
-  const [first = "", second = "", third = "", fourth = ""] = order.map((category) => PRIORITY_WORDS[category]);
-  const heading = chosen ? "Rated for you" : "Rated in the usual order";
+  const headingId = "d-rated-for";
   return (
     <>
-    <div className="flex items-center gap-3 rounded-[20px] bg-surface py-2.5 pl-3.5 pr-4 shadow-soft">
-      <CloudMascot data-cloud-home className="w-10 shrink-0 sm:w-11" />
-      <p className="min-w-0 text-[13px] leading-snug text-ink-soft sm:text-[14px]">
-        {/* Screen readers get the whole order, numbered; the sentence is the same thing at a glance. */}
-        <span className="sr-only">
-          {heading}: {order.map((category, i) => `${i + 1}. ${CATEGORY_LABELS[category]}`).join(", ")}.{" "}
-        </span>
-        <span aria-hidden>
-          <span className="font-bold text-ink">{heading}:</span> {sentenceCase(first)} first, then {second}
-          <span className="hidden sm:inline">
-            , {third} and {fourth}
-          </span>
-          {" · "}
-        </span>
+    <section aria-labelledby={headingId} className="flex items-start gap-3.5 rounded-[20px] bg-surface pb-2 pl-4 pr-5 pt-4 shadow-soft">
+      <CloudMascot data-cloud-home className="w-11 shrink-0 sm:w-12" />
+      <div className="min-w-0">
+        <h2 id={headingId} className="text-[17px] font-extrabold leading-tight tracking-tight text-ink sm:text-[18px]">
+          {chosen ? "Rated for you" : "Rated in the usual order"}
+        </h2>
+        <p className="mt-0.5 text-[13px] leading-snug text-ink-mute">
+          {chosen ? "Every flight is scored in your order:" : "Every flight is scored in this order:"}
+        </p>
+        <ol className="mt-2.5 grid gap-1.5">
+          {order.map((category, i) => (
+            <li key={category} className="flex items-center gap-2.5">
+              <span
+                aria-hidden
+                className={cn(
+                  "flex size-6 shrink-0 items-center justify-center rounded-full text-[13px] font-extrabold tabular-nums text-ink",
+                  chosen ? "bg-gold shadow-[inset_0_0_0_1.5px_var(--color-gold-deep)]" : "bg-sky",
+                )}
+              >
+                {i + 1}
+              </span>
+              <span className="text-[15px] font-bold leading-snug text-ink">
+                <span className="sr-only">{i + 1}. </span>
+                {CATEGORY_LABELS[category]}
+              </span>
+            </li>
+          ))}
+        </ol>
         <button
           id="d-tune-button"
           type="button"
           aria-expanded={open}
           aria-controls={panelId}
           onClick={toggle}
-          className={cn(D_LINK, "relative inline text-left before:absolute before:inset-x-0 before:-inset-y-3.5 before:content-['']")}
+          className={cn(D_LINK, "mt-1 inline-flex min-h-11 items-center text-left text-[14px]")}
         >
-          {chosen ? "Change what matters" : "Tune this to what worries you most"}
+          {chosen ? "Change what matters to you" : "Tune this to what worries you most"}
         </button>
-      </p>
-    </div>
+      </div>
+    </section>
     {open ? (
       <div id={panelId}>
         <PrioritiesTuner onClose={closed} />
