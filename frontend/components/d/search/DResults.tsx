@@ -156,7 +156,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 
   // The day through the store (docs/REAL_DATA.md): loaded once per session, the same snapshot every D page reads.
   const source = useFlightSource();
-  const { provider, served, routeHistory } = useRouteDay({ origin, destination, date });
+  const { provider, served, routeHistory, listings } = useRouteDay({ origin, destination, date });
   const search = useMemo(() => runSearch({ origin, destination, date }, source), [origin, destination, date, source]);
   useEffect(() => {
     source.ensure({ origin, destination, date });
@@ -251,6 +251,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
       max_price: next.filters.maxPrice,
       airlines: next.filters.airlines.join(","),
       wide: next.filters.wide,
+      listings,
     });
     startTransition(() => {
       setOptimisticView(next);

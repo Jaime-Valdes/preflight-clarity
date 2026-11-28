@@ -1,11 +1,13 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { daysBetween, toISODate } from "@preflight/shared/dates";
 import { isRouteOnTime, type RouteOnTime } from "@preflight/shared/onTime";
 import { isRouteHistoryDay, type RouteHistoryDay } from "@preflight/shared/routeHistory";
 import { optionsFromSchedule, type RouteDaySchedule } from "@preflight/shared/schedule";
 import { hasNonstopService, searchFlights, type SearchResults } from "@preflight/shared/search";
 import type { FlightInput } from "@preflight/shared/types";
+import { track } from "@/lib/analytics";
 
 /*
  * Version D's day store (docs/REAL_DATA.md, "Frontend"): one snapshot per
@@ -22,19 +24,64 @@ import type { FlightInput } from "@preflight/shared/types";
  * the US DOT's; shared/src/onTime.ts) and the route's turbulence history
  * (`routeHistory`, NOAA MADIS's; shared/src/routeHistory.ts): null when the browser's own
  * illustrative day stands in, or an older API sent none.
+ * Each settled day says whether its listings are the provider's (`listings: "real"`) or the illustrative
+ * stand-in, and why the stand-in (`illustrativeWhy`); a day's first settling sends `d_day_loaded` with both
+ * (docs/ANALYTICS.md), so how often visitors see real flights can be counted.
  */
 
 export type DayProvider = RouteDaySchedule["provider"];
 
+/** Whether a day's flights are the schedule provider's or the illustrative stand-in. */
+export type DayListings = "real" | "illustrative";
+
+/**
+ * Why the illustrative day stands in: no API on this deployment (404), the server's hourly allowance of provider
+ * calls is spent (503), the per-visitor rate limit (429), the provider could not answer (502, or another error
+ * status), no answer within TIMEOUT_MS, a network failure, a body that isn't the contract's, a provider day with no
+ * flights in it, rows the browser could not build on, or an API that serves the generator itself (no provider set).
+ */
+export type IllustrativeWhy =
+  | "no_api"
+  | "budget"
+  | "rate_limited"
+  | "provider_error"
+  | "timeout"
+  | "network"
+  | "bad_answer"
+  | "no_flights"
+  | "not_built"
+  | "api_generator";
+
 /** What is known about a route-day: loading until a load started by ensureRouteDay settles. */
 export type RouteDayState =
-  | { status: "loading"; results: null; provider: null; fetchedAt: null; served: null; onTime: null; routeHistory: null }
+  | { status: "loading"; results: null; provider: null; fetchedAt: null; served: null; onTime: null; routeHistory: null; listings: null; illustrativeWhy: null }
   /** `served`: the route has nonstop service (true), nobody flies it nonstop (false), or the provider could not say (null: a day with no rows). */
-  | { status: "ready"; results: SearchResults; provider: DayProvider; fetchedAt: string; served: boolean | null; onTime: RouteOnTime | null; routeHistory: RouteHistoryDay | null }
+  | {
+      status: "ready";
+      results: SearchResults;
+      provider: DayProvider;
+      fetchedAt: string;
+      served: boolean | null;
+      onTime: RouteOnTime | null;
+      routeHistory: RouteHistoryDay | null;
+      listings: DayListings;
+      /** Null when the listings are real. */
+      illustrativeWhy: IllustrativeWhy | null;
+    }
   /** Neither the API nor the generator could give the day (an invalid date, say): what the generator threw. */
-  | { status: "error"; results: null; provider: null; fetchedAt: null; served: null; onTime: null; routeHistory: null; error: unknown };
+  | { status: "error"; results: null; provider: null; fetchedAt: null; served: null; onTime: null; routeHistory: null; listings: null; illustrativeWhy: null; error: unknown };
 
-const LOADING: RouteDayState = Object.freeze({ status: "loading", results: null, provider: null, fetchedAt: null, served: null, onTime: null, routeHistory: null });
+const LOADING: RouteDayState = Object.freeze({
+  status: "loading",
+  results: null,
+  provider: null,
+  fetchedAt: null,
+  served: null,
+  onTime: null,
+  routeHistory: null,
+  listings: null,
+  illustrativeWhy: null,
+});
 
 /** Settled days kept per session; past this the least recently asked-for days go (a page asks for its days again on its next render). */
 const CAPACITY = 48;
@@ -48,6 +95,8 @@ const entries = new Map<string, RouteDayState>();
 const askedAt = new Map<string, number>();
 let askedCount = 0;
 const inflight = new Set<string>();
+/** Days that have settled at least once this tab (d_day_loaded goes once per day). */
+const loadedOnce = new Set<string>();
 const listeners = new Set<() => void>();
 /** Counts the days that have settled: the store's cheap "something changed" snapshot. */
 let version = 0;
@@ -116,9 +165,23 @@ export function ensureRouteDay(day: FlightInput): void {
 async function load(key: string, day: FlightInput): Promise<void> {
   const state = settle(key, day, await fetchSchedule(day));
   inflight.delete(key);
+  const first = !loadedOnce.has(key);
+  loadedOnce.add(key);
   entries.set(key, state);
   evict(key);
   notify();
+  // Once per day per tab: a day evicted and asked for again is not counted twice.
+  if (first && state.status === "ready") {
+    track("d_day_loaded", {
+      origin: day.origin.trim().toUpperCase(),
+      destination: day.destination.trim().toUpperCase(),
+      date: day.date.trim(),
+      days_until: Math.max(0, daysBetween(toISODate(new Date()), day.date.trim())),
+      listings: state.listings,
+      illustrative_why: state.illustrativeWhy,
+      flights: state.results.options.length,
+    });
+  }
 }
 
 /** Past CAPACITY, the days asked for least recently go (never the one just settled). */
@@ -143,7 +206,9 @@ function evict(keep: string): void {
  * The day from the provider's rows, built in the browser; the generator's when the API gave
  * nothing (or rows the browser couldn't build on); an error only when the generator fails too.
  */
-function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteDayState {
+function settle(key: string, day: FlightInput, fetched: DayFetch): RouteDayState {
+  const answer = "answer" in fetched ? fetched.answer : null;
+  let why: IllustrativeWhy = "why" in fetched ? fetched.why : "bad_answer";
   const schedule = answer?.schedule ?? null;
   // The figures are about the airlines and the routes, not the rows: they hold for the illustrative day too.
   const onTime = answer?.onTime ?? null;
@@ -154,6 +219,7 @@ function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteD
       // A provider's day with no flights in it is a day it has no data for (a 204, or nothing published for the
       // day yet), not a day nobody flies: the illustrative day stands in below, and the page says so.
       if (schedule.provider === "generator" || results.options.length > 0) {
+        const real = schedule.provider !== "generator";
         const ready: RouteDayState = {
           status: "ready",
           results,
@@ -162,10 +228,14 @@ function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteD
           served: schedule.served ?? null,
           onTime,
           routeHistory,
+          listings: real ? "real" : "illustrative",
+          illustrativeWhy: real ? null : "api_generator",
         };
         return Object.freeze(ready);
       }
+      why = "no_flights";
     } catch (error) {
+      why = "not_built";
       // The generator stands in below; said in the console, so the fallback is never silent in development.
       console.warn(`day store: the schedule for ${key} could not be built; the illustrative day stands in`, error);
     }
@@ -180,10 +250,23 @@ function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteD
       served: hasNonstopService(day.origin, day.destination),
       onTime,
       routeHistory,
+      listings: "illustrative",
+      illustrativeWhy: why,
     };
     return Object.freeze(ready);
   } catch (error) {
-    const failed: RouteDayState = { status: "error", results: null, provider: null, fetchedAt: null, served: null, onTime: null, routeHistory: null, error };
+    const failed: RouteDayState = {
+      status: "error",
+      results: null,
+      provider: null,
+      fetchedAt: null,
+      served: null,
+      onTime: null,
+      routeHistory: null,
+      listings: null,
+      illustrativeWhy: null,
+      error,
+    };
     return Object.freeze(failed);
   }
 }
@@ -195,14 +278,25 @@ interface DayAnswer {
   routeHistory: RouteHistoryDay | null;
 }
 
+/** The API's answer, or why there is none. */
+type DayFetch = { answer: DayAnswer } | { why: IllustrativeWhy };
+
+/** An error status → why the illustrative day stands in. */
+function whyOfStatus(status: number): IllustrativeWhy {
+  if (status === 404) return "no_api";
+  if (status === 503) return "budget";
+  if (status === 429) return "rate_limited";
+  return "provider_error";
+}
+
 /**
  * GET /api/flights/day for the day, within TIMEOUT_MS: the schedule (and the on-time figures) from a 200 with one in it,
- * else null (a 404 when no API is configured, an error status, a network failure, a timeout, a
+ * else why not (a 404 when no API is configured, an error status, a network failure, a timeout, a
  * body that isn't the contract's) — the caller falls back to the generator. A 404 is remembered:
  * the route isn't there, so no later day of the session asks again.
  */
-async function fetchSchedule(day: FlightInput): Promise<DayAnswer | null> {
-  if (apiMissing) return null;
+async function fetchSchedule(day: FlightInput): Promise<DayFetch> {
+  if (apiMissing) return { why: "no_api" };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -215,14 +309,18 @@ async function fetchSchedule(day: FlightInput): Promise<DayAnswer | null> {
     if (!response.ok) {
       // Let the connection go: an unread body keeps the request pending in the network panel.
       void response.body?.cancel().catch(() => {});
-      return null;
+      return { why: whyOfStatus(response.status) };
     }
     const body: unknown = await response.json();
-    if (!isDayResponse(body)) return null;
+    if (!isDayResponse(body)) return { why: "bad_answer" };
     const { onTime, routeHistory } = body as { onTime?: unknown; routeHistory?: unknown };
-    return { schedule: body.schedule, onTime: isRouteOnTime(onTime) ? onTime : null, routeHistory: isRouteHistoryDay(routeHistory) ? routeHistory : null };
-  } catch {
-    return null;
+    return {
+      answer: { schedule: body.schedule, onTime: isRouteOnTime(onTime) ? onTime : null, routeHistory: isRouteHistoryDay(routeHistory) ? routeHistory : null },
+    };
+  } catch (error) {
+    // An abort is the timeout; a body that isn't JSON is a bad answer; anything else is the network.
+    if (controller.signal.aborted) return { why: "timeout" };
+    return { why: error instanceof SyntaxError ? "bad_answer" : "network" };
   } finally {
     clearTimeout(timer);
   }

@@ -126,6 +126,8 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
   const { provider } = flightDay;
   // The airline's on-time record (the US DOT's figures the API sent with the day; the searched day's when the flight's own isn't loaded).
   const searchedDay = useRouteDay(day);
+  // The page's flights are the searched day's, already loaded: whether they are the provider's (analytics).
+  const listings = searchedDay.listings;
   // The measured route history the API sent with the searched day (it covers every route the day's flights fly), else the flight's own day.
   const routeHistory = searchedDay.routeHistory ?? flightDay.routeHistory;
   // Every flight's ratings that day (this one's among them): the rows, the pick's tiers and the other flights' pills.
@@ -190,6 +192,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
       space_tier: tiers.space_tier,
       price_rank: standing.price_rank,
       dollars_over_cheapest: standing.dollars_over_cheapest,
+      listings,
     });
   }, [
     option.key,
@@ -206,6 +209,7 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
     tiers.space_tier,
     standing.price_rank,
     standing.dollars_over_cheapest,
+    listings,
   ]);
 
   // What the section bodies keep for this flight (the chosen seat…); see useFlightState.
