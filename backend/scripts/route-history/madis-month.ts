@@ -240,7 +240,8 @@ async function weatherFor(airports: readonly RouteAirport[], args: Args): Promis
   for (const a of airports) {
     let csv: string | null = null;
     if (args.weather === "fetch") {
-      csv = await fetchWeatherMonth(a.code, args.month);
+      // IEM files mainland stations by their three letters, Hawaii, Alaska and the islands by ICAO code.
+      csv = await fetchWeatherMonth(a.icao.startsWith("K") ? a.code : a.icao, args.month);
       await sleep(WEATHER_SPACING_MS);
     } else {
       csv = await readFile(join(args.weather, `${a.code}.csv`), "utf8").catch(() => null);

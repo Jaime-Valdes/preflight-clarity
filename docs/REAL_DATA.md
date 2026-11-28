@@ -117,8 +117,48 @@ version D's booking-time cruise rating is measured. A, B and C keep the generato
   the day store keeps it; `rateFlight({ option, today, history })` rates the cruise from it (the route's
   share, moved toward this departure's window when it has 30+ flights); the rating sheet and the
   turbulence section under "More detail" show the figures and the source.
-- **Not yet**: takeoff and landing (low-altitude readings + METAR); the within-2-days forecast is still
-  the generator's (step 6, GTG); international routes.
+- **Not yet**: the within-2-days forecast is still the generator's (step 6, GTG); international routes.
+  Takeoff and landing: see the next section.
+
+## Status (2026-11-28): takeoff and landing from MADIS and METAR (US airports)
+
+Order of work item 3, the other half: version D's booking-time takeoff & landing rating is measured
+too. A, B and C keep the generator's.
+
+- **Source**: the same NOAA MADIS ACARS readings, in the first and last few minutes of flights; and each
+  airport's routine hourly weather reports (METAR) from the Iowa Environmental Mesonet's ASOS archive
+  (`mesonet.agron.iastate.edu/cgi-bin/request/asos.py`, free; one airport every few seconds, it answers
+  429 to bursts).
+- **Method** (`analyze.ts` analyzeEnds): the readings grouped into flights as for the cruise, whether or not
+  the flight has one. A departure is the group's first readings while they stay within 30 nm of the
+  airport and below 4,500 m (the first reading must be there; the airport is the catalogue airport nearest
+  to it that the truncated origin code could be); an arrival the same from the last reading back. At
+  least 3 readings. Smooth and calm as at cruise (EDR 0.10, 0.20). Counted per airport by local time of
+  day (the takeoff's first reading, the landing's last). Reports usually start a few hundred metres up on
+  departure (median first reading about 950 m above sea level) and run to a few hundred metres on arrival.
+  Weather (`weather.ts`): per airport and window, hours reported, with a gust, with 15 kt or more, with a
+  thunderstorm.
+- **Checks** (January 2026): airports differ for real (the spread between airports, about 13 points, is
+  well above the gap between a month's odd and even days, about 7); 20 nm instead of 30 changes nothing;
+  the time of day matters a lot (arrivals at noon–3 PM about 25% smooth, mornings about 68%); gusty
+  hours go with bumpy ends in every season (correlation −0.63 to −0.73 across airport × window cells;
+  wind of 15 kt or more about −0.3, thunderstorms about −0.1). In summer, departures were 77% smooth
+  where gusts came in under 8% of hours and 24% where they came in a quarter or more; arrivals 60% and 16%.
+- **Coverage**: about 70 of the 86 catalogue US airports have readings in a month, about 60 with 30+
+  departures and 30+ arrivals; weather for nearly all. Airlines report at low altitude very unevenly (the
+  tails are encrypted, so which ones can't be told), so some hubs (ATL, MSP, DTW, SLC) are rich and
+  others (DEN, IAH, ORD) much thinner than their traffic. Thin airports pool the
+  neighbouring months; below 30 an end takes US airports' share for its window, and says so.
+- **Rating** (`ratings.ts` rateApproachMeasured): the origin's smooth share for departures and the
+  destination's for arrivals, each moved toward the flight's time-of-day window there when it has 30+
+  flights, then multiplied: the chance both ends were smooth, so a rough landing is never made up for by
+  a smooth takeoff. Tiers at 40 / 23 / 9 / 2.5, the Nov 2025–Oct 2026 quantiles that split US flights
+  (every flown pair both ways, the 15th of each month, the generator's times) about 20 / 30 / 31 / 14 /
+  6%; by season, from 0–1% Bumpy in December–February to about 10% in April–June, when the air near
+  the ground is liveliest (arrivals about 36% smooth, against 52–55% in winter). The sheet shows both shares, light-bumps-at-most, the
+  calmest time at each end and how often gusts were reported at those hours; the turbulence section
+  under "More detail" shows the two airports beside the route. A day without airport figures (an older
+  table) keeps the traits model.
 
 ## Status (2026-11-20): airline on-time from BTS (live)
 

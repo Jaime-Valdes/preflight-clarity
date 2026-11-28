@@ -8,7 +8,7 @@ import { compareToBenchmark, type Comparison } from "@preflight/shared/benchmark
 import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
 import { ON_TIME_DEFINITION, onTimeDetail, onTimeMissing, onTimeSource, onTimeTeaser } from "@preflight/shared/onTime";
 import { orderByPriorities, rateFlight } from "@preflight/shared/ratings";
-import { routeHistoryFor } from "@preflight/shared/routeHistory";
+import { airportHistoryFor, routeHistoryFor } from "@preflight/shared/routeHistory";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import type { BodyType, Flight, SectionContext } from "@preflight/shared/types";
 import { daysToDeparture, hasLeft } from "@/components/c/common/availability";
@@ -141,7 +141,15 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
   // Weeks out, the turbulence section shows the route's measured history instead of the generator's "typical" figures
   // (DTurbulenceSection reads it from DRouteHistoryContext); within the forecast window it is version C's section.
   const routeFigures = useMemo(() => routeHistoryFor(routeHistory, flight.origin.code, flight.destination.code), [routeHistory, flight]);
-  const historyShown = useMemo(() => ({ day: routeHistory, figures: routeFigures ?? null }), [routeHistory, routeFigures]);
+  const historyShown = useMemo(
+    () => ({
+      day: routeHistory,
+      figures: routeFigures ?? null,
+      origin: airportHistoryFor(routeHistory, flight.origin.code) ?? null,
+      destination: airportHistoryFor(routeHistory, flight.destination.code) ?? null,
+    }),
+    [routeHistory, routeFigures, flight],
+  );
   const overrides = useMemo<Partial<Record<CSectionId, SectionOverride>>>(
     () => ({
       airline: { title: "Airline", teaser: () => onTimeTeaser(onTime), Body: DAirlineSection },

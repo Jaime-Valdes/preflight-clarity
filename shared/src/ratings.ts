@@ -60,8 +60,8 @@
  *  - takeoff & landing (history, measured): the origin's share of departures with a smooth climb and
  *    the destination's share of arrivals with a smooth descent in the month (no reading above EDR
  *    0.10), each moved toward this flight's time-of-day window at that airport when the window has at
- *    least MIN_WINDOW_FLIGHTS (as the cruise is), then averaged. Tiers on APPROACH_CUTS: ≥ 72 Very
- *    smooth, ≥ 64 Smooth, ≥ 56 Moderate, ≥ 48 Slightly bumpy, below that Bumpy. An airport with too
+ *    least MIN_WINDOW_FLIGHTS (as the cruise is), then multiplied: the chance both ends were smooth.
+ *    Tiers on APPROACH_CUTS (set at the quantiles that give US flights about 20 / 30 / 30 / 15 / 5%). An airport with too
  *    few flights takes US airports' share for that window and says so. The wind factor (gusts reported
  *    in the hours around takeoff and landing) explains; it does not move the rating.
  *  - takeoff & landing (history, no airport figures): each airport's traits in the month and at the local hour of
@@ -933,11 +933,13 @@ function rateApproachPast(f: Flight, geo: RouteGeometry, day: RouteHistoryDay | 
 }
 
 /**
- * Takeoff & landing cut-offs on the measured value (the mean of the two ends' smooth shares, in
- * percent): ≥ very smooth, ≥ smooth, ≥ moderate, ≥ slightly bumpy, below that bumpy. Set from the
- * Nov 2025–Oct 2026 table so that flights spread across the tiers (docs/REAL_DATA.md).
+ * Takeoff & landing cut-offs on the measured value: the chance, in percent, that both the takeoff and
+ * the landing were smooth (the two ends' shares multiplied, as if independent), so one rough end is
+ * never made up for by a smooth other. ≥ very smooth, ≥ smooth, ≥ moderate, ≥ slightly bumpy, below
+ * that bumpy. Set from the Nov 2025–Oct 2026 table at the quantiles that give US flights about 20 /
+ * 30 / 30 / 15 / 5% (docs/REAL_DATA.md).
  */
-const APPROACH_CUTS = [72, 64, 56, 48] as const;
+export const APPROACH_CUTS = [40, 23, 9, 2.5] as const;
 const approachMeasuredValue = (v: number) => (v >= APPROACH_CUTS[0] ? 4 : v >= APPROACH_CUTS[1] ? 3 : v >= APPROACH_CUTS[2] ? 2 : v >= APPROACH_CUTS[3] ? 1 : 0);
 
 interface EndShare {
@@ -1004,7 +1006,7 @@ function weatherAt(fig: AirportHistoryFigures | null | undefined, window: TimeWi
  * The airports' measured history (shared/src/routeHistory.ts airportFigures): the share of the
  * origin's departures with a smooth climb and of the destination's arrivals with a smooth descent in
  * the month, each moved toward this flight's time of day there when that window has enough flights
- * (as the cruise does), averaged and put on APPROACH_CUTS. An end with too few flights of its own
+ * (as the cruise does), multiplied (the chance both ends were smooth) and put on APPROACH_CUTS. An end with too few flights of its own
  * takes US airports' share and says so; null when not even that is there (the caller falls back).
  */
 function rateApproachMeasured(f: Flight, day: RouteHistoryDay): Rating | null {
@@ -1016,7 +1018,7 @@ function rateApproachMeasured(f: Flight, day: RouteHistoryDay): Rating | null {
   const dep = endShare(originFig?.departures ?? null, national?.departures ?? null, departHour);
   const arr = endShare(destFig?.arrivals ?? null, national?.arrivals ?? null, arriveHour);
   if (!dep || !arr) return null;
-  const value = (dep.value + arr.value) / 2;
+  const value = (dep.value * arr.value) / 100;
 
   const factors: RatingFactor[] = [
     endFactor("dep", f.origin, dep, national?.departures ?? null),
@@ -1034,11 +1036,11 @@ function rateApproachMeasured(f: Flight, day: RouteHistoryDay): Rating | null {
     const part = (w: WeatherWindow | null, code: string) =>
       w ? `${w.gustPct}% of ${w.window} hours at ${code}${w.stormPct >= 3 ? ` (thunderstorms in ${w.stormPct}%)` : ""}` : null;
     const parts = [part(wxDep, f.origin.code), part(wxArr, f.destination.code)].filter((x): x is string => x !== null);
-    const gust = Math.max(wxDep?.gustPct ?? 0, wxArr?.gustPct ?? 0);
+    // It explains the shares above; the rating rests on the readings, so it is never shown as moving it.
     factors.push({
       title: "Wind near the ground",
-      detail: `Gusts were reported in ${parts.join(" and ")} in ${(originFig ?? destFig)!.monthWords} — gusty wind is what most often livens up the first and last few minutes`,
-      effect: gust >= 25 ? "down" : gust <= 8 ? "up" : "neutral",
+      detail: `Gusts were reported in ${parts.join(" and ")} in ${(originFig ?? destFig)!.monthWords} — across US airports, the places and times of day with more gusty hours had livelier takeoffs and landings`,
+      effect: "neutral",
     });
   }
 

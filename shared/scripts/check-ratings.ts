@@ -26,6 +26,7 @@
  * tierLabel) and the speed budget (< 50 µs a call, warm). Exits non-zero on any failure.
  */
 import {
+  APPROACH_CUTS,
   CATEGORY_LABELS,
   CATEGORY_PROMPTS,
   RATING_CATEGORIES,
@@ -624,8 +625,8 @@ check(rateFlight({ option: edge, today: "2027-03-11" })[0].basis === "forecast",
   const gusty = new Array<number>(WEATHER_CELLS).fill(0);
   [[200, 10], [400, 60], [300, 120], [300, 45]].forEach(([h, g], w) => { gusty[4 * w] = h; gusty[4 * w + 1] = g; gusty[4 * w + 2] = Math.round(g / 2); });
   // JFK: takeoffs clearly smoothest in the morning; landings livelier. LAX: calm all day. OGG: nothing measured, weather only.
-  const JFK = ends([[10, 8], [200, 170], [120, 60], [150, 100]], [[20, 10], [150, 90], [150, 45], [160, 80]]);
-  const LAX = ends([[10, 9], [150, 130], [150, 125], [150, 128]], [[30, 25], [150, 120], [150, 115], [160, 130]]);
+  const JFK = ends([[10, 8], [200, 170], [120, 30], [150, 60]], [[20, 10], [150, 90], [150, 45], [160, 80]]);
+  const LAX = ends([[10, 9], [150, 130], [150, 125], [150, 128]], [[30, 25], [150, 90], [150, 45], [160, 80]]);
   const national = ends([[500, 400], [5000, 4000], [4000, 2400], [4000, 3000]], [[600, 400], [5000, 3500], [5000, 1500], [5000, 3000]]);
   const t: RouteHistoryTable = {
     version: 1,
@@ -662,8 +663,8 @@ check(rateFlight({ option: edge, today: "2027-03-11" })[0].basis === "forecast",
     const f = option.flight;
     const tag = `takeoff & landing JFK→LAX ${f.departTime}`;
     const approach = rateFlight({ option, today, history: day })[1];
-    const v = (share(jfk!.departures, hourOf(f.departTime)) + share(laxJan.arrivals, hourOf(f.arriveTime))) / 2;
-    const expected = v >= 72 ? 4 : v >= 64 ? 3 : v >= 56 ? 2 : v >= 48 ? 1 : 0;
+    const v = (share(jfk!.departures, hourOf(f.departTime)) * share(laxJan.arrivals, hourOf(f.arriveTime))) / 100;
+    const expected = v >= APPROACH_CUTS[0] ? 4 : v >= APPROACH_CUTS[1] ? 3 : v >= APPROACH_CUTS[2] ? 2 : v >= APPROACH_CUTS[3] ? 1 : 0;
     check(approach.value === expected, `${tag}: ${approach.tier} for a measured ${v.toFixed(1)}`);
     check(approach.basisText === "Based on takeoffs from JFK and landings at LAX in January", `${tag}: basisText "${approach.basisText}"`);
     check((approach.source ?? "").includes("NOAA MADIS") && (approach.source ?? "").includes("Iowa Environmental Mesonet") && (approach.definition ?? "").startsWith("A smooth takeoff or landing"), `${tag}: source "${approach.source}"`);
@@ -671,9 +672,9 @@ check(rateFlight({ option: edge, today: "2027-03-11" })[0].basis === "forecast",
     check(approach.factors.some((x) => x.title === "Wind near the ground" && x.detail.includes("% of") && x.detail.includes("hours at JFK")), `${tag}: a wind factor from JFK's reports`);
     check(!approach.numbers.some((n) => n.label.endsWith(" pattern")), `${tag}: the traits model beside measured figures`);
     checkCopy(tag, stringsOf(approach));
-    byHour.push([share(jfk!.departures, hourOf(f.departTime)) + share(laxJan.arrivals, hourOf(f.arriveTime)), approach.value]);
+    byHour.push([v, approach.value]);
   }
-  // On one route, a flight with higher measured shares at both ends never rates below one with lower.
+  // On one route, a flight with a higher chance of two smooth ends never rates below one with a lower.
   for (const [a, va] of byHour) for (const [b, vb] of byHour) if (a > b) check(va >= vb, `takeoff & landing: ${a.toFixed(1)} rated ${va}, ${b.toFixed(1)} rated ${vb}`);
   check(new Set(byHour.map(([, v]) => v)).size >= 2, `the time of day moves JFK→LAX takeoff & landing: ${byHour.map(([, v]) => v).join()}`);
 
