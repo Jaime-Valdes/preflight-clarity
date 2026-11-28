@@ -1,0 +1,204 @@
+# Version D's route history from NOAA MADIS (docs/REAL_DATA.md, "Status: route history from MADIS").
+#
+# Each month it processes the month before: downloads its hourly ACARS files from the MADIS public
+# archive (about 1.1 GB), counts the airliner turbulence readings per US route pair
+# (backend/scripts/route-history), adds the month file to backend/route-history/months, rebuilds the
+# bundled table backend/src/lib/routeHistory/route-history.json, runs the checks, and opens a pull
+# request against main. It never pushes to main: merging the pull request is what deploys (Vercel).
+#
+# Run it by hand to backfill or rebuild: Actions → Route history refresh → Run workflow, with
+# months "YYYY-MM..YYYY-MM" (at most 24, one job each, three at a time).
+#
+# Needs the repository setting Settings → Actions → General → Workflow permissions →
+# "Allow GitHub Actions to create and approve pull requests" to open the pull request.
+
+name: Route history refresh
+
+on:
+  schedule:
+    # The 3rd of each month, for the month before (the archive fills within a day).
+    - cron: "23 7 3 * *"
+  workflow_dispatch:
+    inputs:
+      months:
+        description: "YYYY-MM or YYYY-MM..YYYY-MM to (re)process; empty: the last complete month, if it isn't in yet"
+        type: string
+        default: ""
+      dry_run:
+        description: "Dry run: build and check the table, upload it as an artifact, open no pull request"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: route-history
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      months: ${{ steps.plan.outputs.months }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Which months
+        id: plan
+        env:
+          MONTHS: ${{ inputs.months }}
+        run: npx --yes tsx@4.23.15 backend/scripts/route-history/months.ts --months "$MONTHS"
+
+  month:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        month: ${{ fromJSON(needs.plan.outputs.months) }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        # npm 11.6.1 wrote package-lock.json; see bts-refresh.yml.
+        run: npx --yes npm@11.6.1 ci --no-audit --no-fund
+
+      - name: Download and count ${{ matrix.month }}
+        env:
+          MONTH: ${{ matrix.month }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          node --max-old-space-size=6144 node_modules/.bin/tsx backend/scripts/route-history/madis-month.ts \
+            --month "$MONTH" --dir "$RUNNER_TEMP/madis-$MONTH" --out "$RUNNER_TEMP/out/$MONTH.json"
+
+      - name: Keep the month file
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: route-history-${{ matrix.month }}
+          path: ${{ runner.temp }}/out/${{ matrix.month }}.json
+          retention-days: 14
+
+  table:
+    needs: [plan, month]
+    # Build from the months that finished, even if one failed (the summary names what is missing).
+    if: ${{ !cancelled() && needs.plan.outputs.any == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DRY_RUN: ${{ inputs.dry_run == true }}
+      PLANNED: ${{ needs.plan.outputs.months }}
+      TABLE: backend/src/lib/routeHistory/route-history.json
+      MONTHS_DIR: backend/route-history/months
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npx --yes npm@11.6.1 ci --no-audit --no-fund
+
+      - name: Collect the month files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: route-history-*
+          path: ${{ runner.temp }}/months
+          merge-multiple: true
+
+      - name: Rebuild the table
+        id: build
+        run: |
+          mkdir -p "$MONTHS_DIR" "$(dirname "$TABLE")"
+          got=()
+          for f in "$RUNNER_TEMP"/months/*.json; do
+            [ -e "$f" ] || continue
+            cp "$f" "$MONTHS_DIR/"
+            got+=("$(basename "$f" .json)")
+          done
+          if [ ${#got[@]} -eq 0 ]; then echo "::error title=Route history refresh::No month finished; nothing to build."; exit 1; fi
+          missing=$(node -e 'const p=JSON.parse(process.env.PLANNED), g=new Set(process.argv.slice(1)); console.log(p.filter(m=>!g.has(m)).join(" "))' "${got[@]}")
+          echo "got=${got[*]}" >> "$GITHUB_OUTPUT"
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+          echo "first=${got[0]}" >> "$GITHUB_OUTPUT"
+          echo "last=${got[-1]}" >> "$GITHUB_OUTPUT"
+          npx tsx backend/scripts/route-history/build.ts --summary "$RUNNER_TEMP/pr-body.md"
+          if [ -n "$missing" ]; then
+            printf '\n**Not in this run** (the job failed; re-run it with these months): %s\n' "$missing" >> "$RUNNER_TEMP/pr-body.md"
+          fi
+          cat "$RUNNER_TEMP/pr-body.md" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Check (backend tests)
+        run: npm run test -w backend
+
+      - name: Upload the table (dry run)
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: route-history-table
+          path: |
+            ${{ env.TABLE }}
+            ${{ env.MONTHS_DIR }}
+            ${{ runner.temp }}/pr-body.md
+          retention-days: 14
+
+      - name: Open the pull request
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIRST: ${{ steps.build.outputs.first }}
+          LAST: ${{ steps.build.outputs.last }}
+        run: |
+          if git diff --quiet -- "$TABLE" && [ -z "$(git status --porcelain -- "$MONTHS_DIR")" ]; then
+            echo "::notice title=Route history refresh::The table and month files are unchanged; nothing to propose."
+            exit 0
+          fi
+          span="$FIRST"; [ "$FIRST" != "$LAST" ] && span="$FIRST to $LAST"
+          branch="data/route-history-$FIRST"; [ "$FIRST" != "$LAST" ] && branch="data/route-history-$FIRST-$LAST"
+          open=$(gh pr list --head "$branch" --base main --state open --json url --jq '.[0].url // ""')
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -- "$TABLE" "$MONTHS_DIR"
+          git commit -m "Route history: NOAA MADIS $span" -- "$TABLE" "$MONTHS_DIR"
+          git push --force origin "HEAD:refs/heads/$branch"
+          if [ -n "$open" ]; then
+            gh pr edit "$open" --body-file "$RUNNER_TEMP/pr-body.md"
+            echo "::notice title=Route history refresh::Updated $open"
+            exit 0
+          fi
+          if ! out=$(gh pr create --base main --head "$branch" \
+                --title "Route history: NOAA MADIS $span" \
+                --body-file "$RUNNER_TEMP/pr-body.md" 2>&1); then
+            echo "$out"
+            if grep -qi "not permitted to create" <<<"$out"; then
+              echo "::error title=Allow Actions to open pull requests::GitHub refused to let this workflow open the pull request. Turn on Settings → Actions → General → Workflow permissions → \"Allow GitHub Actions to create and approve pull requests\", then re-run this job. The table is already on branch $branch: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch"
+            else
+              echo "::error title=Route history refresh::Could not open the pull request (see the log above). The table is on branch $branch."
+            fi
+            exit 1
+          fi
+          echo "::notice title=Route history refresh::Opened $out"
