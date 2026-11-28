@@ -9,10 +9,15 @@
  * so a pair's January is all the Januaries there are; the API words the figure for the month a
  * flight is in. With --summary it also writes the pull request's description: the months in the
  * table, and the coverage per calendar month against the routes US carriers fly.
+ *
+ * Month files that carry takeoff and landing counts (`airports`) and hourly weather (`weather`) add
+ * them the same way, by calendar month; the table also keeps every airport's counts added up
+ * (`airportsNational`), the fallback for an airport with too few flights.
  */
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CELLS, C } from "./analyze";
+import { WEATHER_CELLS, WX } from "@preflight/shared/routeHistory";
+import { A, AIRPORT_CELLS, CELLS, C } from "./analyze";
 import { flownPairs, routeAirports } from "./madis-month";
 
 const MONTHS_DIR = "backend/route-history/months";
@@ -28,6 +33,10 @@ interface MonthFile {
   hours: { expected: number; read: number };
   national: [number, number, number];
   pairs: Record<string, number[]>;
+  /** "JFK" → AIRPORT_CELLS takeoff and landing counts (month files from 2026-11-28 on). */
+  airports?: Record<string, number[]>;
+  /** "JFK" → WEATHER_CELLS hourly weather counts. */
+  weather?: Record<string, number[]>;
 }
 
 export interface RouteHistoryTableFile {
@@ -40,6 +49,12 @@ export interface RouteHistoryTableFile {
   national: Array<[number, number, number]>;
   /** "ATL-CHS" → by calendar month, the pair's CELLS counts (analyze.ts), or null. */
   pairs: Record<string, Array<number[] | null>>;
+  /** "JFK" → by calendar month, AIRPORT_CELLS counts, or null; present when any month file has them. */
+  airports?: Record<string, Array<number[] | null>>;
+  /** By calendar month: every airport's counts added up, or null. */
+  airportsNational?: Array<number[] | null>;
+  /** "JFK" → by calendar month, WEATHER_CELLS counts, or null. */
+  weather?: Record<string, Array<number[] | null>>;
 }
 
 function parseArgs(argv: string[]) {
@@ -79,6 +94,22 @@ export function checkMonth(m: MonthFile, file: string): void {
     }
     if (windows !== n) fail(`${pk}: window counts do not add up`);
   }
+  if (m.airports !== undefined) {
+    if (!m.airports || typeof m.airports !== "object") fail("airports");
+    for (const [code, c] of Object.entries(m.airports)) {
+      if (!/^[A-Z]{3}$/.test(code)) fail(`airport ${code}`);
+      if (!Array.isArray(c) || c.length !== AIRPORT_CELLS || !c.every(isCount)) fail(`${code}: not ${AIRPORT_CELLS} counts`);
+      for (let k = 0; k < AIRPORT_CELLS; k += 3) if (c[k + 1] > c[k + 2] || c[k + 2] > c[k]) fail(`${code}: smooth ≤ calm ≤ flights does not hold`);
+    }
+  }
+  if (m.weather !== undefined) {
+    if (!m.weather || typeof m.weather !== "object") fail("weather");
+    for (const [code, c] of Object.entries(m.weather)) {
+      if (!/^[A-Z]{3}$/.test(code)) fail(`weather airport ${code}`);
+      if (!Array.isArray(c) || c.length !== WEATHER_CELLS || !c.every(isCount)) fail(`${code}: not ${WEATHER_CELLS} weather counts`);
+      for (let k = 0; k < WEATHER_CELLS; k += 4) if (c[k + WX.gust] > c[k] || c[k + WX.windy] > c[k] || c[k + WX.storm] > c[k]) fail(`${code}: more weather hours than hours reported`);
+    }
+  }
 }
 
 export function buildTable(months: MonthFile[]): RouteHistoryTableFile {
@@ -93,6 +124,32 @@ export function buildTable(months: MonthFile[]): RouteHistoryTableFile {
       for (let k = 0; k < CELLS; k++) cell[k] += c[k];
     }
   }
+  const byMonth = (pick: (m: MonthFile) => Record<string, number[]> | undefined, size: number) => {
+    if (!months.some((m) => pick(m) !== undefined)) return undefined;
+    const rows: Record<string, Array<number[] | null>> = {};
+    for (const m of months) {
+      const mi = Number(m.month.slice(5)) - 1;
+      for (const [code, c] of Object.entries(pick(m) ?? {})) {
+        const row = (rows[code] ??= Array.from({ length: 12 }, () => null));
+        const cell = (row[mi] ??= new Array<number>(size).fill(0));
+        for (let k = 0; k < size; k++) cell[k] += c[k];
+      }
+    }
+    return Object.fromEntries(Object.keys(rows).sort().map((k) => [k, rows[k]]));
+  };
+  const airports = byMonth((m) => m.airports, AIRPORT_CELLS);
+  const weather = byMonth((m) => m.weather, WEATHER_CELLS);
+  let airportsNational: Array<number[] | null> | undefined;
+  if (airports) {
+    airportsNational = Array.from({ length: 12 }, () => null);
+    for (const row of Object.values(airports)) {
+      row.forEach((c, mi) => {
+        if (!c) return;
+        const cell = (airportsNational![mi] ??= new Array<number>(AIRPORT_CELLS).fill(0));
+        for (let k = 0; k < AIRPORT_CELLS; k++) cell[k] += c[k];
+      });
+    }
+  }
   return {
     version: 1,
     source: "NOAA MADIS ACARS, public archive: the eddy dissipation rate (EDR) many US airliners report automatically at cruise",
@@ -102,14 +159,22 @@ export function buildTable(months: MonthFile[]): RouteHistoryTableFile {
     months: months.map((m) => m.month).sort(),
     national,
     pairs: Object.fromEntries(Object.keys(pairs).sort().map((k) => [k, pairs[k]])),
+    ...(airports ? { airports, airportsNational, weather: weather ?? {} } : {}),
   };
 }
 
-/** One pair per line, so the table's diff reads route by route. */
+/** One pair (and one airport) per line, so the table's diff reads route by route. */
 export function tableText(t: RouteHistoryTableFile): string {
-  const { pairs, ...head } = t;
-  const lines = Object.keys(pairs).map((k) => `    ${JSON.stringify(k)}: ${JSON.stringify(pairs[k])}`);
-  const text = `${JSON.stringify(head, null, 2).replace(/\n}$/, "")},\n  "pairs": {\n${lines.join(",\n")}\n  }\n}\n`;
+  const { pairs, airports, airportsNational, weather, ...head } = t;
+  const block = (name: string, rows: Record<string, unknown>) =>
+    `  ${JSON.stringify(name)}: {\n${Object.keys(rows).map((k) => `    ${JSON.stringify(k)}: ${JSON.stringify(rows[k])}`).join(",\n")}\n  }`;
+  const parts = [block("pairs", pairs)];
+  if (airports) {
+    parts.push(block("airports", airports));
+    parts.push(`  "airportsNational": ${JSON.stringify(airportsNational ?? [])}`);
+    parts.push(block("weather", weather ?? {}));
+  }
+  const text = `${JSON.stringify(head, null, 2).replace(/\n}$/, "")},\n${parts.join(",\n")}\n}\n`;
   JSON.parse(text);
   return text;
 }
@@ -129,15 +194,36 @@ async function summary(t: RouteHistoryTableFile, months: MonthFile[]): Promise<s
     const years = t.months.filter((m) => Number(m.slice(5)) - 1 === mi).join(", ");
     rows.push(`| ${MONTH_NAMES[mi]} (${years}) | ${n.toLocaleString("en-US")} | ${((100 * s) / n).toFixed(1)}% | ${shown.length} of ${pairs.length} | ${(100 * share).toFixed(1)}% |`);
   }
+  const ends: string[] = [];
+  if (t.airports && t.airportsNational) {
+    const side = (c: readonly number[], base: number, k: number) => c[base + k] + c[base + 3 + k] + c[base + 6 + k] + c[base + 9 + k];
+    const airports = routeAirports().length;
+    for (let mi = 0; mi < 12; mi++) {
+      const all = t.airportsNational[mi];
+      if (!all) continue;
+      const covered = Object.values(t.airports).filter((row) => row[mi] && side(row[mi]!, A.dep, 0) >= SHOWN_FROM && side(row[mi]!, A.arr, 0) >= SHOWN_FROM).length;
+      const weather = Object.values(t.weather ?? {}).filter((row) => row[mi]).length;
+      const share = (base: number) => `${((100 * side(all, base, 1)) / Math.max(1, side(all, base, 0))).toFixed(1)}%`;
+      ends.push(`| ${MONTH_NAMES[mi]} | ${side(all, A.dep, 0).toLocaleString("en-US")} · ${share(A.dep)} | ${side(all, A.arr, 0).toLocaleString("en-US")} · ${share(A.arr)} | ${covered} of ${airports} | ${weather} |`);
+    }
+  }
   const hours = months.map((m) => `${m.month} ${m.hours.read}/${m.hours.expected}`).join(", ");
   return [
     `Route history table: NOAA MADIS ACARS, ${t.months[0]} to ${t.months[t.months.length - 1]} (${t.months.length} months).`,
     "",
-    "Built by `.github/workflows/route-history.yml` (backend/scripts/route-history). Version D's cruise ratings read it; merging deploys it.",
+    "Built by `.github/workflows/route-history.yml` (backend/scripts/route-history). Version D's cruise and takeoff & landing ratings read it; merging deploys it.",
     "",
     `| Calendar month | Flights on US routes | Smooth cruise | Pairs with ≥${SHOWN_FROM} flights | Share of scheduled US flights covered |`,
     "|---|---|---|---|---|",
     ...rows,
+    ...(ends.length > 0
+      ? [
+          "",
+          `| Takeoff & landing | Departures measured · smooth | Arrivals measured · smooth | Airports with ≥${SHOWN_FROM} each way | Airports with weather reports |`,
+          "|---|---|---|---|---|",
+          ...ends,
+        ]
+      : []),
     "",
     `Hours read per month: ${hours}.`,
   ].join("\n");

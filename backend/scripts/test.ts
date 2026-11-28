@@ -34,7 +34,7 @@ import {
 } from "@preflight/shared/record";
 import { generatedSchedule, optionsFromSchedule, type RouteDaySchedule, type ScheduleRow } from "@preflight/shared/schedule";
 import { airlineOnTime, isRouteOnTime, onTimePeriod, routeOnTime, type OnTimeTable } from "@preflight/shared/onTime";
-import { C, CELLS, isRouteHistoryDay, routeHistoryDay, type RouteHistoryTable } from "@preflight/shared/routeHistory";
+import { A, AIRPORT_CELLS, C, CELLS, WEATHER_CELLS, WX, airportFigures, isRouteHistoryDay, routeHistoryDay, type RouteHistoryTable } from "@preflight/shared/routeHistory";
 import { SECTION_IDS } from "@preflight/shared/sections";
 import {
   emailKey,
@@ -96,11 +96,12 @@ import { ROUTE_HISTORY_TABLE, routeHistoryForSchedule } from "../src/lib/routeHi
 import { createFileStore, D_FEEDBACK_FILE, ROUTE_DAYS_FILE, SIGNUPS_FILE } from "../src/lib/store/file";
 import { aggregateCsv, isOnTime, OnTimeAggregator, parseCsvLine } from "./bts/aggregate";
 import { listZip, openZipCsv } from "./bts/zip";
-import { analyzeMonth, ReadingsBuilder } from "./route-history/analyze";
+import { analyzeEnds, analyzeMonth, ReadingsBuilder } from "./route-history/analyze";
 import { buildTable, checkMonth, tableText } from "./route-history/build";
 import { extractHour, routeAirports } from "./route-history/madis-month";
 import { planMonths } from "./route-history/months";
 import { openNetcdf, readNumbers, readStrings } from "./route-history/netcdf";
+import { weatherCounts, weatherUrl } from "./route-history/weather";
 import { createMemoryRouteDayStore } from "../src/lib/store/memory";
 import { createSupabaseStore, without, withoutNewerSignupColumns as stripSignupColumns } from "../src/lib/store/supabase";
 import {
@@ -3157,6 +3158,79 @@ group("route history: the MADIS precompute", () => {
     assert.equal(isRouteHistoryDay(routeHistoryDay(t as unknown as RouteHistoryTable, [["JFK", "LAX"]], "2027-01-10")), true);
   });
 
+  test("analyzeEnds: a takeoff's first readings near the origin, a landing's last near the destination, by local hour; too far, too high or too few is not counted", () => {
+    const b = new ReadingsBuilder();
+    const add = (tail: string, o3: string, d3: string, t0: number, pts: ReturnType<typeof trackAlong>) => pts.forEach((p, i) => b.add(tail, o3, d3, t0 + 60 * i, p.alt, p.lat, p.lon, p.edr));
+    // JFK → LAX from 8 AM in New York: a bump in the climb (reading 3, about 20 nm out and low), a smooth landing about 10 AM in LA.
+    add("FSL1", "KJF", "KLA", T0, trackAlong(JFK, LAX, 300, 11000, (i) => (i === 3 ? 0.25 : 0.03)));
+    // The same, smooth, an hour later; and one with a light bump on the approach (EDR 0.15: not smooth, still calm).
+    add("FSL2", "KJF", "KLA", T0 + 3600, trackAlong(JFK, LAX, 300, 11000, () => 0.03));
+    add("FSL3", "KJF", "KLA", T0 + 7200, trackAlong(JFK, LAX, 300, 11000, (i, n) => (i === n - 2 ? 0.15 : 0.03)));
+    // Readings that start at cruise (the climb unreported) and end at cruise: neither end counted.
+    add("FSL4", "KJF", "KLA", T0, trackAlong(JFK, LAX, 300, 11000, () => 0.03).slice(30, 270));
+    // Two readings only near the airport: too few for a departure.
+    add("FSL5", "KJF", "KLA", T0, trackAlong(JFK, LAX, 300, 11000, () => 0.03).slice(3, 270));
+    const ends = analyzeEnds(b.build(), airports);
+    const jfk = ends["JFK"]!;
+    const lax = ends["LAX"]!;
+    assert.equal(jfk.length, AIRPORT_CELLS);
+    const morning = 3; // window 1, three cells a window
+    assert.deepEqual(jfk.slice(A.dep + morning, A.dep + morning + 3), [3, 2, 2], "three morning departures, two smooth, two calm");
+    assert.equal(jfk.reduce((s, x) => s + x, 0), 7, "nothing else counted at JFK");
+    assert.deepEqual(lax.slice(A.arr + morning, A.arr + morning + 3), [3, 2, 3], "three morning landings, one with a light bump");
+    assert.equal(ends["LAS"], undefined, "KLA resolved by distance to LAX");
+  });
+
+  test("weatherCounts: one routine report an hour, by local window; gusts, 15 knots, thunderstorms; other months and missing values left out", () => {
+    const csv = [
+      "station,valid,sknt,gust,wxcodes",
+      "JFK,2026-01-15 13:51,16.00,24.00,-RA", // 8:51 AM in New York: morning, windy, gusty
+      "JFK,2026-01-15 13:59,30.00,40.00,TS", // a second report in the same UTC hour: ignored
+      "JFK,2026-01-15 20:51,8.00,M,VCTS", // 3:51 PM: afternoon, a thunderstorm nearby
+      "JFK,2026-01-16 03:51,M,M,M", // 10:51 PM: overnight, nothing reported but the hour
+      "JFK,2026-02-01 13:51,20.00,30.00,M", // another month
+      "garbage",
+    ].join("\n");
+    const c = weatherCounts(csv, "America/New_York", "2026-01")!;
+    assert.equal(c.length, WEATHER_CELLS);
+    assert.deepEqual(c.slice(4, 8), [1, 1, 1, 0], "morning");
+    assert.deepEqual(c.slice(8, 12), [1, 0, 0, 1], "afternoon");
+    assert.deepEqual(c.slice(0, 4), [1, 0, 0, 0], "overnight");
+    assert.equal(c[12 + WX.hours], 0);
+    assert.equal(weatherCounts(csv, "America/New_York", "2026-03"), null);
+    const url = new URL(weatherUrl("JFK", "2026-12"));
+    assert.deepEqual([url.searchParams.get("year2"), url.searchParams.get("month2"), url.searchParams.getAll("data").join()], ["2027", "1", "sknt,gust,wxcodes"]);
+  });
+
+  test("checkMonth and buildTable with takeoff and landing counts and weather: checked, summed by calendar month, added up across airports", () => {
+    const pairs = { "JFK-LAX": [3, 2, 2, 2, 1, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0] };
+    const jfk = new Array<number>(AIRPORT_CELLS).fill(0);
+    jfk.splice(A.dep + 3, 3, 40, 30, 38);
+    jfk.splice(A.arr + 6, 3, 35, 10, 30);
+    const wx = new Array<number>(WEATHER_CELLS).fill(0);
+    wx.splice(4, 4, 300, 60, 90, 2);
+    const good = { version: 1 as const, month: "2026-01", hours: { expected: 744, read: 744 }, national: [10, 9, 10] as [number, number, number], pairs, airports: { JFK: jfk, LAX: jfk }, weather: { JFK: wx } };
+    checkMonth(good, "2026-01.json");
+    assert.throws(() => checkMonth({ ...good, airports: { JFK: jfk.slice(1) } }, "2026-01.json"), /counts/);
+    assert.throws(() => checkMonth({ ...good, airports: { JFK: [...jfk.slice(0, 3), 1, 2, 1, ...jfk.slice(6)] } }, "2026-01.json"), /smooth ≤ calm/);
+    assert.throws(() => checkMonth({ ...good, weather: { JFK: [1, 2, 0, 0, ...wx.slice(4)] } }, "2026-01.json"), /weather hours/);
+    const t = buildTable([good, { ...good, month: "2025-01" }, { version: 1, month: "2026-02", hours: { expected: 672, read: 672 }, national: [1, 1, 1], pairs }]);
+    assert.equal(t.airports!["JFK"]![0]![A.dep + 3], 80);
+    assert.equal(t.airports!["JFK"]![1], null);
+    assert.equal(t.airportsNational![0]![A.dep + 3], 160, "JFK and LAX added up");
+    assert.equal(t.weather!["JFK"]![0]![4 + WX.gust], 120);
+    assert.deepEqual(JSON.parse(tableText(t)), t);
+    const table = t as unknown as RouteHistoryTable;
+    const fig = airportFigures(table, "JFK", 1)!;
+    assert.deepEqual([fig.months, fig.departures?.flights, fig.departures?.smoothPct, fig.arrivals?.flights, fig.weather?.[1]?.gustPct], [[1], 80, 75, 70, 20]);
+    assert.equal(airportFigures(table, "JFK", 2)?.months.length, 3, "February has none of its own: the neighbours are added");
+    const day = routeHistoryDay(table, [["JFK", "LAX"]], "2027-01-10");
+    assert.deepEqual(Object.keys(day.airports ?? {}), ["JFK", "LAX"]);
+    assert.equal(day.airportsNational?.departures?.flights, 160);
+    assert.equal(isRouteHistoryDay(day), true);
+    assert.equal(isRouteHistoryDay({ ...day, airports: { JFK: { ...fig, departures: { ...fig.departures, smoothPct: 140 } } } }), false);
+  });
+
   test("planMonths: the last complete month unless it is in; an explicit range rebuilt; nothing unfinished or too long", () => {
     assert.deepEqual(planMonths("", "2026-12-03", new Set()), ["2026-11"]);
     assert.deepEqual(planMonths("", "2026-12-03", new Set(["2026-11"])), []);
@@ -3185,6 +3259,15 @@ group("route history: the lookup", () => {
       for (const cell of row) if (cell) assert.ok(cell.length === CELLS && cell[C.smooth]! <= cell[C.calm]! && cell[C.calm]! <= cell[C.n]!, pk);
     }
     assert.ok(t.pairs["JFK-LAX"]?.some((c) => (c?.[C.n] ?? 0) >= 30), "JFK-LAX has a month with figures");
+    // Takeoff and landing: most catalogue US airports measured, and weather reports for nearly all of them.
+    assert.ok(t.airports && Object.keys(t.airports).length >= 60, `${Object.keys(t.airports ?? {}).length} airports`);
+    assert.ok(t.weather && Object.keys(t.weather).length >= 80, `${Object.keys(t.weather ?? {}).length} airports with weather`);
+    assert.equal(t.airportsNational?.length, 12);
+    for (const [code, row] of Object.entries(t.airports)) {
+      assert.match(code, /^[A-Z]{3}$/);
+      for (const cell of row) if (cell) for (let k = 0; k < AIRPORT_CELLS; k += 3) assert.ok(cell[k + 1]! <= cell[k + 2]! && cell[k + 2]! <= cell[k]!, code);
+    }
+    assert.ok(airportFigures(t, "ATL", 1)?.departures && airportFigures(t, "ATL", 1)?.arrivals, "ATL has January takeoffs and landings");
   });
 
   test("routeHistoryForSchedule: the day's routes for its month from the bundled table; a broken table costs only the history", () => {
@@ -3196,6 +3279,8 @@ group("route history: the lookup", () => {
     assert.equal(day.month, month);
     assert.deepEqual(Object.keys(day.routes), ["JFK-LAX"]);
     assert.ok((day.routes["JFK-LAX"]?.flights ?? 0) >= 30);
+    assert.deepEqual(Object.keys(day.airports ?? {}).sort(), ["JFK", "LAX"]);
+    assert.ok((day.airports?.["JFK"]?.departures?.flights ?? 0) >= 30);
     const quiet = console.error;
     console.error = () => {};
     try {

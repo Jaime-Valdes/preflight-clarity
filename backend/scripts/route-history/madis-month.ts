@@ -6,6 +6,10 @@
  *
  *   npx tsx backend/scripts/route-history/madis-month.ts --month YYYY-MM --dir <folder of its own> [--keep] [--out <file>]
  *
+ * It also writes each US airport's takeoff and landing counts (analyze.ts analyzeEnds) and its hourly
+ * weather reports (weather.ts, from the Iowa Environmental Mesonet, one airport every few seconds;
+ * --weather-dir <folder> reads <CODE>.csv files already downloaded instead, --no-weather leaves them out).
+ *
  * The hourly files go into <dir>/DD/YYYYMMDD_HH00.gz; a file already there is used as it is (so a
  * local run can reuse a download), and each is deleted once read unless --keep. They are untrusted
  * data: give the script a folder of its own and never commit them. About 1.1 GB a month, three
@@ -20,8 +24,9 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { gunzipSync } from "node:zlib";
 import { AIRPORTS } from "@preflight/shared/airports";
-import { analyzeMonth, pairKey, ReadingsBuilder, type RouteAirport } from "./analyze";
+import { analyzeEnds, analyzeMonth, pairKey, ReadingsBuilder, type RouteAirport } from "./analyze";
 import { openNetcdf, readNumbers, readStrings } from "./netcdf";
+import { fetchWeatherMonth, weatherCounts } from "./weather";
 
 const ARCHIVE = "https://madis-data.ncep.noaa.gov/madisPublic1/data/archive";
 const HEADERS = { "user-agent": "route-history-refresh" };
@@ -34,26 +39,32 @@ const MAX_MISSING_SHARE = 0.05;
 /** The US airports whose ICAO code is not K + the IATA code. */
 const ICAO: Record<string, string> = { HNL: "PHNL", OGG: "PHOG", KOA: "PHKO", LIH: "PHLI", ITO: "PHTO", ANC: "PANC", FAI: "PAFA", JNU: "PAJN", SJU: "TJSJ", STT: "TIST", GUM: "PGUM" };
 const BTS_TABLE = "backend/src/lib/onTime/bts-ontime.json";
+/** Between two airports' weather requests. */
+const WEATHER_SPACING_MS = 6_000;
 
 interface Args {
   month: string;
   dir: string;
   out: string;
   keep: boolean;
+  /** "fetch" (IEM), "none", or a folder of <CODE>.csv files. */
+  weather: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { month: "", dir: "", out: "", keep: false };
+  const args: Args = { month: "", dir: "", out: "", keep: false, weather: "fetch" };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]!;
     if (a === "--month") args.month = argv[++i] ?? "";
     else if (a === "--dir") args.dir = argv[++i] ?? "";
     else if (a === "--out") args.out = argv[++i] ?? "";
     else if (a === "--keep") args.keep = true;
+    else if (a === "--no-weather") args.weather = "none";
+    else if (a === "--weather-dir") args.weather = argv[++i] ?? "";
     else throw new Error(`unknown argument ${a}`);
   }
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(args.month) || !args.dir) {
-    throw new Error("usage: madis-month.ts --month YYYY-MM --dir <folder of its own> [--keep] [--out <file>]");
+    throw new Error("usage: madis-month.ts --month YYYY-MM --dir <folder of its own> [--keep] [--out <file>] [--no-weather | --weather-dir <folder>]");
   }
   if (!args.out) args.out = `backend/route-history/months/${args.month}.json`;
   return args;
@@ -180,7 +191,10 @@ async function main(): Promise<void> {
   const gone = missing + unreadable;
   if (gone > MAX_MISSING_SHARE * hours.length) throw new Error(`${args.month}: ${gone} of ${hours.length} hours missing or unreadable, more than ${MAX_MISSING_SHARE * 100}%`);
 
-  const counts = analyzeMonth(builder.build(), airports, pairs);
+  const readings = builder.build();
+  const counts = analyzeMonth(readings, airports, pairs);
+  const ends = analyzeEnds(readings, airports);
+  const weather = await weatherFor(airports, args);
   const body = {
     version: 1,
     month: args.month,
@@ -192,22 +206,49 @@ async function main(): Promise<void> {
     identified: counts.identified,
     national: counts.national,
     pairs: counts.pairs,
+    airports: ends,
+    weatherSource: "Iowa Environmental Mesonet ASOS archive (mesonet.agron.iastate.edu): routine hourly METAR",
+    weather,
   };
-  // One pair per line, so a month's diff reads route by route.
-  const lines = Object.keys(body.pairs)
-    .sort()
-    .map((k) => `    ${JSON.stringify(k)}: ${JSON.stringify(body.pairs[k])}`);
-  const { pairs: _pairs, ...head } = body;
-  const text = `${JSON.stringify(head, null, 2).replace(/\n}$/, "")},\n  "pairs": {\n${lines.join(",\n")}\n  }\n}\n`;
+  // One pair (and one airport) per line, so a month's diff reads route by route.
+  const block = (name: string, rows: Record<string, number[]>) => {
+    const lines = Object.keys(rows)
+      .sort()
+      .map((k) => `    ${JSON.stringify(k)}: ${JSON.stringify(rows[k])}`);
+    return `  ${JSON.stringify(name)}: {\n${lines.join(",\n")}\n  }`;
+  };
+  const { pairs: _pairs, airports: _airports, weather: _weather, ...head } = body;
+  const text = `${JSON.stringify(head, null, 2).replace(/\n}$/, "")},\n${block("pairs", body.pairs)},\n${block("airports", ends)},\n${block("weather", weather)}\n}\n`;
   JSON.parse(text);
   await mkdir(dirname(args.out), { recursive: true });
   await writeFile(args.out, text);
   const covered = Object.values(counts.pairs).filter((c) => c[0] >= 30).length;
+  const sideFlights = (c: number[], base: number) => c[base] + c[base + 3] + c[base + 6] + c[base + 9];
+  const endsCovered = Object.values(ends).filter((c) => sideFlights(c, 0) >= 30 && sideFlights(c, 12) >= 30).length;
   console.log(
     `${args.month}: ${read}/${hours.length} hours read (${missing} missing, ${unreadable} unreadable), ${builder.length} readings, ${counts.flights} flights with a cruise, ` +
       `${counts.identified} matched to a route; ${Object.keys(counts.pairs).length} of ${pairs.length} pairs with flights, ${covered} with 30 or more; ` +
-      `${(100 * counts.national[1] / Math.max(1, counts.national[0])).toFixed(1)}% smooth overall → ${args.out} (${Math.round((Date.now() - started) / 1000)} s)`,
+      `${(100 * counts.national[1] / Math.max(1, counts.national[0])).toFixed(1)}% smooth overall; takeoff & landing at ${Object.keys(ends).length} airports ` +
+      `(${endsCovered} with 30 or more each way); weather for ${Object.keys(weather).length} → ${args.out} (${Math.round((Date.now() - started) / 1000)} s)`,
   );
+}
+
+/** Every airport's WEATHER_CELLS counts for the month: fetched from IEM, read from a folder, or none. */
+async function weatherFor(airports: readonly RouteAirport[], args: Args): Promise<Record<string, number[]>> {
+  const out: Record<string, number[]> = {};
+  if (args.weather === "none") return out;
+  for (const a of airports) {
+    let csv: string | null = null;
+    if (args.weather === "fetch") {
+      csv = await fetchWeatherMonth(a.code, args.month);
+      await sleep(WEATHER_SPACING_MS);
+    } else {
+      csv = await readFile(join(args.weather, `${a.code}.csv`), "utf8").catch(() => null);
+    }
+    const counts = csv ? weatherCounts(csv, a.tz, args.month) : null;
+    if (counts) out[a.code] = counts;
+  }
+  return out;
 }
 
 if (process.argv[1] && /madis-month\.ts$/.test(process.argv[1])) {

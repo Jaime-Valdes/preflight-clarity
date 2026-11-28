@@ -22,9 +22,9 @@
  *    strongest reading was.
  */
 
-import { C, CELLS, pairKey, windowOf } from "@preflight/shared/routeHistory";
+import { A, AIRPORT_CELLS, C, CELLS, END_RADIUS_NM, END_TOP_M, pairKey, windowOf } from "@preflight/shared/routeHistory";
 
-export { C, CELLS, pairKey };
+export { A, AIRPORT_CELLS, C, CELLS, pairKey };
 
 export const SMOOTH_MAX_EDR = 0.1;
 export const CALM_BELOW_EDR = 0.2;
@@ -36,6 +36,7 @@ const ROUTE_FIT_NM = 60;
 const CORRIDOR_NM = 50;
 const MIN_COVER = 0.5;
 const EARTH_NM = 3440;
+const MIN_END_POINTS = 3;
 
 // The time-of-day windows and the counts' layout (CELLS, C) are shared/src/routeHistory.ts's.
 
@@ -312,44 +313,97 @@ export function analyzeMonth(r: Readings, airports: readonly RouteAirport[], pai
   return { national, flights: flights.length, identified, pairs: counts };
 }
 
-/** Readings → flights with a cruise (see the header). */
-function buildFlights(r: Readings): Flight[] {
+/** Readings → groups, each one flight's readings in time order: same tail and codes, split at gaps over 90 minutes. */
+function groupReadings(r: Readings): number[][] {
   const order = new Uint32Array(r.length);
   for (let i = 0; i < r.length; i++) order[i] = i;
   const codes = r.codes.length + 1;
   const key = (i: number) => (r.tail[i] * codes + r.o3[i]) * codes + r.d3[i];
   order.sort((x, y) => key(x) - key(y) || r.t[x] - r.t[y]);
-  const flights: Flight[] = [];
+  const groups: number[][] = [];
   let cur: number[] = [];
-  const done = () => {
-    if (cur.length === 0) return;
+  for (let n = 0; n < order.length; n++) {
+    const i = order[n];
+    const prev = cur.length > 0 ? cur[cur.length - 1] : -1;
+    if (prev >= 0 && (key(prev) !== key(i) || r.t[i] - r.t[prev] > GAP_S)) {
+      groups.push(cur);
+      cur = [];
+    }
+    cur.push(i);
+  }
+  if (cur.length > 0) groups.push(cur);
+  return groups;
+}
+
+/** Readings → flights with a cruise (see the header). */
+function buildFlights(r: Readings): Flight[] {
+  const flights: Flight[] = [];
+  for (const cur of groupReadings(r)) {
     let top = -Infinity;
     for (const i of cur) top = Math.max(top, r.alt[i]);
     const floor = Math.max(CRUISE_FRACTION * top, CRUISE_FLOOR_M);
     const cruise = cur.filter((i) => r.alt[i] >= floor);
-    if (cruise.length >= MIN_CRUISE_POINTS) {
-      let lat0 = Infinity;
-      let lat1 = -Infinity;
-      let lon0 = Infinity;
-      let lon1 = -Infinity;
-      for (const i of cruise) {
-        lat0 = Math.min(lat0, r.lat[i]);
-        lat1 = Math.max(lat1, r.lat[i]);
-        lon0 = Math.min(lon0, r.lon[i]);
-        lon1 = Math.max(lon1, r.lon[i]);
-      }
-      flights.push({ all: cur, cruise, o3: r.codes[r.o3[cur[0]]], d3: r.codes[r.d3[cur[0]]], lat0, lat1, lon0, lon1 });
+    if (cruise.length < MIN_CRUISE_POINTS) continue;
+    let lat0 = Infinity;
+    let lat1 = -Infinity;
+    let lon0 = Infinity;
+    let lon1 = -Infinity;
+    for (const i of cruise) {
+      lat0 = Math.min(lat0, r.lat[i]);
+      lat1 = Math.max(lat1, r.lat[i]);
+      lon0 = Math.min(lon0, r.lon[i]);
+      lon1 = Math.max(lon1, r.lon[i]);
     }
-    cur = [];
-  };
-  for (let n = 0; n < order.length; n++) {
-    const i = order[n];
-    const prev = cur.length > 0 ? cur[cur.length - 1] : -1;
-    if (prev >= 0 && (key(prev) !== key(i) || r.t[i] - r.t[prev] > GAP_S)) done();
-    cur.push(i);
+    flights.push({ all: cur, cruise, o3: r.codes[r.o3[cur[0]]], d3: r.codes[r.d3[cur[0]]], lat0, lat1, lon0, lon1 });
   }
-  done();
   return flights;
+}
+
+const distNm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const a = Math.sin(((lat2 - lat1) * RAD) / 2) ** 2 + Math.cos(lat1 * RAD) * Math.cos(lat2 * RAD) * Math.sin(((lon2 - lon1) * RAD) / 2) ** 2;
+  return 2 * EARTH_NM * Math.asin(Math.min(1, Math.sqrt(a)));
+};
+
+/** One month's takeoff and landing counts per catalogue airport (see the header): "JFK" → AIRPORT_CELLS counts. */
+export function analyzeEnds(r: Readings, airports: readonly RouteAirport[]): Record<string, number[]> {
+  const candidates = new Map<string, RouteAirport[]>();
+  const cands = (code3: string): RouteAirport[] => {
+    let hit = candidates.get(code3);
+    if (!hit) candidates.set(code3, (hit = code3.length === 3 ? airports.filter((a) => a.icao.startsWith(code3)) : []));
+    return hit;
+  };
+  const counts: Record<string, number[]> = {};
+  for (const g of groupReadings(r)) {
+    for (const side of ["dep", "arr"] as const) {
+      const first = side === "dep" ? g[0] : g[g.length - 1];
+      if (!(r.alt[first] < END_TOP_M)) continue;
+      let airport: RouteAirport | null = null;
+      let best = Infinity;
+      for (const a of cands(r.codes[side === "dep" ? r.o3[first] : r.d3[first]])) {
+        const d = distNm(r.lat[first], r.lon[first], a.lat, a.lon);
+        if (d < best) {
+          best = d;
+          airport = a;
+        }
+      }
+      if (!airport || best > END_RADIUS_NM) continue;
+      let n = 0;
+      let peak = 0;
+      for (let k = 0; k < g.length; k++) {
+        const i = side === "dep" ? g[k] : g[g.length - 1 - k];
+        if (!(r.alt[i] < END_TOP_M) || distNm(r.lat[i], r.lon[i], airport.lat, airport.lon) > END_RADIUS_NM) break;
+        n++;
+        peak = Math.max(peak, r.edr[i]);
+      }
+      if (n < MIN_END_POINTS) continue;
+      const c = (counts[airport.code] ??= new Array<number>(AIRPORT_CELLS).fill(0));
+      const base = (side === "dep" ? A.dep : A.arr) + 3 * windowOf(localHour(r.t[first], airport.tz));
+      c[base]++;
+      if (peak <= SMOOTH_MAX_EDR) c[base + 1]++;
+      if (peak < CALM_BELOW_EDR) c[base + 2]++;
+    }
+  }
+  return counts;
 }
 
 /** The catalogue pair whose great circle the flight's track follows (see the header), or null. */

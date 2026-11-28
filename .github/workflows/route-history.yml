@@ -1,7 +1,9 @@
 # Version D's route history from NOAA MADIS (docs/REAL_DATA.md, "Status: route history from MADIS").
 #
 # Each month it processes the month before: downloads its hourly ACARS files from the MADIS public
-# archive (about 1.1 GB), counts the airliner turbulence readings per US route pair
+# archive (about 1.1 GB), counts the airliner turbulence readings per US route pair and the takeoffs
+# and landings per US airport, fetches each airport's hourly weather reports for the month from the
+# Iowa Environmental Mesonet (one airport every few seconds, about ten minutes)
 # (backend/scripts/route-history), adds the month file to backend/route-history/months, rebuilds the
 # bundled table backend/src/lib/routeHistory/route-history.json, runs the checks, and opens a pull
 # request against main. It never pushes to main: merging the pull request is what deploys (Vercel).

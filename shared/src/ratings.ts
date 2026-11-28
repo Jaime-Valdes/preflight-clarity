@@ -24,9 +24,12 @@
  *    band and east–west alignment, mountain crossings, tropical latitudes) and the season.
  *  - cruise, within 2 days: WAFS / GTG-style turbulence forecasts along the flight's path
  *    (flight.turbulence) and the resulting smoothness score.
- *  - takeoff & landing, booking time: METAR climatology by airport, month and hour, climate
- *    normals by airport (the month's mean temperature and rain share, shared/src/airports.ts),
- *    terrain data and local approach patterns (shared/src/airportTraits.ts), the scheduled times.
+ *  - takeoff & landing, booking time: measured — the same NOAA MADIS readings in the first and last
+ *    few minutes of flights (within 30 nm of the airport, below about 15,000 ft), per US airport,
+ *    month and local time of day (shared/src/routeHistory.ts airportFigures), with the airport's
+ *    hourly weather reports (METAR, from the Iowa Environmental Mesonet) for the wind; when the day
+ *    came without airport figures, the airports' traits (shared/src/airportTraits.ts), climate
+ *    normals (shared/src/airports.ts) and the scheduled times.
  *  - takeoff & landing, within 2 days: the forecast climb and descent (flight.turbulence
  *    phases and windows) and the wind and gust forecast at both airports (flight.weather).
  *  - aircraft: the scheduled type from the published schedule, the airline's published seat
@@ -54,7 +57,14 @@
  *    (mean level, cruise bump windows), averaged with the flight's score, on the bands ≥ 90 /
  *    84 / 76 / 68; then kept in step with the score (≥ 88 never below Smooth, < 70 never above
  *    Moderate) so a card never contradicts the score ring.
- *  - takeoff & landing (history): each airport's traits in the month and at the local hour of
+ *  - takeoff & landing (history, measured): the origin's share of departures with a smooth climb and
+ *    the destination's share of arrivals with a smooth descent in the month (no reading above EDR
+ *    0.10), each moved toward this flight's time-of-day window at that airport when the window has at
+ *    least MIN_WINDOW_FLIGHTS (as the cruise is), then averaged. Tiers on APPROACH_CUTS: ≥ 72 Very
+ *    smooth, ≥ 64 Smooth, ≥ 56 Moderate, ≥ 48 Slightly bumpy, below that Bumpy. An airport with too
+ *    few flights takes US airports' share for that window and says so. The wind factor (gusts reported
+ *    in the hours around takeoff and landing) explains; it does not move the rating.
+ *  - takeoff & landing (history, no airport figures): each airport's traits in the month and at the local hour of
  *    the departure or arrival, in points. The afternoon is the generator's convective window,
  *    12:00–18:59, tapered: a full share inside it, half on its shoulders (11:00–11:59 and
  *    19:00–20:59), none otherwise. Hot afternoons follow the month's mean temperature from the
@@ -92,16 +102,23 @@ import { MOUNTAIN_RANGES, routeDay, type MountainRange } from "./fakeFlight";
 import { availabilityFor, type Availability } from "./forecast";
 import {
   MIN_WINDOW_FLIGHTS,
+  TAKEOFF_LANDING_DEFINITION,
   WHERE_LABELS,
   WINDOW_HOURS,
   WINDOW_LABELS,
   WINDOW_WORDS,
+  airportHistoryFor,
   routeHistoryFor,
   routeHistorySource,
   shareText,
+  takeoffLandingSource,
   windowOf,
+  type AirportHistoryFigures,
+  type EndFigures,
   type RouteHistoryDay,
   type RouteHistoryFigures,
+  type TimeWindow,
+  type WeatherWindow,
 } from "./routeHistory";
 import type { FlightOption } from "./search";
 import type { Airport, BumpWindow, Flight, FlightPhase, Intensity, WeatherReport } from "./types";
@@ -159,6 +176,8 @@ export interface Rating {
   numbers: Array<{ label: string; value: string }>;
   /** Where measured figures in it come from, for the sheet's footnote (left out when nothing in it is measured). */
   source?: string;
+  /** What "smooth" means for this rating, after the source (the cruise definition when left out). */
+  definition?: string;
 }
 
 export interface RatingInput {
@@ -200,7 +219,7 @@ export function rateFlight(input: RatingInput): Rating[] {
   const geo = geometryFor(f);
   return [
     availability.turbulence ? rateCruiseForecast(f, input.history) : rateCruiseHistory(f, geo, input.history),
-    availability.turbulence ? rateApproachForecast(f, availability) : rateApproachHistory(f, geo),
+    availability.turbulence ? rateApproachForecast(f, availability) : rateApproachPast(f, geo, input.history),
     rateAircraft(f, availability),
     rateSpace(f, geo),
   ];
@@ -903,6 +922,154 @@ function rateApproachHistory(f: Flight, geo: RouteGeometry): Rating {
     factors,
     numbers,
   );
+}
+
+/**
+ * Weeks or months out: the two airports' measured takeoffs and landings when the day came with them
+ * (rateApproachMeasured), else the airports' traits, the season and the hours (rateApproachHistory).
+ */
+function rateApproachPast(f: Flight, geo: RouteGeometry, day: RouteHistoryDay | null | undefined): Rating {
+  return (day?.airports && rateApproachMeasured(f, day)) || rateApproachHistory(f, geo);
+}
+
+/**
+ * Takeoff & landing cut-offs on the measured value (the mean of the two ends' smooth shares, in
+ * percent): ≥ very smooth, ≥ smooth, ≥ moderate, ≥ slightly bumpy, below that bumpy. Set from the
+ * Nov 2025–Oct 2026 table so that flights spread across the tiers (docs/REAL_DATA.md).
+ */
+const APPROACH_CUTS = [72, 64, 56, 48] as const;
+const approachMeasuredValue = (v: number) => (v >= APPROACH_CUTS[0] ? 4 : v >= APPROACH_CUTS[1] ? 3 : v >= APPROACH_CUTS[2] ? 2 : v >= APPROACH_CUTS[3] ? 1 : 0);
+
+interface EndShare {
+  /** The share the rating uses: the airport's, moved toward this time of day's when that window has enough flights. */
+  value: number;
+  /** The measured figure behind it: the airport's own, or US airports overall when it has too few. */
+  figures: EndFigures;
+  own: boolean;
+  window: TimeWindow;
+}
+
+function endShare(own: EndFigures | null, national: EndFigures | null, hour: number): EndShare | null {
+  const figures = own ?? national;
+  if (!figures) return null;
+  const w = figures.windows[windowOf(hour)];
+  const value = w.flights >= MIN_WINDOW_FLIGHTS ? (w.flights * w.smoothPct + MIN_WINDOW_FLIGHTS * figures.smoothPct) / (w.flights + MIN_WINDOW_FLIGHTS) : figures.smoothPct;
+  return { value, figures, own: own !== null, window: w.window };
+}
+
+/** "the takeoffs from JFK" / "the landings at LAX" in the copy below. */
+const END_NOUNS = { dep: { plural: "departures", from: "from", smooth: "a smooth climb", verb: "take off" }, arr: { plural: "arrivals", from: "at", smooth: "a smooth descent", verb: "land" } } as const;
+
+/** The end's factor: its share at this time of day (or across the day), against US airports at the same time. */
+function endFactor(side: "dep" | "arr", airport: Airport, e: EndShare, national: EndFigures | null): RatingFactor {
+  const words = END_NOUNS[side];
+  const title = `${airport.city} (${airport.code}) · ${side === "dep" ? "departure" : "arrival"}`;
+  const w = e.figures.windows.find((x) => x.window === e.window)!;
+  const atHour = w.flights >= MIN_WINDOW_FLIGHTS;
+  const shown = atHour ? w.smoothPct : e.figures.smoothPct;
+  const nat = national ? (atHour ? national.windows.find((x) => x.window === e.window)! : null) : null;
+  const natPct = nat && nat.flights >= MIN_WINDOW_FLIGHTS ? nat.smoothPct : national?.smoothPct ?? null;
+  if (!e.own) {
+    return {
+      title,
+      detail: `Too few ${words.plural} measured at ${airport.code} — across US airports, ${shareText(shown, true)} of ${words.plural}${atHour ? ` ${WINDOW_HOURS[e.window]}` : ""} had ${words.smooth}`,
+      effect: "neutral",
+    };
+  }
+  const delta = natPct === null ? 0 : shown - natPct;
+  const against = natPct === null ? "" : Math.abs(delta) >= 5 ? `, against ${shareText(natPct, true)} across US airports` : ", about the same as across US airports";
+  return {
+    title,
+    detail: `${shareText(shown)} of ${withCommas(atHour ? w.flights : e.figures.flights)} ${words.plural} ${words.from} ${airport.code}${atHour ? ` ${WINDOW_HOURS[e.window]}` : ""} had ${words.smooth}${against}`,
+    effect: delta >= 5 ? "up" : delta <= -5 ? "down" : "neutral",
+  };
+}
+
+/** One end's calmest-time words, or null when there is no clear calmest window or the end is US-wide. */
+function calmestWords(side: "dep" | "arr", airport: Airport, e: EndShare): { text: string; here: boolean } | null {
+  if (!e.own || !e.figures.calmest) return null;
+  const best = e.figures.windows.find((x) => x.window === e.figures.calmest)!;
+  const verb = END_NOUNS[side].verb;
+  return e.figures.calmest === e.window
+    ? { text: `this is the smoothest time of day to ${verb} ${side === "dep" ? "from" : "at"} ${airport.code}`, here: true }
+    : { text: `${side === "dep" ? "takeoffs from" : "landings at"} ${airport.code} were smoothest ${WINDOW_WORDS[best.window]} (${shareText(best.smoothPct, true)})`, here: false };
+}
+
+function weatherAt(fig: AirportHistoryFigures | null | undefined, window: TimeWindow): WeatherWindow | null {
+  const w = fig?.weather?.find((x) => x.window === window);
+  return w && w.hours >= 20 ? w : null;
+}
+
+/**
+ * The airports' measured history (shared/src/routeHistory.ts airportFigures): the share of the
+ * origin's departures with a smooth climb and of the destination's arrivals with a smooth descent in
+ * the month, each moved toward this flight's time of day there when that window has enough flights
+ * (as the cruise does), averaged and put on APPROACH_CUTS. An end with too few flights of its own
+ * takes US airports' share and says so; null when not even that is there (the caller falls back).
+ */
+function rateApproachMeasured(f: Flight, day: RouteHistoryDay): Rating | null {
+  const departHour = hourOf(f.departTime);
+  const arriveHour = hourOf(f.arriveTime);
+  const originFig = airportHistoryFor(day, f.origin.code) ?? null;
+  const destFig = airportHistoryFor(day, f.destination.code) ?? null;
+  const national = day.airportsNational ?? null;
+  const dep = endShare(originFig?.departures ?? null, national?.departures ?? null, departHour);
+  const arr = endShare(destFig?.arrivals ?? null, national?.arrivals ?? null, arriveHour);
+  if (!dep || !arr) return null;
+  const value = (dep.value + arr.value) / 2;
+
+  const factors: RatingFactor[] = [
+    endFactor("dep", f.origin, dep, national?.departures ?? null),
+    endFactor("arr", f.destination, arr, national?.arrivals ?? null),
+  ];
+  const calm = [calmestWords("dep", f.origin, dep), calmestWords("arr", f.destination, arr)].filter((x): x is { text: string; here: boolean } => x !== null);
+  factors.push({
+    title: "Time of day",
+    detail: calm.length > 0 ? cap(calm.map((c) => c.text).join("; ")) : `${cap(todWord(departHour))} departure — no time of day stood out as smoother at ${dep.own && arr.own ? "either airport" : "these airports"}`,
+    effect: calm.some((c) => c.here) ? "up" : "neutral",
+  });
+  const wxDep = weatherAt(originFig, dep.window);
+  const wxArr = weatherAt(destFig, arr.window);
+  if (wxDep || wxArr) {
+    const part = (w: WeatherWindow | null, code: string) =>
+      w ? `${w.gustPct}% of ${w.window} hours at ${code}${w.stormPct >= 3 ? ` (thunderstorms in ${w.stormPct}%)` : ""}` : null;
+    const parts = [part(wxDep, f.origin.code), part(wxArr, f.destination.code)].filter((x): x is string => x !== null);
+    const gust = Math.max(wxDep?.gustPct ?? 0, wxArr?.gustPct ?? 0);
+    factors.push({
+      title: "Wind near the ground",
+      detail: `Gusts were reported in ${parts.join(" and ")} in ${(originFig ?? destFig)!.monthWords} — gusty wind is what most often livens up the first and last few minutes`,
+      effect: gust >= 25 ? "down" : gust <= 8 ? "up" : "neutral",
+    });
+  }
+
+  const endValue = (e: EndShare, code: string, side: "dep" | "arr") =>
+    e.own ? `${shareText(e.figures.smoothPct)} · ${withCommas(e.figures.flights)} ${END_NOUNS[side].plural}` : `Too few at ${code} · US airports ${shareText(e.figures.smoothPct)}`;
+  const calmestLabel = (e: EndShare) => (!e.own ? "Too few flights to say" : e.figures.calmest ? WINDOW_LABELS[e.figures.calmest] : "No clear difference");
+  const period = (originFig?.departures ? originFig : destFig?.arrivals ? destFig : originFig ?? destFig)?.period;
+  const monthWords = (originFig?.departures ? originFig : destFig?.arrivals ? destFig : null)?.monthWords ?? monthName(f.input.date);
+  const numbers: Rating["numbers"] = [
+    { label: `Smooth takeoffs from ${f.origin.code}`, value: endValue(dep, f.origin.code, "dep") },
+    { label: `Smooth landings at ${f.destination.code}`, value: endValue(arr, f.destination.code, "arr") },
+    { label: "No more than light bumps", value: `${f.origin.code} ${shareText(dep.figures.calmPct)} · ${f.destination.code} ${shareText(arr.figures.calmPct)}` },
+    { label: `Calmest time to take off from ${f.origin.code}`, value: calmestLabel(dep) },
+    { label: `Calmest time to land at ${f.destination.code}`, value: calmestLabel(arr) },
+    ...(wxDep || wxArr
+      ? [{ label: "Hours with gusts, at these times of day", value: `${f.origin.code} ${wxDep ? `${wxDep.gustPct}%` : "—"} · ${f.destination.code} ${wxArr ? `${wxArr.gustPct}%` : "—"}` }]
+      : []),
+    { label: "Departure", value: `${formatTime12(f.departTime)} · ${todWord(departHour)}` },
+    { label: "Arrival", value: `${formatTime12(f.arriveTime)} · ${todWord(arriveHour)}` },
+    ...(period ? [{ label: "Measured", value: period }] : []),
+  ];
+  const fewer = [dep.own ? null : f.origin.code, arr.own ? null : f.destination.code].filter(Boolean);
+  const basisText =
+    dep.own || arr.own
+      ? `Based on takeoffs from ${f.origin.code} and landings at ${f.destination.code} in ${monthWords}${fewer.length > 0 ? ` · too few measured at ${fewer.join(" and ")}, so US airports overall there` : ""}`
+      : `Based on takeoffs and landings across US airports in ${monthWords} · too few measured at ${f.origin.code} and ${f.destination.code}`;
+  return {
+    ...smoothRating("takeoff_landing", approachMeasuredValue(value), "history", basisText, factors, numbers),
+    source: takeoffLandingSource(day, !!(wxDep || wxArr)),
+    definition: TAKEOFF_LANDING_DEFINITION,
+  };
 }
 
 const INTENSITY_POINTS: Record<Intensity, number> = { none: 0, light: 1.5, moderate: 3.5 };

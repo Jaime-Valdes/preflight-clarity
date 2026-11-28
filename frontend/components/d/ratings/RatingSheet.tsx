@@ -102,9 +102,9 @@ export function RatingSheet({ rating, flightLabel, onClose }: RatingSheetProps) 
       ) : null}
 
       {rating.source ? (
-        // Measured (the cruise history from NOAA MADIS): where it comes from and what "smooth" means.
+        // Measured (the NOAA MADIS history): where it comes from and what "smooth" means for this rating.
         <p className="mt-4 text-xs leading-relaxed text-ink-mute">
-          {rating.source}. {SMOOTH_DEFINITION}
+          {rating.source}. {rating.definition ?? SMOOTH_DEFINITION}
         </p>
       ) : (
         <p className="mt-4 text-xs leading-relaxed text-ink-mute">Prototype · illustrative data. A real product would draw these from past flights, published schedules and the week&rsquo;s forecasts.</p>

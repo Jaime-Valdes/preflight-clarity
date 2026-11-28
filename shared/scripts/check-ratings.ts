@@ -46,9 +46,13 @@ import { addDays, formatOffset, timeToMinutes } from "../src/dates";
 import { COASTAL_AIRPORTS, mountainRangeAt } from "../src/fakeFlight";
 import { TURBULENCE_FORECAST_DAYS } from "../src/forecast";
 import {
+  A,
+  AIRPORT_CELLS,
   C,
   CELLS,
   MIN_WINDOW_FLIGHTS,
+  WEATHER_CELLS,
+  airportFigures,
   WINDOWS,
   WINDOW_LABELS,
   isRouteHistoryDay,
@@ -600,6 +604,89 @@ check(rateFlight({ option: edge, today: "2027-03-11" })[0].basis === "forecast",
   // No figures at all (the browser's illustrative day): the route-and-season rating, still labelled.
   const plain = rateFlight({ option: edge, today: addDays("2027-03-10", -FAR_DAYS) })[0];
   check(plain.basisText.endsWith("no measured history for this route") && plain.source === undefined, `no history at all: "${plain.basisText}" (source ${plain.source})`);
+}
+
+// ── Takeoff & landing history (shared/src/routeHistory.ts airportFigures; ratings.ts rateApproachMeasured) ──
+
+{
+  /** AIRPORT_CELLS from [flights, smooth] per window for departures and arrivals (calm: smooth plus half the rest). */
+  const ends = (dep: number[][], arr: number[][]): number[] => {
+    const c = new Array<number>(AIRPORT_CELLS).fill(0);
+    for (const [base, side] of [[A.dep, dep], [A.arr, arr]] as const)
+      side.forEach(([n, sm], w) => {
+        c[base + 3 * w] = n;
+        c[base + 3 * w + 1] = sm;
+        c[base + 3 * w + 2] = sm + Math.floor((n - sm) / 2);
+      });
+    return c;
+  };
+  const months = (cells: Record<number, number[]>) => Array.from({ length: 12 }, (_, m) => cells[m + 1] ?? null);
+  const gusty = new Array<number>(WEATHER_CELLS).fill(0);
+  [[200, 10], [400, 60], [300, 120], [300, 45]].forEach(([h, g], w) => { gusty[4 * w] = h; gusty[4 * w + 1] = g; gusty[4 * w + 2] = Math.round(g / 2); });
+  // JFK: takeoffs clearly smoothest in the morning; landings livelier. LAX: calm all day. OGG: nothing measured, weather only.
+  const JFK = ends([[10, 8], [200, 170], [120, 60], [150, 100]], [[20, 10], [150, 90], [150, 45], [160, 80]]);
+  const LAX = ends([[10, 9], [150, 130], [150, 125], [150, 128]], [[30, 25], [150, 120], [150, 115], [160, 130]]);
+  const national = ends([[500, 400], [5000, 4000], [4000, 2400], [4000, 3000]], [[600, 400], [5000, 3500], [5000, 1500], [5000, 3000]]);
+  const t: RouteHistoryTable = {
+    version: 1,
+    source: "",
+    definition: "",
+    months: ["2026-01", "2026-02"],
+    national: Array.from({ length: 12 }, () => [1000, 900, 980] as const),
+    pairs: {},
+    airports: { JFK: months({ 1: JFK }), LAX: months({ 1: LAX, 2: ends([[0, 0], [5, 5], [5, 5], [5, 5]], [[0, 0], [5, 5], [5, 5], [5, 5]]) }) },
+    airportsNational: months({ 1: national, 2: national }),
+    weather: { JFK: months({ 1: gusty }), OGG: months({ 1: gusty }) },
+  };
+  const jfk = airportFigures(t, "JFK", 1);
+  check(jfk !== null && jfk.months.join() === "1" && jfk.departures?.flights === 480 && jfk.departures.calmest === "morning" && jfk.arrivals?.flights === 480, `airportFigures JFK January: ${JSON.stringify(jfk?.departures)}`);
+  check(jfk?.weather?.[2]?.gustPct === 40 && jfk.weather[1]?.gustPct === 15, `JFK weather by window: ${JSON.stringify(jfk?.weather)}`);
+  const laxFeb = airportFigures(t, "LAX", 2);
+  check(laxFeb !== null && laxFeb.months.join() === "1,2,3" && (laxFeb.departures?.flights ?? 0) > 450, `too few in February alone → January–March: ${JSON.stringify(laxFeb?.months)}`);
+  const ogg = airportFigures(t, "OGG", 1);
+  check(ogg !== null && ogg.departures === null && ogg.arrivals === null && ogg.weather !== null, "weather only: no takeoff or landing figures");
+  check(airportFigures(t, "SFO", 1) === null && airportFigures({ ...t, airports: undefined }, "JFK", 1) === null, "nothing at the airport, or an older table → null");
+
+  const date = "2027-01-15";
+  const today = addDays(date, -FAR_DAYS);
+  const opts = searchFlights({ origin: "JFK", destination: "LAX", date }).options;
+  const day = routeHistoryDay(t, [["JFK", "LAX"]], date);
+  check(isRouteHistoryDay(day) && isRouteHistoryDay(JSON.parse(JSON.stringify(day))) && Object.keys(day.airports ?? {}).join() === "JFK,LAX", `the day carries both airports: ${Object.keys(day.airports ?? {})}`);
+  const share = (fig: NonNullable<typeof jfk>["departures"], hour: number) => {
+    const w = fig!.windows[windowOf(hour)];
+    return w.flights >= MIN_WINDOW_FLIGHTS ? (w.flights * w.smoothPct + MIN_WINDOW_FLIGHTS * fig!.smoothPct) / (w.flights + MIN_WINDOW_FLIGHTS) : fig!.smoothPct;
+  };
+  const laxJan = airportFigures(t, "LAX", 1)!;
+  const byHour: Array<[number, number]> = [];
+  for (const option of opts) {
+    const f = option.flight;
+    const tag = `takeoff & landing JFK→LAX ${f.departTime}`;
+    const approach = rateFlight({ option, today, history: day })[1];
+    const v = (share(jfk!.departures, hourOf(f.departTime)) + share(laxJan.arrivals, hourOf(f.arriveTime))) / 2;
+    const expected = v >= 72 ? 4 : v >= 64 ? 3 : v >= 56 ? 2 : v >= 48 ? 1 : 0;
+    check(approach.value === expected, `${tag}: ${approach.tier} for a measured ${v.toFixed(1)}`);
+    check(approach.basisText === "Based on takeoffs from JFK and landings at LAX in January", `${tag}: basisText "${approach.basisText}"`);
+    check((approach.source ?? "").includes("NOAA MADIS") && (approach.source ?? "").includes("Iowa Environmental Mesonet") && (approach.definition ?? "").startsWith("A smooth takeoff or landing"), `${tag}: source "${approach.source}"`);
+    check(numberOf(approach, "Smooth takeoffs from JFK") === `${shareText(jfk!.departures!.smoothPct)} · 480 departures` && numberOf(approach, "Calmest time to take off from JFK") === WINDOW_LABELS.morning, `${tag}: numbers ${JSON.stringify(approach.numbers)}`);
+    check(approach.factors.some((x) => x.title === "Wind near the ground" && x.detail.includes("% of") && x.detail.includes("hours at JFK")), `${tag}: a wind factor from JFK's reports`);
+    check(!approach.numbers.some((n) => n.label.endsWith(" pattern")), `${tag}: the traits model beside measured figures`);
+    checkCopy(tag, stringsOf(approach));
+    byHour.push([share(jfk!.departures, hourOf(f.departTime)) + share(laxJan.arrivals, hourOf(f.arriveTime)), approach.value]);
+  }
+  // On one route, a flight with higher measured shares at both ends never rates below one with lower.
+  for (const [a, va] of byHour) for (const [b, vb] of byHour) if (a > b) check(va >= vb, `takeoff & landing: ${a.toFixed(1)} rated ${va}, ${b.toFixed(1)} rated ${vb}`);
+  check(new Set(byHour.map(([, v]) => v)).size >= 2, `the time of day moves JFK→LAX takeoff & landing: ${byHour.map(([, v]) => v).join()}`);
+
+  // An airport with too few: US airports overall, said so; an older table (no airports): the traits model.
+  const ho = searchFlights({ origin: "JFK", destination: "OGG", date }).options[0] ?? searchFlights({ origin: "LAX", destination: "OGG", date }).options[0];
+  if (ho) {
+    const hoDay = routeHistoryDay(t, [[ho.flight.origin.code, "OGG"]], date);
+    const r = rateFlight({ option: ho, today, history: hoDay })[1];
+    check(r.basisText.endsWith("too few measured at OGG, so US airports overall there") && (numberOf(r, "Smooth landings at OGG") ?? "").startsWith("Too few at OGG"), `OGG falls back to US airports: "${r.basisText}" / ${numberOf(r, "Smooth landings at OGG")}`);
+    checkCopy("takeoff & landing → OGG", stringsOf(r));
+  } else check(false, "no flight to OGG in the generator");
+  const older = rateFlight({ option: opts[0], today, history: routeHistoryDay({ ...t, airports: undefined, airportsNational: undefined, weather: undefined }, [["JFK", "LAX"]], date) })[1];
+  check(older.source === undefined && older.numbers.some((n) => n.label === "JFK pattern"), `no airport figures: the traits model, unlabelled as measured (${older.basisText})`);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
