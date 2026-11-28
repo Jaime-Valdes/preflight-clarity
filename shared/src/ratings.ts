@@ -17,9 +17,10 @@
  * flight's own turbulence forecast and the wind at both ends (basis "forecast").
  *
  * Real-world data each category stands for (every input is something a real product can obtain):
- *  - cruise, booking time: PIREP / EDR turbulence climatology by route and month (the route
- *    history: share of smooth past flights, when bumps usually come, the calmest time of day),
- *    published schedules (departure time, aircraft type), route geometry (jet-stream latitude
+ *  - cruise, booking time: measured — NOAA MADIS's airliner turbulence readings (EDR) along the
+ *    route in the month (shared/src/routeHistory.ts: the share of smooth flights, by time of day,
+ *    and where bumps came), which the day store passes in as `history`; for a route with too few
+ *    readings, the month's share across US routes with the route's geometry (jet-stream latitude
  *    band and east–west alignment, mountain crossings, tropical latitudes) and the season.
  *  - cruise, within 2 days: WAFS / GTG-style turbulence forecasts along the flight's path
  *    (flight.turbulence) and the resulting smoothness score.
@@ -38,15 +39,17 @@
  *    as a plain band, labelled typical, never a seat count or a forecast.
  *
  * How each category is worked out:
- *  - cruise (history): start from the route's smooth share for the month (72–96), then adjust
- *    for the departure window the way the generator's own time-of-day model does (the window
- *    the history calls calmest +2.5, or +4 in the warm season / on overnight routes; warm-season
- *    afternoons −1.5 and evenings −2, −2.5 in summer over land), for a wide-body (+2.5, never
- *    worse) and for the route: the jet stream in its band (|mid-latitude| 25–65°, east–west)
- *    −2.5 in winter and −1 in spring and autumn, mountain crossings −1 each (the Rockies −1.5,
- *    −2.5 at most), tropical routes −1 (−2 for afternoon departures). Every route adjustment
- *    counts, and all of them are named in the one Route factor. Tiers: ≥ 92 Very smooth, ≥ 85
- *    Smooth, ≥ 78 Moderate, ≥ 71 Slightly bumpy, below that Bumpy.
+ *  - cruise (history, measured): the share of flights along the route in the month with a smooth
+ *    cruise; when this departure's time-of-day window has at least MIN_WINDOW_FLIGHTS flights,
+ *    moved toward that window's share (weighted: the window's flights against MIN_WINDOW_FLIGHTS
+ *    at the route's share). The readings measure the air, so the aircraft is named but not scored.
+ *  - cruise (history, too few readings): the month's measured share across US routes (about 90
+ *    when no figures came at all), adjusted for the route: the jet stream in its band
+ *    (|mid-latitude| 25–65°, east–west) −2.5 in winter and −1 in spring and autumn, mountain
+ *    crossings −1 each (the Rockies −1.5, −2.5 at most), tropical routes −1 (−2 for afternoon
+ *    departures), all named in the one Route factor, and the basis says there is no measured
+ *    history. Tiers (both): ≥ 92 Very smooth, ≥ 85 Smooth, ≥ 78 Moderate, ≥ 71 Slightly bumpy,
+ *    below that Bumpy.
  *  - cruise (forecast): the smoothness score's own formula applied to the cruise phase only
  *    (mean level, cruise bump windows), averaged with the flight's score, on the bands ≥ 90 /
  *    84 / 76 / 68; then kept in step with the score (≥ 88 never below Smooth, < 70 never above
@@ -77,18 +80,31 @@
  *    the parts that actually scored.
  *
  * One vocabulary for the time of day on every card and figure (todWord): morning before 11,
- * late-morning until 12, afternoon until 17, late-afternoon until 18, then evening. The cruise
- * arithmetic keeps the generator's departure windows (departWindowOf) and the takeoff & landing
- * arithmetic the convective window above; only the words are shared.
+ * late-morning until 12, afternoon until 17, late-afternoon until 18, then evening. The measured
+ * cruise history keeps its own windows (routeHistory.ts WINDOWS: overnight, morning, afternoon,
+ * evening) and the takeoff & landing arithmetic the convective window above; only the words are shared.
  */
 import { AIRPORT_TRAIT_WORDS, airportTraits, type AirportTrait } from "./airportTraits";
 import { climateFor } from "./airports";
 import { compareToBenchmark } from "./benchmarks";
 import { addDays, daysBetween, formatOffset, formatTime12, isISODate, monthName, parseISODate, weekdayIndex } from "./dates";
-import { MOUNTAIN_RANGES, departWindowOf, routeBestSlot, routeDay, type DepartureSlot, type MountainRange } from "./fakeFlight";
+import { MOUNTAIN_RANGES, routeDay, type MountainRange } from "./fakeFlight";
 import { availabilityFor, type Availability } from "./forecast";
+import {
+  MIN_WINDOW_FLIGHTS,
+  WHERE_LABELS,
+  WINDOW_HOURS,
+  WINDOW_LABELS,
+  WINDOW_WORDS,
+  routeHistoryFor,
+  routeHistorySource,
+  shareText,
+  windowOf,
+  type RouteHistoryDay,
+  type RouteHistoryFigures,
+} from "./routeHistory";
 import type { FlightOption } from "./search";
-import type { Airport, BumpWindow, DepartWindow, Flight, FlightPhase, Intensity, WeatherReport } from "./types";
+import type { Airport, BumpWindow, Flight, FlightPhase, Intensity, WeatherReport } from "./types";
 
 // ── API ─────────────────────────────────────────────────────────────────────
 
@@ -141,12 +157,19 @@ export interface Rating {
   factors: RatingFactor[];
   /** The figures behind it, for the detail sheet only. */
   numbers: Array<{ label: string; value: string }>;
+  /** Where measured figures in it come from, for the sheet's footnote (left out when nothing in it is measured). */
+  source?: string;
 }
 
 export interface RatingInput {
   option: FlightOption;
   /** Today's date, "YYYY-MM-DD" (from the client's clock, never read here). */
   today: string;
+  /**
+   * The route-day's measured turbulence history (GET /flights/day's `routeHistory`, kept by the day
+   * store); null or left out when the day came without it, and the cruise rating then says so.
+   */
+  history?: RouteHistoryDay | null;
 }
 
 const SMOOTH_TIERS: readonly SmoothTier[] = ["bumpy", "slightly_bumpy", "moderate", "smooth", "very_smooth"];
@@ -176,7 +199,7 @@ export function rateFlight(input: RatingInput): Rating[] {
   const availability = availabilityFor(daysUntil);
   const geo = geometryFor(f);
   return [
-    availability.turbulence ? rateCruiseForecast(f) : rateCruiseHistory(f, geo),
+    availability.turbulence ? rateCruiseForecast(f, input.history) : rateCruiseHistory(f, geo, input.history),
     availability.turbulence ? rateApproachForecast(f, availability) : rateApproachHistory(f, geo),
     rateAircraft(f, availability),
     rateSpace(f, geo),
@@ -446,51 +469,24 @@ function geometryFor(f: Flight): RouteGeometry {
 
 // ── Smooth cruise ───────────────────────────────────────────────────────────
 
-/** The slots' names, used only if the history sentence ever stopped matching (check-ratings asserts it never does). */
-const SLOT_LABELS: Record<DepartureSlot, string> = {
-  morning: "Morning (6–10 AM)",
-  midday: "Midday (10 AM–2 PM)",
-  afternoon: "Afternoon",
-  evening: "Early evening (5–8 PM)",
-  overnight: "Overnight",
-};
-
-/**
- * The calmest time of day on the route: the generator's own slot (routeBestSlot), labelled the
- * way the history sentence words it. The sentence is read for its wording only.
- */
-function bestSlotFor(f: Flight): { slot: DepartureSlot; window: DepartWindow; label: string } {
-  const slot = routeBestSlot(f.input);
-  const m = /^(Morning|Midday|Afternoon|Early-evening|Evening|Overnight) departures(?: \(([^)]+)\))?/.exec(f.turbulence.history.bestDepartureWindow);
-  const word = m?.[1];
-  const hours = m?.[2];
-  const name = word === "Early-evening" ? "Early evening" : word;
-  const label = name === undefined ? SLOT_LABELS[slot] : hours ? `${name} (${hours})` : name;
-  const window: DepartWindow = slot === "morning" ? "morning" : slot === "midday" || slot === "afternoon" ? "afternoon" : "evening";
-  return { slot, window, label };
-}
-
-const PHASE_WHERE: Record<FlightPhase, string> = {
-  takeoff: "at takeoff",
-  climb: "during the climb",
-  cruise: "mid-flight",
-  descent: "during descent",
-  landing: "at landing",
-};
-
-/** After "during": "the climb and descent". */
-const PHASE_NAME: Record<FlightPhase, string> = {
-  takeoff: "takeoff",
-  climb: "the climb",
-  cruise: "the cruise",
-  descent: "descent",
-  landing: "landing",
-};
-
 const BODY_FACTOR: Record<"wide" | "narrow", RatingFactor> = {
   wide: { title: "Aircraft", detail: "Wide-body jet — its size and weight mean it feels the same bumps a little less", effect: "up" },
   narrow: { title: "Aircraft", detail: "Single-aisle jet — the standard airliner; light bumps feel much as they do on most flights", effect: "neutral" },
 };
+
+/**
+ * Booking time, measured: the readings describe the air, not the plane, so the aircraft is named and
+ * not scored. A wide-body's "up" marker would suggest it moved the rating; here it never does.
+ */
+const MEASURED_BODY_FACTOR: Record<"wide" | "narrow", RatingFactor> = {
+  wide: { ...BODY_FACTOR.wide, effect: "neutral" },
+  narrow: BODY_FACTOR.narrow,
+};
+
+/** Before any figures arrive (the browser's illustrative day, or an API without the table): about the measured US share. */
+const US_TYPICAL_SMOOTH_PCT = 90;
+
+const smoothValue = (s: number) => (s >= 92 ? 4 : s >= 85 ? 3 : s >= 78 ? 2 : s >= 71 ? 1 : 0);
 
 interface RouteReason {
   penalty: number;
@@ -502,61 +498,8 @@ interface RouteReason {
   name: string;
 }
 
-/** Weeks or months out: the route's history for the month, the departure window, the plane and the route. */
-function rateCruiseHistory(f: Flight, geo: RouteGeometry): Rating {
-  const h = f.turbulence.history;
-  const hour = hourOf(f.departTime);
-  const window = departWindowOf(f.departTime);
-  const tod = cap(todWord(hour));
-  const best = bestSlotFor(f);
-  const warm = geo.season === "summer" || geo.tropical;
-  const wide = f.aircraft.bodyType === "wide";
-  const factors: RatingFactor[] = [];
-  let s = h.smoothPct;
-
-  factors.push({
-    title: "Past flights on this route",
-    detail: `${h.smoothPct >= 90 ? "Nearly all" : "Most"} ${h.month} flights on this route were smooth (about ${h.smoothPct}%)`,
-    effect: h.smoothPct >= 88 ? "up" : h.smoothPct >= 80 ? "neutral" : "down",
-  });
-
-  // The departure window, following the generator's own time-of-day model (todModelFor); the words follow todWord.
-  let shift: number;
-  let todDetail: string;
-  if (best.slot === "overnight") {
-    shift = window === "evening" ? 4 : -1;
-    todDetail = window === "evening"
-      ? `${tod} departure — on this route the overnight flights are usually the smoothest, as the air settles after sunset`
-      : `${tod} departure — daytime flights on this route see a little more wind aloft than the overnight ones`;
-  } else if (warm) {
-    // Summer evenings over land still carry the clouds the day built (the generator's eveningBuild); over the sea and in the tropics the evening only fades.
-    const eveningBuild = geo.season === "summer" && !geo.oceanic;
-    shift = window === "morning" ? 4 : window === "afternoon" ? -1.5 : eveningBuild ? -2.5 : -2;
-    todDetail = window === "morning"
-      ? `${tod} departure — before the day's warmth builds clouds along the route`
-      : window === "afternoon"
-        ? geo.tropical
-          ? `${tod} departure — the afternoon is when the warm, moist air over the sea and coast builds the most cloud`
-          : geo.oceanic
-            ? `${tod} departure — the day's warmth stirs the air a little along the route`
-            : `${tod} departure — warm air rising over the land adds a few more light bumps`
-        : eveningBuild
-          ? `${tod} departure — clouds built by the day's warmth are still settling along the route`
-          : `${tod} departure — the day's warmth is fading, though a few clouds over the sea and coast linger`;
-  } else {
-    const favoured = window === best.window;
-    shift = favoured ? 2.5 : -0.5;
-    todDetail = favoured
-      ? `${tod} departure — usually the smoothest part of the day on this route in ${h.month}`
-      : `${tod} departure — much like the rest of the day on this route in ${h.month}`;
-  }
-  s += shift;
-  factors.push({ title: "Time of day", detail: todDetail, effect: shift > 0 ? "up" : shift < -1 ? "down" : "neutral" });
-
-  if (wide) s += 2.5;
-  factors.push(BODY_FACTOR[wide ? "wide" : "narrow"]);
-
-  // The route: the jet stream, the mountains and the tropics (the generator's cruise causes). Every one counts, and all are named.
+/** The route's own features that add bumps at cruise (the jet stream in its band, mountain crossings, the tropics). */
+function routeReasons(geo: RouteGeometry, afternoon: boolean): RouteReason[] {
   const reasons: RouteReason[] = [];
   const inJetBand = Math.abs(geo.midLat) >= 25 && Math.abs(geo.midLat) <= 65 && geo.ewStrength > 0.5;
   if (inJetBand) {
@@ -578,35 +521,144 @@ function rateCruiseHistory(f: Flight, geo: RouteGeometry): Rating {
     reasons.push({ penalty, head: `crosses ${names}`, why: "air flowing over the mountains can add a few bumps", name: `crosses ${names}` });
   }
   if (geo.tropical) {
-    const penalty = window === "afternoon" ? -2 : -1;
-    reasons.push({ penalty, head: "a tropical route", why: "warm, moist air builds clouds over the sea and coast, most of all in the afternoon", name: "tropical latitudes" });
+    reasons.push({ penalty: afternoon ? -2 : -1, head: "a tropical route", why: "warm, moist air builds clouds over the sea and coast, most of all in the afternoon", name: "tropical latitudes" });
   }
-  const routePenalty = reasons.reduce((n, r) => n + r.penalty, 0);
-  s += routePenalty;
-  if (reasons.length > 0) {
-    const tropical = reasons.find((r) => r.name === "tropical latitudes");
-    const others = reasons.filter((r) => r !== tropical);
-    const head = tropical
-      ? `${tropical.head}${others.length > 0 ? ` that ${others.map((r) => r.head).join(" and ")}` : ""}`
-      : others.length === 1
-        ? others[0].head
-        : `${others[0].head}, and ${others.slice(1).map((r) => r.head).join(" and ")}`;
-    const why = (tropical ? [...others, tropical] : others).map((r) => r.why).join("; ");
-    factors.push({ title: "Route", detail: `${cap(head)} — ${why}`, effect: routePenalty <= -1.5 ? "down" : routePenalty < 0 ? "neutral" : "up" });
-  }
+  return reasons;
+}
 
-  const value = s >= 92 ? 4 : s >= 85 ? 3 : s >= 78 ? 2 : s >= 71 ? 1 : 0;
+function routeFactor(reasons: readonly RouteReason[]): RatingFactor | null {
+  if (reasons.length === 0) return null;
+  const penalty = reasons.reduce((n, r) => n + r.penalty, 0);
+  const tropical = reasons.find((r) => r.name === "tropical latitudes");
+  const others = reasons.filter((r) => r !== tropical);
+  const head = tropical
+    ? `${tropical.head}${others.length > 0 ? ` that ${others.map((r) => r.head).join(" and ")}` : ""}`
+    : others.length === 1
+      ? others[0].head
+      : `${others[0].head}, and ${others.slice(1).map((r) => r.head).join(" and ")}`;
+  const why = (tropical ? [...others, tropical] : others).map((r) => r.why).join("; ");
+  return { title: "Route", detail: `${cap(head)} — ${why}`, effect: penalty <= -1.5 ? "down" : penalty < 0 ? "neutral" : "up" };
+}
+
+/** Weeks or months out: the route's measured history when there is one, else the route's shape and the season. */
+function rateCruiseHistory(f: Flight, geo: RouteGeometry, day: RouteHistoryDay | null | undefined): Rating {
+  const figures = routeHistoryFor(day, f.origin.code, f.destination.code);
+  return figures ? rateCruiseMeasured(f, figures, day!) : rateCruiseByRoute(f, geo, day ?? null);
+}
+
+/**
+ * The route's measured history (shared/src/routeHistory.ts): the share of flights along it in the
+ * month with a smooth cruise, moved toward this departure's time of day when that window has
+ * enough flights of its own (a weighted mean with MIN_WINDOW_FLIGHTS flights at the route's share,
+ * so a small window moves it a little and a large one most of the way).
+ */
+function rateCruiseMeasured(f: Flight, h: RouteHistoryFigures, day: RouteHistoryDay): Rating {
+  const hour = hourOf(f.departTime);
+  const tod = cap(todWord(hour));
+  const wide = f.aircraft.bodyType === "wide";
+  const w = h.windows[windowOf(hour)];
+  const counted = withCommas(h.flights);
+  const factors: RatingFactor[] = [
+    {
+      title: "Flights along this route",
+      detail: `${shareText(h.smoothPct)} of ${counted} flights along this route in ${h.monthWords} had a smooth cruise, by the planes’ own turbulence readings`,
+      effect: h.smoothPct >= 90 ? "up" : h.smoothPct >= 82 ? "neutral" : "down",
+    },
+  ];
+
+  let s = h.smoothPct;
+  let todDetail: string;
+  let todEffect: Effect = "neutral";
+  if (w && w.flights >= MIN_WINDOW_FLIGHTS) {
+    s = (w.flights * w.smoothPct + MIN_WINDOW_FLIGHTS * h.smoothPct) / (w.flights + MIN_WINDOW_FLIGHTS);
+    const these = `${shareText(w.smoothPct, true)} of ${withCommas(w.flights)} flights along this route ${WINDOW_HOURS[w.window]} had a smooth cruise`;
+    if (h.calmest === w.window) {
+      todDetail = `${tod} departure — the smoothest time of day on this route: ${these}`;
+      todEffect = "up";
+    } else if (h.calmest) {
+      todDetail = `${tod} departure — ${these}; flights ${WINDOW_WORDS[h.calmest]} were a little smoother`;
+      todEffect = w.smoothPct <= h.smoothPct - 3 ? "down" : "neutral";
+    } else if (Math.abs(w.smoothPct - h.smoothPct) >= 3) {
+      // Not clearly different by the calmest-window test, but far enough off to say so in numbers rather than "much like".
+      todDetail = `${tod} departure — ${these}, against ${shareText(h.smoothPct, true)} across the day`;
+      todEffect = w.smoothPct < h.smoothPct ? "down" : "up";
+    } else {
+      todDetail = `${tod} departure — much like the rest of the day on this route: ${these}`;
+    }
+  } else {
+    todDetail = `${tod} departure — too few flights at this time of day to compare it with the rest of the day`;
+  }
+  factors.push({ title: "Time of day", detail: todDetail, effect: todEffect });
+
+  if (h.where) {
+    factors.push({
+      title: "Where bumps come",
+      detail: h.where === "spread"
+        ? "When there were bumps, they came anywhere along the route — no one stretch stands out"
+        : `When there were bumps, they came most often ${uncap(WHERE_LABELS[h.where])}`,
+      effect: "neutral",
+    });
+  }
+  factors.push(MEASURED_BODY_FACTOR[wide ? "wide" : "narrow"]);
+
   const numbers: Rating["numbers"] = [
-    { label: "Past flights smooth", value: `${h.smoothPct}%` },
-    { label: "Flights counted", value: `About ${withCommas(h.flightsAnalyzed)} in ${h.month}` },
-    { label: "Calmest time of day", value: best.label },
-    { label: "Bumps most often", value: cap(PHASE_WHERE[h.typicalBumpyPhase]) },
+    { label: "Past flights smooth", value: shareText(h.smoothPct) },
+    { label: "No more than light bumps", value: shareText(h.calmPct) },
+    { label: "Flights counted", value: `${counted} along this route · ${h.period}` },
+    { label: "Calmest time of day", value: h.calmest ? WINDOW_LABELS[h.calmest] : "No clear difference" },
+    { label: "Bumps most often", value: h.where ? WHERE_LABELS[h.where] : "Too few bumpy flights to say" },
+    { label: "This departure", value: `${formatTime12(f.departTime)} · ${todWord(hour)}` },
+    { label: "Aircraft", value: wide ? "Wide-body" : "Single-aisle" },
+  ];
+  return { ...smoothRating("cruise", smoothValue(s), "history", `Based on flights along this route in ${h.monthWords}`, factors, numbers), source: routeHistorySource(day) };
+}
+
+/**
+ * Too few readings along the route (or no figures at all): the month's measured share across US
+ * routes, adjusted for the route's own features — said plainly, with no route figure shown.
+ */
+function rateCruiseByRoute(f: Flight, geo: RouteGeometry, day: RouteHistoryDay | null): Rating {
+  const hour = hourOf(f.departTime);
+  const wide = f.aircraft.bodyType === "wide";
+  const month = monthName(f.input.date);
+  const national = day?.national ?? null;
+  const reasons = routeReasons(geo, afternoonShare(hour) === 1);
+  const s = (national?.smoothPct ?? US_TYPICAL_SMOOTH_PCT) + reasons.reduce((n, r) => n + r.penalty, 0);
+  const factors: RatingFactor[] = [
+    {
+      title: "This route",
+      detail: day
+        ? `Too few turbulence readings along this route in ${month} to count, so this comes from the route itself and the season`
+        : "No turbulence history was loaded for this route, so this comes from the route itself and the season",
+      effect: "neutral",
+    },
+  ];
+  if (national) {
+    factors.push({ title: `US flights in ${month}`, detail: `${shareText(national.smoothPct)} of flights on US routes in ${month} had a smooth cruise`, effect: "neutral" });
+  }
+  const route = routeFactor(reasons);
+  factors.push(route ?? { title: "Route", detail: "Nothing about the route itself tends to add bumps at cruise", effect: "neutral" });
+  factors.push(MEASURED_BODY_FACTOR[wide ? "wide" : "narrow"]);
+
+  const numbers: Rating["numbers"] = [
+    { label: "Flights counted", value: "Too few along this route" },
+    ...(national ? [{ label: `US routes in ${month}`, value: `${shareText(national.smoothPct)} smooth` }] : []),
     { label: "This departure", value: `${formatTime12(f.departTime)} · ${todWord(hour)}` },
     { label: "Aircraft", value: wide ? "Wide-body" : "Single-aisle" },
     { label: "Route", value: reasons.length > 0 ? cap(reasons.map((r) => r.name).join(" · ")) : "No particular feature" },
   ];
-  return smoothRating("cruise", value, "history", `Based on past flights on this route in ${h.month}`, factors, numbers);
+  const rating = smoothRating("cruise", smoothValue(s), "history", "Based on the route and the season · no measured history for this route", factors, numbers);
+  return national && day ? { ...rating, source: routeHistorySource(day) } : rating;
 }
+
+/** After "during": "the climb and descent". */
+const PHASE_NAME: Record<FlightPhase, string> = {
+  takeoff: "takeoff",
+  climb: "the climb",
+  cruise: "the cruise",
+  descent: "descent",
+  landing: "landing",
+};
 
 /** From this smooth share the forecast sheet says "Nearly all" instead of a percentage. */
 const NEARLY_ALL_PCT = 99;
@@ -622,7 +674,7 @@ function cruiseForecastDetail(cruiseWindows: readonly BumpWindow[]): string {
 }
 
 /** Within 2 days: the cruise phase of the flight's own forecast, kept in step with its smoothness score. */
-function rateCruiseForecast(f: Flight): Rating {
+function rateCruiseForecast(f: Flight, day: RouteHistoryDay | null | undefined): Rating {
   const t = f.turbulence;
   const score = f.smoothness.score;
   const wide = f.aircraft.bodyType === "wide";
@@ -669,10 +721,16 @@ function rateCruiseForecast(f: Flight): Rating {
     { label: "Smooth share of the flight", value: nearlyAll ? "Nearly all" : `${t.smoothMinutesPct}%` },
     { label: "Bumps at cruise", value: cruiseMinutes > 0 ? `About ${formatOffset(cruiseMinutes)} · ${cruisePeak}` : "None expected" },
     { label: "Strongest expected", value: t.maxIntensity === "none" ? "No bumps expected" : `${cap(t.maxIntensity)} bumps` },
-    { label: "Route in " + monthName(f.input.date), value: `${f.turbulence.history.smoothPct}% of past flights smooth` },
+    ...routeNumber(f, day),
     { label: "Aircraft", value: wide ? "Wide-body" : "Single-aisle" },
   ];
   return smoothRating("cruise", value, "forecast", "Based on this week's forecast", factors, numbers);
+}
+
+/** The measured history's line on the forecast sheet, when the route has one. */
+function routeNumber(f: Flight, day: RouteHistoryDay | null | undefined): Rating["numbers"] {
+  const h = routeHistoryFor(day, f.origin.code, f.destination.code);
+  return h ? [{ label: `Route in ${h.monthWords}`, value: `${shareText(h.smoothPct)} of past flights smooth` }] : [];
 }
 
 /** " — the bumps come during descent rather than at cruise" when the flight's bumps are outside the cruise. */

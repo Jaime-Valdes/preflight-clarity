@@ -8,6 +8,7 @@ import { compareToBenchmark, type Comparison } from "@preflight/shared/benchmark
 import { availabilityFor, getForecastStatus } from "@preflight/shared/forecast";
 import { ON_TIME_DEFINITION, onTimeDetail, onTimeMissing, onTimeSource, onTimeTeaser } from "@preflight/shared/onTime";
 import { orderByPriorities, rateFlight } from "@preflight/shared/ratings";
+import { routeHistoryFor } from "@preflight/shared/routeHistory";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import type { BodyType, Flight, SectionContext } from "@preflight/shared/types";
 import { daysToDeparture, hasLeft } from "@/components/c/common/availability";
@@ -42,6 +43,7 @@ import { useNowMs } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { ChooseButton, priceStanding, tierProps } from "./ChooseButton";
 import { DAirlineSection, DOnTimeContext } from "./DAirlineSection";
+import { DRouteHistoryContext, DTurbulenceSection, dTurbulenceTeaser } from "./DTurbulenceSection";
 import { DFlightHeader } from "./DFlightHeader";
 
 /*
@@ -119,24 +121,33 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
     [daysUntil, history],
   );
 
-  // Every flight's ratings that day (this one's among them): the rows, the pick's tiers and the other flights' pills.
-  const allRatings = useMemo(() => ratingsByKey(options, today), [options, today]);
-  const ratings = useMemo(() => allRatings.get(option.key) ?? rateFlight({ option, today }), [allRatings, option, today]);
-  const ordered = useMemo(() => orderByPriorities(ratings, priorities.order), [ratings, priorities.order]);
-  const aircraftRating = ratings.find((r) => r.category === "aircraft");
-  const label = flightContext(flight, day);
   // Where this day's schedule came from, for the credit under the header.
   const flightDay = useRouteDay({ origin: flight.origin.code, destination: flight.destination.code, date: day.date });
   const { provider } = flightDay;
   // The airline's on-time record (the US DOT's figures the API sent with the day; the searched day's when the flight's own isn't loaded).
   const searchedDay = useRouteDay(day);
+  // The measured route history the API sent with the searched day (it covers every route the day's flights fly), else the flight's own day.
+  const routeHistory = searchedDay.routeHistory ?? flightDay.routeHistory;
+  // Every flight's ratings that day (this one's among them): the rows, the pick's tiers and the other flights' pills.
+  const allRatings = useMemo(() => ratingsByKey(options, today, routeHistory), [options, today, routeHistory]);
+  const ratings = useMemo(() => allRatings.get(option.key) ?? rateFlight({ option, today, history: routeHistory }), [allRatings, option, today, routeHistory]);
+  const ordered = useMemo(() => orderByPriorities(ratings, priorities.order), [ratings, priorities.order]);
+  const aircraftRating = ratings.find((r) => r.category === "aircraft");
+  const label = flightContext(flight, day);
   const onTime = useMemo(() => onTimeFor(flight, [flightDay.onTime, searchedDay.onTime]), [flight, flightDay.onTime, searchedDay.onTime]);
   // Under "More detail", the airline section is named plainly and its collapsed line gives the on-time figure only: no
   // score for a named airline at the surface of the detail layer (the score stays inside). The figure is the US DOT's
   // (DAirlineSection reads it from DOnTimeContext), or a plain line where there is none.
+  // Weeks out, the turbulence section shows the route's measured history instead of the generator's "typical" figures
+  // (DTurbulenceSection reads it from DRouteHistoryContext); within the forecast window it is version C's section.
+  const routeFigures = useMemo(() => routeHistoryFor(routeHistory, flight.origin.code, flight.destination.code), [routeHistory, flight]);
+  const historyShown = useMemo(() => ({ day: routeHistory, figures: routeFigures ?? null }), [routeHistory, routeFigures]);
   const overrides = useMemo<Partial<Record<CSectionId, SectionOverride>>>(
-    () => ({ airline: { title: "Airline", teaser: () => onTimeTeaser(onTime), Body: DAirlineSection } }),
-    [onTime],
+    () => ({
+      airline: { title: "Airline", teaser: () => onTimeTeaser(onTime), Body: DAirlineSection },
+      turbulence: { teaser: (f, c) => dTurbulenceTeaser(f, c, historyShown), Body: DTurbulenceSection },
+    }),
+    [onTime, historyShown],
   );
   const missing = onTimeMissing(onTime);
 
@@ -463,9 +474,11 @@ export function DFlightDetail({ day, option, options, today, position }: FlightD
             className="min-w-0 lg:col-start-1"
           />
 
-          <DOnTimeContext.Provider value={onTime}>
-            <MoreDetail flight={flight} ctx={ctx} overrides={overrides} className="min-w-0 lg:col-start-1" />
-          </DOnTimeContext.Provider>
+          <DRouteHistoryContext.Provider value={historyShown}>
+            <DOnTimeContext.Provider value={onTime}>
+              <MoreDetail flight={flight} ctx={ctx} overrides={overrides} className="min-w-0 lg:col-start-1" />
+            </DOnTimeContext.Provider>
+          </DRouteHistoryContext.Provider>
 
           <OtherFlights
             id={OTHERS_ID}

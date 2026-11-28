@@ -138,14 +138,16 @@ export function DCompareTable({ columns, names, onRemove }: CompareTableProps) {
   const order = priorities.order;
   const flights = useMemo(() => columns.filter(isFlightColumn), [columns]);
   const n = columns.length;
-  // Deterministic and cheap: the ratings and the day's flights, once per set of columns.
+  // The store as of this render: a new object whenever a day settles, so the ratings pick up a day's route history.
+  const source = useFlightSource();
+  // Deterministic and cheap: the ratings and the day's flights, once per set of columns (and per settled day).
   const ratings = useMemo(
-    () => new Map(flights.map((c) => [c.id, rateFlight({ option: c.option, today: todayFor(c) })])),
-    [flights],
+    () => new Map(flights.map((c) => [c.id, rateFlight({ option: c.option, today: todayFor(c), history: readRouteDay(c.item).routeHistory })])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `source` changes when a day settles, which is when readRouteDay can answer anew.
+    [flights, source],
   );
   // The flights still to leave that day: the pick's price rank is against the same set the results page prices against.
   const nowMs = useNowMs();
-  const source = useFlightSource();
   const dayOptions = useMemo(
     () => new Map(flights.map((c) => [c.id, optionsOn(c, source).filter((o) => !hasLeft(o.flight, nowMs))])),
     [flights, nowMs, source],

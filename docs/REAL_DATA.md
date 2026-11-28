@@ -88,6 +88,38 @@ Fares and seat availability wait for a business decision (booking partner) and s
 - Fares (if ever shown as real): full price at the moment shown, code-share operator named on the first
   screen, quoted-at time visible.
 
+## Status (2026-11-27): route history from MADIS (cruise, US routes)
+
+Order of work item 3, the cruise half (the source map's row 4, with a better source than PIREPs):
+version D's booking-time cruise rating is measured. A, B and C keep the generator's history.
+
+- **Source**: NOAA MADIS public archive, ACARS hourly NetCDF files
+  (`madis-data.ncep.noaa.gov/madisPublic1/data/archive/YYYY/MM/DD/point/acars/netcdf/`), the eddy
+  dissipation rate (EDR) many US airliners report automatically several times a minute. "Archived data
+  is available without restriction"; real-time redistribution is not allowed, and we only publish
+  monthly counts from the archive. PIREPs were tried first and dropped: pilots report bumps, rarely
+  smooth air, so "% smooth" can't be read from them.
+- **Method** (`backend/scripts/route-history/analyze.ts`): readings → flights (encrypted tail + truncated
+  airport codes, split on 90-minute gaps; cruise = within 15% of the flight's top, above 3,000 m) → for
+  each US route pair, its own identified trips plus any flight that cruised along at least half of its
+  great circle within 50 nm. Smooth = no cruise reading above EDR 0.10 (ICAO "nil"); calm = none at
+  0.20 or above. Also counted: flights by local time of day per direction, and where along the route
+  the strongest bump of each non-smooth flight was. Checked on January 2026 against 132 routes' own
+  trips: within about 3 points on average, close to sampling noise.
+- **Coverage** (Nov 2025–Oct 2026): 1,330–1,380 of 1,492 flown US pairs have 30+ flights in a month,
+  91–94% of scheduled US flights. Thin pairs (Hawaii hops, PDX–SEA) pool the neighbouring months, and
+  below 30 they get the route-and-season rating, labelled "no measured history for this route".
+- **Pipeline**: `.github/workflows/route-history.yml` runs on the 3rd of each month for the month
+  before (one job per month, about 1.1 GB downloaded each), writes `backend/route-history/months/YYYY-MM.json`,
+  rebuilds `backend/src/lib/routeHistory/route-history.json` (summed by calendar month) and opens a PR.
+  Run it by hand with `months: YYYY-MM..YYYY-MM` to backfill or rebuild.
+- **App**: GET /flights/day attaches `routeHistory` (the day's routes for its month, shared/src/routeHistory.ts);
+  the day store keeps it; `rateFlight({ option, today, history })` rates the cruise from it (the route's
+  share, moved toward this departure's window when it has 30+ flights); the rating sheet and the
+  turbulence section under "More detail" show the figures and the source.
+- **Not yet**: takeoff and landing (low-altitude readings + METAR); the within-2-days forecast is still
+  the generator's (step 6, GTG); international routes.
+
 ## Status (2026-11-20): airline on-time from BTS (live)
 
 Order of work item 4, first half (the source map's row 5): version D's airline on-time numbers are the US DOT's,

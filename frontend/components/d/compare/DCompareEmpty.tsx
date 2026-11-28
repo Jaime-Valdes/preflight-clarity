@@ -16,6 +16,7 @@ import { RatingPill } from "@/components/d/ratings/RatingPill";
 import { formatFare } from "@/lib/c/format";
 import { usePriorities } from "@/lib/d/priorities";
 import { cn } from "@/lib/cn";
+import { readRouteDay } from "@/lib/flights/store";
 
 /**
  * Version D's compare page with fewer than two flights to show: what the page
@@ -87,7 +88,10 @@ function PickedFlight({ column, onRemove }: { column: FlightColumn; onRemove: (i
   const f = column.flight;
   const label = `${f.flightNumber}, ${shortDate(column.item.date)}`;
   // Today from the column: its date minus its (never negative) distance in days.
-  const top = orderByPriorities(rateFlight({ option: column.option, today: addDays(column.item.date, -column.daysUntil) }), priorities.order)[0];
+  const top = orderByPriorities(
+    rateFlight({ option: column.option, today: addDays(column.item.date, -column.daysUntil), history: readRouteDay(column.item).routeHistory }),
+    priorities.order,
+  )[0];
   return (
     <div className="rounded-[18px] bg-sky/60 p-3.5 sm:p-4">
       <div className="flex items-start gap-3">

@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { isRouteOnTime, type RouteOnTime } from "@preflight/shared/onTime";
+import { isRouteHistoryDay, type RouteHistoryDay } from "@preflight/shared/routeHistory";
 import { optionsFromSchedule, type RouteDaySchedule } from "@preflight/shared/schedule";
 import { hasNonstopService, searchFlights, type SearchResults } from "@preflight/shared/search";
 import type { FlightInput } from "@preflight/shared/types";
@@ -18,7 +19,8 @@ import type { FlightInput } from "@preflight/shared/types";
  * starts a load from an effect or an event handler; useRouteDay keeps a
  * component current. Version C never comes here (lib/flights/source.ts).
  * A day also keeps the airline on-time figures the API sent with it (`onTime`,
- * the US DOT's; shared/src/onTime.ts): null when the browser's own
+ * the US DOT's; shared/src/onTime.ts) and the route's turbulence history
+ * (`routeHistory`, NOAA MADIS's; shared/src/routeHistory.ts): null when the browser's own
  * illustrative day stands in, or an older API sent none.
  */
 
@@ -26,13 +28,13 @@ export type DayProvider = RouteDaySchedule["provider"];
 
 /** What is known about a route-day: loading until a load started by ensureRouteDay settles. */
 export type RouteDayState =
-  | { status: "loading"; results: null; provider: null; fetchedAt: null; served: null; onTime: null }
+  | { status: "loading"; results: null; provider: null; fetchedAt: null; served: null; onTime: null; routeHistory: null }
   /** `served`: the route has nonstop service (true), nobody flies it nonstop (false), or the provider could not say (null: a day with no rows). */
-  | { status: "ready"; results: SearchResults; provider: DayProvider; fetchedAt: string; served: boolean | null; onTime: RouteOnTime | null }
+  | { status: "ready"; results: SearchResults; provider: DayProvider; fetchedAt: string; served: boolean | null; onTime: RouteOnTime | null; routeHistory: RouteHistoryDay | null }
   /** Neither the API nor the generator could give the day (an invalid date, say): what the generator threw. */
-  | { status: "error"; results: null; provider: null; fetchedAt: null; served: null; onTime: null; error: unknown };
+  | { status: "error"; results: null; provider: null; fetchedAt: null; served: null; onTime: null; routeHistory: null; error: unknown };
 
-const LOADING: RouteDayState = Object.freeze({ status: "loading", results: null, provider: null, fetchedAt: null, served: null, onTime: null });
+const LOADING: RouteDayState = Object.freeze({ status: "loading", results: null, provider: null, fetchedAt: null, served: null, onTime: null, routeHistory: null });
 
 /** Settled days kept per session; past this the least recently asked-for days go (a page asks for its days again on its next render). */
 const CAPACITY = 48;
@@ -145,6 +147,7 @@ function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteD
   const schedule = answer?.schedule ?? null;
   // The figures are about the airlines and the routes, not the rows: they hold for the illustrative day too.
   const onTime = answer?.onTime ?? null;
+  const routeHistory = answer?.routeHistory ?? null;
   if (schedule) {
     try {
       const results = optionsFromSchedule(schedule);
@@ -158,6 +161,7 @@ function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteD
           fetchedAt: schedule.fetchedAt,
           served: schedule.served ?? null,
           onTime,
+          routeHistory,
         };
         return Object.freeze(ready);
       }
@@ -175,10 +179,11 @@ function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteD
       fetchedAt: new Date().toISOString(),
       served: hasNonstopService(day.origin, day.destination),
       onTime,
+      routeHistory,
     };
     return Object.freeze(ready);
   } catch (error) {
-    const failed: RouteDayState = { status: "error", results: null, provider: null, fetchedAt: null, served: null, onTime: null, error };
+    const failed: RouteDayState = { status: "error", results: null, provider: null, fetchedAt: null, served: null, onTime: null, routeHistory: null, error };
     return Object.freeze(failed);
   }
 }
@@ -187,6 +192,7 @@ function settle(key: string, day: FlightInput, answer: DayAnswer | null): RouteD
 interface DayAnswer {
   schedule: RouteDaySchedule;
   onTime: RouteOnTime | null;
+  routeHistory: RouteHistoryDay | null;
 }
 
 /**
@@ -213,8 +219,8 @@ async function fetchSchedule(day: FlightInput): Promise<DayAnswer | null> {
     }
     const body: unknown = await response.json();
     if (!isDayResponse(body)) return null;
-    const onTime = (body as { onTime?: unknown }).onTime;
-    return { schedule: body.schedule, onTime: isRouteOnTime(onTime) ? onTime : null };
+    const { onTime, routeHistory } = body as { onTime?: unknown; routeHistory?: unknown };
+    return { schedule: body.schedule, onTime: isRouteOnTime(onTime) ? onTime : null, routeHistory: isRouteHistoryDay(routeHistory) ? routeHistory : null };
   } catch {
     return null;
   } finally {

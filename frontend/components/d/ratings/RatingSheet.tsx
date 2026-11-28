@@ -2,6 +2,7 @@
 
 import { ArrowDown, ArrowUp, Info, Minus } from "lucide-react";
 import { useState, type CSSProperties } from "react";
+import { SMOOTH_DEFINITION } from "@preflight/shared/routeHistory";
 import { CATEGORY_LABELS, type Rating, type RatingFactor } from "@preflight/shared/ratings";
 import { Sheet } from "@/components/c/common/Sheet";
 import { CategoryIcon } from "@/components/d/brand/CategoryIcon";
@@ -100,7 +101,14 @@ export function RatingSheet({ rating, flightLabel, onClose }: RatingSheetProps) 
         </>
       ) : null}
 
-      <p className="mt-4 text-xs leading-relaxed text-ink-mute">Prototype · illustrative data. A real product would draw these from past flights, published schedules and the week&rsquo;s forecasts.</p>
+      {rating.source ? (
+        // Measured (the cruise history from NOAA MADIS): where it comes from and what "smooth" means.
+        <p className="mt-4 text-xs leading-relaxed text-ink-mute">
+          {rating.source}. {SMOOTH_DEFINITION}
+        </p>
+      ) : (
+        <p className="mt-4 text-xs leading-relaxed text-ink-mute">Prototype · illustrative data. A real product would draw these from past flights, published schedules and the week&rsquo;s forecasts.</p>
+      )}
     </Sheet>
   );
 }

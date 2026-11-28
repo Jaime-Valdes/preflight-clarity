@@ -9,10 +9,13 @@
  * a sane tier distribution at booking time over ~40 routes × 6 dates, every smooth tier
  * reachable, wide-bodies never rated bumpier than narrow-bodies in the same air, forecast-mode
  * cruise tiers in step with the smoothness score and the moderate cruise window named at its own
- * time, summer mornings never rated bumpier than afternoons (at cruise, and at takeoff & landing
- * for the same arrival window), aircraft tiers by the seat count shown (never a Mid-size jet with
- * fewer seats than a Smaller jet on the same day, no fleet age), the calmest-slot sentence in
- * step with the generator's slot, one time-of-day word on both smoothness cards, no seat counts in
+ * time, summer mornings never rated bumpier than afternoons at takeoff & landing for the same
+ * arrival window, aircraft tiers by the seat count shown (never a Mid-size jet with
+ * fewer seats than a Smaller jet on the same day, no fleet age), the booking-time cruise rating on
+ * measured route history (shared/src/routeHistory.ts, here a made-up table): its figures shown as
+ * the history gives them, a departure in a smoother window never rated below one in a bumpier
+ * window, the route-and-season rating where a route has no history, and the history's own rules
+ * (neighbouring months, the calmest window, direction, the API contract); one time-of-day word on both smoothness cards, no seat counts in
  * the fullness band, calm copy (no banned words, no exclamation marks, sentence case, plain units),
  * the voice of each basis (a booking-time meaning never says "Expect" or "this flight" and always
  * speaks for the route or the airports at this time of year — usually, often, tend, most — while
@@ -40,8 +43,24 @@ import {
 import { AIRPORT_TRAITS, airportTraits } from "../src/airportTraits";
 import { AIRPORTS, POPULAR_AIRPORT_CODES, getAirport } from "../src/airports";
 import { addDays, formatOffset, timeToMinutes } from "../src/dates";
-import { COASTAL_AIRPORTS, mountainRangeAt, routeBestSlot } from "../src/fakeFlight";
+import { COASTAL_AIRPORTS, mountainRangeAt } from "../src/fakeFlight";
 import { TURBULENCE_FORECAST_DAYS } from "../src/forecast";
+import {
+  C,
+  CELLS,
+  MIN_WINDOW_FLIGHTS,
+  WINDOWS,
+  WINDOW_LABELS,
+  isRouteHistoryDay,
+  pairKey,
+  routeFigures,
+  routeHistoryDay,
+  routeHistoryFor,
+  shareText,
+  windowOf,
+  type RouteHistoryDay,
+  type RouteHistoryTable,
+} from "../src/routeHistory";
 import { searchFlights, type FlightOption } from "../src/search";
 import type { Flight } from "../src/types";
 
@@ -80,7 +99,7 @@ const SPACE_VALUES: Record<string, number> = { fuller: 0, typical: 2, roomy_quie
 const BANNED =
   /\b(danger\w*|risk\w*|warning\w*|severe\w*|scared|scary|fear\w*|unsafe|safe|safer|safest|safely|safety|crash\w*|emergenc\w*|alarm\w*|worr(?:y|ies|ied|ying))\b/i;
 /** Forecast-only facts that must not appear weeks out: the score, wind speeds, gusts, "this week". */
-const FORECAST_ONLY = /\bof 100\b|\d+ (?:kt|knots)\b|gust|this week/i;
+const FORECAST_ONLY = /\bof 100\b(?! flights)|\d+ (?:kt|knots)\b|gust|this week/i;
 const SEAT_COUNT = /\b\d+\s+(open\s+)?seats?\b/i;
 /** Units and abbreviations a nervous flyer should never have to decode ("30 in —", "15 kt NW"; not "1,420 in July"). */
 const JARGON = /\b\d+ kt\b|\b\d+ in(?= [a-z—·]|$)|\b(?:N|NE|E|SE|S|SW|W|NW) wind\b|\bknots (?:N|NE|E|SE|S|SW|W|NW)\b/;
@@ -88,8 +107,6 @@ const JARGON = /\b\d+ kt\b|\b\d+ in(?= [a-z—·]|$)|\b(?:N|NE|E|SE|S|SW|W|NW) w
 const HEMISPHERE_SEASON = /\b(winter|spring|summer|autumn)\b/i;
 /** Items after the first in a joined list start lowercase unless they are proper nouns. */
 const PROPER_AMENITY = /^(Wi-Fi|Swiss|Viennese|Nordic)\b/;
-/** The history sentence's leading word → the generator's slot. */
-const SLOT_OF_WORD: Record<string, string> = { Morning: "morning", Midday: "midday", Afternoon: "afternoon", "Early-evening": "evening", Evening: "evening", Overnight: "overnight" };
 /** The seat count from which a single-aisle jet is a Mid-size jet (restated from the module). */
 const MID_SIZE_SEATS = 185;
 /** Forecast voice — a prediction for this flight — which a booking-time (history) meaning never speaks. */
@@ -130,9 +147,8 @@ const numberOf = (r: Rating, label: string) => r.numbers.find((n) => n.label ===
 /** The word after the last " · " of a number value ("11:25 AM · late-morning" → "late-morning"). */
 const todOf = (value: string | undefined) => (value ?? "").slice((value ?? "").lastIndexOf(" · ") + 3);
 const hourOf = (hhmm: string) => timeToMinutes(hhmm) / 60;
-/** Morning and afternoon as the generator's departure windows (departWindowOf) define them. */
+/** Morning as the takeoff & landing checks define it (before 11). */
 const morningWindow = (f: Flight) => hourOf(f.departTime) < 11;
-const afternoonWindow = (f: Flight) => hourOf(f.departTime) >= 11 && hourOf(f.departTime) < 17;
 /** The convective window the takeoff & landing rating tapers on (12:00–18:59). */
 const convective = (hour: number) => hour >= 12 && hour < 19;
 /** The destination's window for the arrival: the convective band and whether it is an early morning, on the arrival day. */
@@ -201,6 +217,62 @@ const SUMMER_DATE = "2027-07-16";
 const FAR_DAYS = 45;
 const northern = (code: string) => (getAirport(code)?.lat ?? 0) > 0;
 
+// ── A made-up route history for the sample's US routes (the real one is measured; see routeHistory.ts) ──
+
+const US = (code: string) => ["US", "PR"].includes(getAirport(code)?.country ?? "");
+const hashOf = (text: string) => [...text].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+/** Shares across the sample, roughly as measured (most routes 85–97% smooth, a few livelier). */
+const SHARES = [97, 96, 95, 94, 93, 93, 92, 91, 90, 90, 89, 88, 87, 86, 85, 83, 81, 79, 76, 69];
+/** Window offsets: a clear morning, a clear evening, or the same all day. */
+const PATTERNS = [[0, 5, -5, 0], [0, -4, -2, 6], [0, 0, 0, 0]];
+function madeUpCell(pk: string, month: number): number[] {
+  const h = hashOf(`${pk}|${month}`);
+  const n = 120 + (h % 400);
+  const share = SHARES[hashOf(pk) % SHARES.length] / 100;
+  const pattern = PATTERNS[h % PATTERNS.length];
+  const c = new Array<number>(CELLS).fill(0);
+  c[C.n] = n;
+  c[C.smooth] = Math.round(n * share);
+  c[C.calm] = n - Math.round((n - c[C.smooth]) * 0.25);
+  c[C.own] = Math.round(n * 0.3);
+  const bumpy = n - c[C.smooth];
+  const early = h % 2 === 0 ? Math.round(bumpy * 0.6) : Math.round(bumpy / 3);
+  const middle = Math.round((bumpy - early) / 2);
+  c[C.where] = early;
+  c[C.where + 1] = middle;
+  c[C.where + 2] = bumpy - early - middle;
+  const weights = [0.05, 0.4, 0.3, 0.25];
+  for (const [base, half] of [[C.ab, Math.floor(n / 2)], [C.ba, n - Math.floor(n / 2)]] as const) {
+    let left = half;
+    weights.forEach((wt, w) => {
+      const flights = w === weights.length - 1 ? left : Math.round(half * wt);
+      left -= flights;
+      c[base + 2 * w] = flights;
+      c[base + 2 * w + 1] = Math.max(0, Math.min(flights, Math.round(flights * (share + pattern[w] / 100))));
+    });
+  }
+  return c;
+}
+const madeUpPairs: RouteHistoryTable["pairs"] = {};
+const madeUpTable: RouteHistoryTable = {
+  version: 1,
+  source: "made up for the checks",
+  definition: "made up for the checks",
+  months: Array.from({ length: 12 }, (_, i) => `${i < 10 ? 2026 : 2025}-${String(i + 1).padStart(2, "0")}`).sort(),
+  national: Array.from({ length: 12 }, () => [20000, 18100, 19500] as const),
+  pairs: madeUpPairs,
+};
+const historyFor = (options: readonly FlightOption[], date: string): RouteHistoryDay => {
+  for (const { flight } of options) {
+    const pk = pairKey(flight.origin.code, flight.destination.code);
+    if (US(flight.origin.code) && US(flight.destination.code) && !madeUpPairs[pk]) madeUpPairs[pk] = Array.from({ length: 12 }, (_, m) => madeUpCell(pk, m));
+  }
+  return routeHistoryDay(madeUpTable, options.map((o) => [o.flight.origin.code, o.flight.destination.code] as const), date);
+};
+let measuredFlights = 0;
+let byRouteFlights = 0;
+let windowPairs = 0;
+
 type Mode = "booking" | "forecast";
 const tally = new Map<string, number>();
 const bump = (mode: Mode, category: RatingCategory, tier: string) => {
@@ -209,14 +281,13 @@ const bump = (mode: Mode, category: RatingCategory, tier: string) => {
 };
 const seenTiers: Record<"cruise" | "takeoff_landing", Set<string>> = { cruise: new Set(), takeoff_landing: new Set() };
 const blockOf = (time: string) => Math.floor((timeToMinutes(time) - 60) / 120);
-const perfInputs: Array<{ option: FlightOption; today: string }> = [];
+const perfInputs: Array<{ option: FlightOption; today: string; history: RouteHistoryDay }> = [];
 let routesWithFlights = 0;
 let flightsChecked = 0;
 let widePairs = 0;
 let airframeShown = 0;
 let moderateCruise = 0;
 let sizePairs = 0;
-let summerCruisePairs = 0;
 let summerApproachPairs = 0;
 let summerApproachResidual = 0;
 let summerApproachResidualBumpier = 0;
@@ -232,17 +303,18 @@ for (const [o, d] of routes) {
     const { options } = searchFlights({ origin: o, destination: d, date });
     if (options.length === 0) break;
     served = true;
-    const far = options.map((option) => rateFlight({ option, today: addDays(date, -FAR_DAYS) }));
-    const near = options.map((option) => rateFlight({ option, today: addDays(date, -1) }));
+    const history = historyFor(options, date);
+    const far = options.map((option) => rateFlight({ option, today: addDays(date, -FAR_DAYS), history }));
+    const near = options.map((option) => rateFlight({ option, today: addDays(date, -1), history }));
     options.forEach((option, i) => {
       const f = option.flight;
       const ftag = `${tag} ${option.key}`;
       flightsChecked++;
-      if (perfInputs.length < 64) perfInputs.push({ option, today: addDays(date, -FAR_DAYS) }, { option, today: addDays(date, -1) });
+      if (perfInputs.length < 64) perfInputs.push({ option, today: addDays(date, -FAR_DAYS), history }, { option, today: addDays(date, -1), history });
 
       for (const [mode, ratings] of [["booking", far[i]], ["forecast", near[i]]] as const) {
         const mtag = `${ftag} (${mode})`;
-        check(JSON.stringify(rateFlight({ option, today: addDays(date, mode === "booking" ? -FAR_DAYS : -1) })) === JSON.stringify(ratings), `${mtag}: not deterministic`);
+        check(JSON.stringify(rateFlight({ option, today: addDays(date, mode === "booking" ? -FAR_DAYS : -1), history })) === JSON.stringify(ratings), `${mtag}: not deterministic`);
         check(ratings.length === 4 && ratings.every((r, k) => r.category === RATING_CATEGORIES[k]), `${mtag}: four categories in order`);
         for (const r of ratings) {
           const rtag = `${mtag} ${r.category}`;
@@ -281,26 +353,41 @@ for (const [o, d] of routes) {
         if (mode === "booking") {
           const m = FORECAST_ONLY.exec(text);
           check(!m, `${mtag}: forecast-only text "${m?.[0]}" ${FAR_DAYS} days out`);
-          check(cruise.basisText === `Based on past flights on this route in ${f.turbulence.history.month}`, `${mtag}: cruise basisText "${cruise.basisText}"`);
+          // Measured where the route has a history (as the history gives it), else the route and the season, said so.
+          const h = routeHistoryFor(history, f.origin.code, f.destination.code);
+          if (h) {
+            measuredFlights++;
+            check(cruise.basisText === `Based on flights along this route in ${h.monthWords}`, `${mtag}: cruise basisText "${cruise.basisText}"`);
+            check(numberOf(cruise, "Past flights smooth") === shareText(h.smoothPct), `${mtag}: past flights smooth "${numberOf(cruise, "Past flights smooth")}" vs ${h.smoothPct}`);
+            check((numberOf(cruise, "Flights counted") ?? "").startsWith(h.flights.toLocaleString("en-US")), `${mtag}: flights counted "${numberOf(cruise, "Flights counted")}" vs ${h.flights}`);
+            check(numberOf(cruise, "Calmest time of day") === (h.calmest ? WINDOW_LABELS[h.calmest] : "No clear difference"), `${mtag}: calmest "${numberOf(cruise, "Calmest time of day")}" vs ${h.calmest}`);
+            check(cruise.factors[0]?.title === "Flights along this route" && cruise.factors[0].detail.includes(`${h.flights.toLocaleString("en-US")} flights`), `${mtag}: first factor "${cruise.factors[0]?.detail}"`);
+            // The rating is the route's share, moved toward this departure's window when it has enough flights.
+            const w = h.windows[windowOf(hourOf(f.departTime))];
+            const s = w.flights >= MIN_WINDOW_FLIGHTS ? (w.flights * w.smoothPct + MIN_WINDOW_FLIGHTS * h.smoothPct) / (w.flights + MIN_WINDOW_FLIGHTS) : h.smoothPct;
+            const expected = s >= 92 ? 4 : s >= 85 ? 3 : s >= 78 ? 2 : s >= 71 ? 1 : 0;
+            check(cruise.value === expected, `${mtag}: cruise ${cruise.tier} for a measured ${s.toFixed(1)}%`);
+            check((cruise.source ?? "").includes("NOAA MADIS") && ratings.slice(1).every((r) => r.source === undefined), `${mtag}: the source is on the measured cruise rating only`);
+          } else {
+            byRouteFlights++;
+            check(cruise.basisText === "Based on the route and the season · no measured history for this route", `${mtag}: cruise basisText "${cruise.basisText}"`);
+            check(numberOf(cruise, "Past flights smooth") === undefined && numberOf(cruise, "Flights counted") === "Too few along this route", `${mtag}: a route figure shown without a history`);
+            check(!cruise.factors.some((x) => x.title === "Time of day"), `${mtag}: a time-of-day factor without a history`);
+          }
           check(!text.includes(f.aircraft.tailNumber), `${mtag}: tail number ${f.aircraft.tailNumber} shown ${FAR_DAYS} days out`);
           check(!aircraft.numbers.some((n) => n.label === "Assigned aircraft"), `${mtag}: assigned aircraft shown ${FAR_DAYS} days out`);
-
-          // The calmest slot comes from the generator; the history sentence agrees with it, so the wording never falls back.
-          const sentence = f.turbulence.history.bestDepartureWindow;
-          const word = /^(Morning|Midday|Afternoon|Early-evening|Evening|Overnight) departures/.exec(sentence)?.[1];
-          const slot = routeBestSlot(f.input);
-          check(word !== undefined && SLOT_OF_WORD[word] === slot, `${mtag}: history sentence "${sentence}" vs the generator's slot ${slot}`);
-          const calmest = numberOf(cruise, "Calmest time of day") ?? "";
-          check(word !== undefined && calmest.startsWith(word.replace("-", " ")), `${mtag}: calmest time "${calmest}" vs "${word}"`);
 
           // One time-of-day word on both cards, and in the time-of-day factor.
           const departureWord = todOf(numberOf(cruise, "This departure"));
           check(departureWord.length > 0 && departureWord === todOf(numberOf(approach, "Departure")), `${mtag}: cruise says "${departureWord}", takeoff & landing says "${todOf(numberOf(approach, "Departure"))}"`);
           const todFactor = cruise.factors.find((x) => x.title === "Time of day");
-          check(Boolean(todFactor) && (todFactor?.detail ?? "").toLowerCase().startsWith(`${departureWord} departure`), `${mtag}: time-of-day factor "${todFactor?.detail}" vs "${departureWord}"`);
-          const route = numberOf(cruise, "Route") ?? "";
-          const routeFactor = cruise.factors.find((x) => x.title === "Route");
-          check((route === "No particular feature") === (routeFactor === undefined), `${mtag}: route number "${route}" vs route factor "${routeFactor?.detail}"`);
+          if (h) check(Boolean(todFactor) && (todFactor?.detail ?? "").toLowerCase().startsWith(`${departureWord} departure`), `${mtag}: time-of-day factor "${todFactor?.detail}" vs "${departureWord}"`);
+          // By route and season: the route number and the route factor agree on whether the route has a feature.
+          if (!h) {
+            const route = numberOf(cruise, "Route") ?? "";
+            const routeFactor = cruise.factors.find((x) => x.title === "Route");
+            check((route === "No particular feature") === (routeFactor?.detail.startsWith("Nothing about the route") ?? false), `${mtag}: route number "${route}" vs route factor "${routeFactor?.detail}"`);
+          }
 
           // Tropical airports: no hemisphere season beside them.
           for (const airport of [f.origin, f.destination]) {
@@ -385,15 +472,25 @@ for (const [o, d] of routes) {
       }
     }
 
-    // Summer (booking): a morning departure never rates bumpier than an afternoon one — at cruise, and at takeoff & landing when both arrive in the same window.
+    // Booking time, measured: on one route, a departure in a window with a higher measured share never rates below one in a lower.
+    options.forEach((x, xi) => {
+      const hx = routeHistoryFor(history, x.flight.origin.code, x.flight.destination.code);
+      const wx = hx?.windows[windowOf(hourOf(x.flight.departTime))];
+      if (!hx || !wx || wx.flights < MIN_WINDOW_FLIGHTS) return;
+      options.forEach((y, yi) => {
+        if (y.flight.origin.code !== x.flight.origin.code || y.flight.destination.code !== x.flight.destination.code) return;
+        const wy = hx.windows[windowOf(hourOf(y.flight.departTime))];
+        if (wy.flights < MIN_WINDOW_FLIGHTS || wx.smoothPct < wy.smoothPct) return;
+        windowPairs++;
+        check(far[xi][0].value >= far[yi][0].value, `${tag}: ${x.key} (${wx.window} ${wx.smoothPct}%) cruise ${far[xi][0].tier} below ${y.key} (${wy.window} ${wy.smoothPct}%) ${far[yi][0].tier}`);
+      });
+    });
+
+    // Summer (booking): a morning departure never rates bumpier than an afternoon one at takeoff & landing when both arrive in the same window.
     if (date === SUMMER_DATE && northern(o) && northern(d)) {
       options.forEach((m, mi) => {
         if (!morningWindow(m.flight)) return;
         options.forEach((a, ai) => {
-          if (afternoonWindow(a.flight)) {
-            summerCruisePairs++;
-            check(far[mi][0].value >= far[ai][0].value, `${tag}: morning ${m.key} cruise ${far[mi][0].tier} below afternoon ${a.key} ${far[ai][0].tier}`);
-          }
           if (convective(hourOf(a.flight.departTime))) {
             if (arrivalWindow(m.flight) === arrivalWindow(a.flight)) {
               summerApproachPairs++;
@@ -426,7 +523,8 @@ check(widePairs > 0, "no wide-body / narrow-body pairs in the same air");
 check(airframeShown > 0, "the assigned aircraft never shows a day out");
 check(moderateCruise > 0, "no moderate cruise window in the sample");
 check(sizePairs > 0, "no mid-size / smaller pairs on the same day");
-check(summerCruisePairs > 0 && summerApproachPairs > 0, `summer pairs: ${summerCruisePairs} cruise, ${summerApproachPairs} takeoff & landing`);
+check(summerApproachPairs > 0, `summer pairs: ${summerApproachPairs} takeoff & landing`);
+check(measuredFlights > 0 && byRouteFlights > 0 && windowPairs > 0, `booking-time cruise: ${measuredFlights} measured, ${byRouteFlights} by route, ${windowPairs} window pairs`);
 check(nearlyAllShare > 0, "no flight with a nearly-all smooth share a day out in the sample");
 
 // One static meaning per category, basis and tier, and never the same line for both bases: a booking-time card never speaks with forecast certainty.
@@ -448,6 +546,61 @@ const basisAt = (daysUntil: number) => rateFlight({ option: edge, today: addDays
 check(basisAt(TURBULENCE_FORECAST_DAYS + 1) === "history" && basisAt(TURBULENCE_FORECAST_DAYS) === "forecast" && basisAt(0) === "forecast", "basis flips at TURBULENCE_FORECAST_DAYS");
 check(rateFlight({ option: edge, today: "" })[0].basis === "history" && rateFlight({ option: edge, today: "not a date" })[1].basis === "history", "an invalid today means booking time");
 check(rateFlight({ option: edge, today: "2027-03-11" })[0].basis === "forecast", "a flight that already left rates from its forecast");
+
+// ── Route history (shared/src/routeHistory.ts) ─────────────────────────────
+
+{
+  const cell = (n: number, smooth: number, ab: number[], ba: number[], where = [0, 0, 0]): number[] => {
+    const c = new Array<number>(CELLS).fill(0);
+    c[C.n] = n;
+    c[C.smooth] = smooth;
+    c[C.calm] = smooth;
+    for (let k = 0; k < 3; k++) c[C.where + k] = where[k];
+    ab.forEach((v, k) => (c[C.ab + k] = v));
+    ba.forEach((v, k) => (c[C.ba + k] = v));
+    return c;
+  };
+  const months = (cells: Record<number, number[]>) => Array.from({ length: 12 }, (_, m) => cells[m + 1] ?? null);
+  const t: RouteHistoryTable = {
+    version: 1,
+    source: "",
+    definition: "",
+    months: ["2025-12", "2026-01", "2026-02", "2026-07"],
+    national: Array.from({ length: 12 }, (_, m) => (m === 6 ? ([0, 0, 0] as const) : ([1000, 900, 980] as const))),
+    pairs: {
+      // January alone has enough; a clear morning A → B (JFK → LAX), and bumps in the first third going A → B.
+      "JFK-LAX": months({ 1: cell(200, 180, [0, 0, 100, 99, 60, 48, 40, 33], [0, 0, 50, 45, 50, 45, 0, 0], [12, 4, 4]) }),
+      // February too thin alone (10); with January and March (20 + 5) it reaches 35.
+      "BOS-LGA": months({ 1: cell(20, 19, [0, 0, 10, 10, 0, 0, 0, 0], [0, 0, 10, 9, 0, 0, 0, 0]), 2: cell(10, 9, [0, 0, 10, 9, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]), 3: cell(5, 5, [0, 0, 5, 5, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]) }),
+      // Never enough.
+      "HNL-OGG": months({ 1: cell(10, 6, [0, 0, 10, 6, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]) }),
+    },
+  };
+  const jan = routeFigures(t, "JFK", "LAX", 1);
+  check(jan !== null && jan.months.join() === "1" && jan.monthWords === "January" && jan.period === "January 2026" && jan.flights === 200 && jan.smoothPct === 90, `routeFigures JFK→LAX January: ${JSON.stringify(jan)}`);
+  check(jan?.calmest === "morning", `the clear morning window A → B is the calmest: ${jan?.calmest}`);
+  check(jan?.where === "early", `bumps in the first third A → B are early going A → B: ${jan?.where}`);
+  const back = routeFigures(t, "LAX", "JFK", 1);
+  check(back?.where === "late" && back.windows[1].flights === 50 && back.calmest === null, `B → A: the thirds flip and its own windows count: ${JSON.stringify(back)}`);
+  const feb = routeFigures(t, "LGA", "BOS", 2);
+  check(feb !== null && feb.months.join() === "1,2,3" && feb.monthWords === "January–March" && feb.flights === 35, `too few in February alone → January–March: ${JSON.stringify(feb)}`);
+  check(routeFigures(t, "BOS", "LGA", 7) === null && routeFigures(t, "HNL", "OGG", 1) === null && routeFigures(t, "JFK", "SFO", 1) === null && routeFigures(t, "JFK", "JFK", 1) === null, "too few flights, no pair or one airport → no figures");
+  const dec = routeFigures(t, "JFK", "LAX", 12);
+  check(dec !== null && dec.months.join() === "11,12,1" && dec.period === "December 2025–January 2026", `December pools November–January across the year end: ${JSON.stringify(dec?.months)} ${dec?.period}`);
+  const day = routeHistoryDay(t, [["JFK", "LAX"], ["HNL", "OGG"], ["JFK", "LAX"]], "2027-01-15");
+  check(day.month === 1 && day.from === "2025-12" && day.to === "2026-07" && day.national?.smoothPct === 90 && Object.keys(day.routes).join() === "JFK-LAX,HNL-OGG" && day.routes["HNL-OGG"] === null, `routeHistoryDay: ${JSON.stringify(day).slice(0, 200)}`);
+  check(routeHistoryDay(t, [], "2027-07-04").national === null, "a month with no flights has no national figure");
+  check(routeHistoryFor(day, "JFK", "LAX")?.flights === 200 && routeHistoryFor(day, "EWR", "LAX") === null && routeHistoryFor(null, "JFK", "LAX") === undefined, "routeHistoryFor");
+  check(isRouteHistoryDay(day) && isRouteHistoryDay(JSON.parse(JSON.stringify(day))), "isRouteHistoryDay accepts what routeHistoryDay makes");
+  for (const bad of [null, 1, {}, { ...day, month: 13 }, { ...day, routes: { "JFK-LAX": { ...jan, smoothPct: 140 } } }, { ...day, routes: { "JFK-LAX": { ...jan, windows: [] } } }, { ...day, national: { flights: 1 } }]) {
+    check(!isRouteHistoryDay(bad), `isRouteHistoryDay accepts ${JSON.stringify(bad)?.slice(0, 80)}`);
+  }
+  check(shareText(89.6) === "90%" && shareText(99.4) === "99%" && shareText(99.5) === "Nearly all" && shareText(100, true) === "nearly all", "shareText");
+  check(WINDOWS.map((_, w) => w).join() === [3, 6, 13, 19].map(windowOf).join() && windowOf(22) === 0 && windowOf(4) === 0 && windowOf(12) === 2 && windowOf(17) === 3, "windowOf");
+  // No figures at all (the browser's illustrative day): the route-and-season rating, still labelled.
+  const plain = rateFlight({ option: edge, today: addDays("2027-03-10", -FAR_DAYS) })[0];
+  check(plain.basisText.endsWith("no measured history for this route") && plain.source === undefined, `no history at all: "${plain.basisText}" (source ${plain.source})`);
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -504,7 +657,8 @@ console.log(`Takeoff & landing · booking ${line("booking", "takeoff_landing", [
 console.log(`Takeoff & landing · forecast ${line("forecast", "takeoff_landing", [...SMOOTH_TIERS].reverse())}`);
 console.log(`Aircraft · ${line("booking", "aircraft", ["large", "mid", "smaller"])}`);
 console.log(`Space & quiet · ${line("booking", "space", ["roomy_quiet", "typical", "fuller"])}`);
-console.log(`Summer mornings vs afternoons · ${summerCruisePairs} cruise pairs · ${summerApproachPairs} takeoff & landing pairs with the same arrival window; of the ${summerApproachResidual} with different arrival windows, ${summerApproachResidualBumpier} rate the morning bumpier`);
+console.log(`Booking-time cruise · ${measuredFlights} flights on measured history, ${byRouteFlights} by route and season · ${windowPairs} same-route window pairs`);
+console.log(`Summer mornings vs afternoons · ${summerApproachPairs} takeoff & landing pairs with the same arrival window; of the ${summerApproachResidual} with different arrival windows, ${summerApproachResidualBumpier} rate the morning bumpier`);
 console.log(`Mid-size vs smaller jets on the same day · ${sizePairs} pairs · ${moderateCruise} moderate cruise windows a day out · ${nearlyAllShare} nearly-all smooth shares a day out`);
 console.log(`Meaning lines · ${[...meanings.keys()].filter((k) => k.includes("|history|")).length} booking-time and ${[...meanings.keys()].filter((k) => k.includes("|forecast|")).length} forecast category/tier lines seen, each in its own voice`);
 console.log(`Trait table · ${Object.keys(AIRPORT_TRAITS).length} airports (${generatorCoastal} coastal and ${generatorTerrain} in a mountain box in the generator)`);

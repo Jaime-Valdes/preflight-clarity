@@ -11,13 +11,17 @@
  * generator, the AeroDataBox fixture mapping, the adapter over a fetch double),
  * the route-day cache and GET /flights/day. The airline on-time step (docs/REAL_DATA.md, "Status:
  * airline on-time from BTS"): the precompute's CSV and ZIP reading and its count on a tiny fixture,
- * the bundled table, the lookup a route-day carries, and GET /flights/day's `onTime`.
+ * the bundled table, the lookup a route-day carries, and GET /flights/day's `onTime`. The route history
+ * (docs/REAL_DATA.md, "Status: route history from MADIS"): the NetCDF reader and the hourly extract on a
+ * tiny file, the flight analysis on made-up tracks, the month checks and the table build, the month
+ * planner, the bundled table, the lookup, and GET /flights/day's `routeHistory`.
  */
 import assert from "node:assert/strict";
 import { createReadStream } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { CSV_COLUMNS, csvCell, recordToRow as csvRow, recordsToCsv } from "@preflight/shared/csv";
 import { addDays, toISODate } from "@preflight/shared/dates";
@@ -30,6 +34,7 @@ import {
 } from "@preflight/shared/record";
 import { generatedSchedule, optionsFromSchedule, type RouteDaySchedule, type ScheduleRow } from "@preflight/shared/schedule";
 import { airlineOnTime, isRouteOnTime, onTimePeriod, routeOnTime, type OnTimeTable } from "@preflight/shared/onTime";
+import { C, CELLS, isRouteHistoryDay, routeHistoryDay, type RouteHistoryTable } from "@preflight/shared/routeHistory";
 import { SECTION_IDS } from "@preflight/shared/sections";
 import {
   emailKey,
@@ -87,9 +92,15 @@ import { createGeneratorProvider } from "../src/lib/flights/generator";
 import { currentProvider, providerName, routeDayCache, validateDayQuery } from "../src/lib/flights/index";
 import { ProviderError, ROUTE_DAY_MAX_AGE_MS, ROUTE_DAY_TTL_MS, type RouteDayStore, type ScheduleProvider } from "../src/lib/flights/types";
 import { ON_TIME_TABLE, onTimeForSchedule } from "../src/lib/onTime/index";
+import { ROUTE_HISTORY_TABLE, routeHistoryForSchedule } from "../src/lib/routeHistory/index";
 import { createFileStore, D_FEEDBACK_FILE, ROUTE_DAYS_FILE, SIGNUPS_FILE } from "../src/lib/store/file";
 import { aggregateCsv, isOnTime, OnTimeAggregator, parseCsvLine } from "./bts/aggregate";
 import { listZip, openZipCsv } from "./bts/zip";
+import { analyzeMonth, ReadingsBuilder } from "./route-history/analyze";
+import { buildTable, checkMonth, tableText } from "./route-history/build";
+import { extractHour, routeAirports } from "./route-history/madis-month";
+import { planMonths } from "./route-history/months";
+import { openNetcdf, readNumbers, readStrings } from "./route-history/netcdf";
 import { createMemoryRouteDayStore } from "../src/lib/store/memory";
 import { createSupabaseStore, without, withoutNewerSignupColumns as stripSignupColumns } from "../src/lib/store/supabase";
 import {
@@ -2815,6 +2826,10 @@ group("routes: flights", () => {
     assert.equal(again.cached, true);
     assert.deepEqual(again.schedule, body.schedule);
     assert.deepEqual(again.onTime, body.onTime, "a cached day gets the figures too");
+    // So does the route's turbulence history (NOAA MADIS), for the day's month.
+    assert.equal(isRouteHistoryDay(body.routeHistory), true);
+    assert.deepEqual(body.routeHistory, routeHistoryForSchedule(body.schedule));
+    assert.deepEqual(again.routeHistory, body.routeHistory);
     const raw = JSON.parse(await readFile(join(tempDir, "routes", ROUTE_DAYS_FILE), "utf8"));
     assert.deepEqual(Object.keys(raw), [`JFK-LAX|${day}|generator`]);
     assert.deepEqual(raw[`JFK-LAX|${day}|generator`].payload, body.schedule);
@@ -2999,6 +3014,192 @@ group("on-time: the lookup", () => {
     console.error = () => {};
     try {
       assert.equal(onTimeForSchedule(schedule, { ...ON_TIME_TABLE, carriers: null } as unknown as OnTimeTable), undefined);
+    } finally {
+      console.error = quiet;
+    }
+  });
+});
+
+// ── Route history: the MADIS precompute ─────────────────────────────────────
+
+/** A tiny NetCDF-3 classic file with MADIS's ACARS variable names (record variables only, as the archive's are). */
+function tinyNetcdf(rows: Array<{ tail: string; o3: string; d3: string; t: number; alt: number; lat: number; lon: number; edr: number }>): Buffer {
+  const parts: Buffer[] = [];
+  const u32 = (v: number) => { const b = Buffer.alloc(4); b.writeUInt32BE(v); parts.push(b); };
+  const name = (s: string) => { u32(s.length); parts.push(Buffer.from(s, "latin1"), Buffer.alloc((4 - (s.length % 4)) % 4)); };
+  const STR = 9;
+  const vars: Array<{ name: string; type: number; dims: number[]; size: number; fill?: number }> = [
+    { name: "en_tailNumber", type: 2, dims: [0, 1], size: STR },
+    { name: "origAirport", type: 2, dims: [0, 2], size: 3 },
+    { name: "destAirport", type: 2, dims: [0, 2], size: 3 },
+    { name: "timeObs", type: 6, dims: [0], size: 8 },
+    { name: "altitude", type: 5, dims: [0], size: 4 },
+    { name: "latitude", type: 5, dims: [0], size: 4 },
+    { name: "longitude", type: 5, dims: [0], size: 4 },
+    { name: "maxEDR", type: 5, dims: [0], size: 4, fill: 99999 },
+  ];
+  const vsize = (v: (typeof vars)[number]) => v.size + ((4 - (v.size % 4)) % 4);
+  const recsize = vars.reduce((s, v) => s + vsize(v), 0);
+  parts.push(Buffer.from("CDF\x01", "latin1"));
+  u32(rows.length);
+  u32(10); u32(3); name("recNum"); u32(0); name("tailLen"); u32(STR); name("codeLen"); u32(3);
+  u32(0); u32(0); // no global attributes
+  u32(11); u32(vars.length);
+  // The header's size is needed for `begin`; lay it out once to measure, then again for real.
+  const headerFor = (begin0: number) => {
+    const saved = parts.length;
+    let offset = begin0;
+    for (const v of vars) {
+      name(v.name); u32(v.dims.length); for (const d of v.dims) u32(d);
+      if (v.fill !== undefined) { u32(12); u32(1); name("_FillValue"); u32(v.type); u32(1); const b = Buffer.alloc(4); b.writeFloatBE(v.fill); parts.push(b); } else { u32(0); u32(0); }
+      u32(v.type); u32(vsize(v)); u32(offset);
+      offset += vsize(v);
+    }
+    return saved;
+  };
+  const start = parts.length;
+  headerFor(0);
+  const headerLen = Buffer.concat(parts).length;
+  parts.length = start;
+  headerFor(headerLen);
+  const data = Buffer.alloc(recsize * rows.length);
+  rows.forEach((r, i) => {
+    let p = i * recsize;
+    const put = (s: string, len: number, pad: number) => { data.write(s.slice(0, len), p, "latin1"); p += pad; };
+    put(r.tail, STR, vsize(vars[0])); put(r.o3, 3, 4); put(r.d3, 3, 4);
+    data.writeDoubleBE(r.t, p); p += 8;
+    for (const x of [r.alt, r.lat, r.lon, r.edr]) { data.writeFloatBE(x, p); p += 4; }
+  });
+  return Buffer.concat([...parts, data]);
+}
+
+/** Points along the great circle a → b, one a minute: climb, cruise at `top`, descent; `edr(i, n)` per point. */
+function trackAlong(a: { lat: number; lon: number }, b: { lat: number; lon: number }, n: number, top: number, edr: (i: number, n: number) => number) {
+  const rad = Math.PI / 180;
+  const v = (lat: number, lon: number) => [Math.cos(lat * rad) * Math.cos(lon * rad), Math.cos(lat * rad) * Math.sin(lon * rad), Math.sin(lat * rad)];
+  const p = v(a.lat, a.lon), q = v(b.lat, b.lon);
+  const om = Math.acos(p[0] * q[0] + p[1] * q[1] + p[2] * q[2]);
+  return Array.from({ length: n }, (_, i) => {
+    const f = i / (n - 1);
+    const s1 = Math.sin((1 - f) * om) / Math.sin(om), s2 = Math.sin(f * om) / Math.sin(om);
+    const x = [0, 1, 2].map((k) => s1 * p[k] + s2 * q[k]);
+    const climb = Math.min(1, i / 20, (n - 1 - i) / 20);
+    return { lat: Math.asin(x[2]) / rad, lon: Math.atan2(x[1], x[0]) / rad, alt: 500 + climb * (top - 500), edr: edr(i, n) };
+  });
+}
+
+group("route history: the MADIS precompute", () => {
+  const airports = routeAirports();
+  const JFK = airports.find((x) => x.code === "JFK")!;
+  const LAX = airports.find((x) => x.code === "LAX")!;
+  // 2026-01-15 13:00 UTC: 8 AM in New York, 5 AM in Los Angeles.
+  const T0 = Date.UTC(2026, 0, 15, 13) / 1000;
+
+  test("the NetCDF reader: record variables at their stride, strings cut at NUL, the fill value as NaN; extractHour keeps only readings with EDR", () => {
+    const rows = [
+      { tail: "FSL0000001", o3: "KJF", d3: "KLA", t: T0, alt: 10000, lat: 40.5, lon: -80, edr: 0.04 },
+      { tail: "FSL0000001", o3: "KJF", d3: "KLA", t: T0 + 60, alt: 10010, lat: 40.4, lon: -80.2, edr: 99999 },
+      { tail: "FSL2", o3: "KAT", d3: "KCH", t: T0 + 120, alt: 7000, lat: 33, lon: -82, edr: 0.12 },
+    ];
+    const nc = openNetcdf(tinyNetcdf(rows));
+    assert.equal(nc.numrecs, 3);
+    assert.deepEqual(readStrings(nc, "en_tailNumber"), ["FSL000000", "FSL000000", "FSL2"]);
+    assert.deepEqual(readStrings(nc, "destAirport", [2, 0]), ["KCH", "KLA"]);
+    const edr = readNumbers(nc, "maxEDR");
+    assert.ok(Math.abs(edr[0] - 0.04) < 1e-6 && Number.isNaN(edr[1]) && Math.abs(edr[2] - 0.12) < 1e-6);
+    assert.deepEqual([...readNumbers(nc, "timeObs", [2])], [T0 + 120]);
+    const builder = new ReadingsBuilder();
+    assert.equal(extractHour(gzipSync(tinyNetcdf(rows)), builder), 2);
+    const r = builder.build();
+    assert.deepEqual([r.length, r.codes.join(",")], [2, "KJF,KLA,KAT,KCH"]);
+    assert.throws(() => openNetcdf(Buffer.from("not a netcdf file")), /NetCDF/);
+    assert.throws(() => openNetcdf(tinyNetcdf(rows).subarray(0, 40)), /past the end/);
+  });
+
+  test("analyzeMonth: own trips by their whole cruise, a flight along the path by its stretch, time of day by direction, where bumps come", () => {
+    const b = new ReadingsBuilder();
+    const add = (tail: string, o3: string, d3: string, t0: number, pts: ReturnType<typeof trackAlong>) => pts.forEach((p, i) => b.add(tail, o3, d3, t0 + 60 * i, p.alt, p.lat, p.lon, p.edr));
+    // Two own trips JFK → LAX ("KLA" could be LAX or LAS; the track says LAX): one smooth, one with a bump early in the cruise.
+    add("FSL1", "KJF", "KLA", T0, trackAlong(JFK, LAX, 300, 11000, () => 0.03));
+    add("FSL2", "KJF", "KLA", T0 + 3600, trackAlong(JFK, LAX, 300, 11000, (i) => (i === 40 ? 0.25 : 0.03)));
+    // An overseas flight whose codes match no catalogue airport, cruising LAX → JFK along the whole path, smooth, at 9 PM in LA.
+    add("FSL3", "EGL", "EGK", Date.UTC(2026, 0, 16, 5) / 1000, trackAlong(LAX, JFK, 300, 11500, () => 0.05));
+    // The same tail again three hours after its first trip: a flight of its own, too short to have a cruise of 3 readings.
+    add("FSL1", "KJF", "KLA", T0 + 300 * 60 + 3 * 3600, trackAlong(JFK, LAX, 2, 3000, () => 0.01));
+    const m = analyzeMonth(b.build(), airports, ["JFK-LAX", "ATL-CHS"]);
+    assert.equal(m.flights, 3);
+    assert.equal(m.identified, 2);
+    assert.deepEqual(m.national, [2, 1, 1]);
+    const c = m.pairs["JFK-LAX"]!;
+    assert.equal(c.length, CELLS);
+    assert.deepEqual([c[C.n], c[C.smooth], c[C.calm], c[C.own]], [3, 2, 2, 2]);
+    assert.deepEqual(c.slice(C.where, C.where + 3), [1, 0, 0], "the one bump came in the first third, going JFK → LAX");
+    // JFK → LAX (A → B): both own trips set off in the morning in New York; LAX → JFK: the overseas flight, at 9 PM in LA (evening).
+    assert.deepEqual(c.slice(C.ab, C.ab + 8), [0, 0, 2, 1, 0, 0, 0, 0]);
+    assert.deepEqual(c.slice(C.ba, C.ba + 8), [0, 0, 0, 0, 0, 0, 1, 1]);
+    assert.equal(m.pairs["ATL-CHS"], undefined, "a pair nobody flew along is left out");
+  });
+
+  test("checkMonth turns away counts that do not add up; buildTable sums by calendar month", () => {
+    const good = { version: 1 as const, month: "2026-01", hours: { expected: 744, read: 744 }, national: [10, 9, 10] as [number, number, number], pairs: { "JFK-LAX": [3, 2, 2, 2, 1, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0] } };
+    checkMonth(good, "2026-01.json");
+    assert.throws(() => checkMonth(good, "2026-02.json"), /file name/);
+    assert.throws(() => checkMonth({ ...good, pairs: { "LAX-JFK": good.pairs["JFK-LAX"] } }, "2026-01.json"), /pair key/);
+    assert.throws(() => checkMonth({ ...good, pairs: { "JFK-LAX": [3, 2, 2, 2, 0, 0, 0, ...good.pairs["JFK-LAX"].slice(7)] } }, "2026-01.json"), /where/);
+    assert.throws(() => checkMonth({ ...good, pairs: { "JFK-LAX": [...good.pairs["JFK-LAX"].slice(0, 7), 0, 0, 3, 1, ...good.pairs["JFK-LAX"].slice(11)] } }, "2026-01.json"), /window/);
+    assert.throws(() => checkMonth({ ...good, pairs: { "JFK-LAX": [3, 2, 1, ...good.pairs["JFK-LAX"].slice(3)] } }, "2026-01.json"), /smooth ≤ calm/);
+    const t = buildTable([good, { ...good, month: "2025-01" }, { ...good, month: "2026-02" }]);
+    assert.deepEqual(t.months, ["2025-01", "2026-01", "2026-02"]);
+    assert.deepEqual(t.national[0], [20, 18, 20]);
+    assert.equal(t.pairs["JFK-LAX"]![0]![C.n], 6);
+    assert.equal(t.pairs["JFK-LAX"]![2], null);
+    assert.deepEqual(JSON.parse(tableText(t)), t);
+    assert.equal(isRouteHistoryDay(routeHistoryDay(t as unknown as RouteHistoryTable, [["JFK", "LAX"]], "2027-01-10")), true);
+  });
+
+  test("planMonths: the last complete month unless it is in; an explicit range rebuilt; nothing unfinished or too long", () => {
+    assert.deepEqual(planMonths("", "2026-12-03", new Set()), ["2026-11"]);
+    assert.deepEqual(planMonths("", "2026-12-03", new Set(["2026-11"])), []);
+    assert.deepEqual(planMonths("2026-01", "2026-12-03", new Set(["2026-01"])), ["2026-01"]);
+    assert.deepEqual(planMonths("2025-11..2026-02", "2026-12-03", new Set()), ["2025-11", "2025-12", "2026-01", "2026-02"]);
+    assert.throws(() => planMonths("2026-12", "2026-12-03", new Set()), /not over yet/);
+    assert.throws(() => planMonths("2026-05..2026-01", "2026-12-03", new Set()), /backwards/);
+    assert.throws(() => planMonths("2023-01..2025-06", "2026-12-03", new Set()), /at most/);
+    assert.throws(() => planMonths("26-1", "2026-12-03", new Set()), /expected/);
+  });
+});
+
+// ── Route history: the lookup ───────────────────────────────────────────────
+
+group("route history: the lookup", () => {
+  test("the bundled table: months in order, alphabetical pair keys, counts in the shape the API reads", () => {
+    const t = ROUTE_HISTORY_TABLE;
+    assert.equal(t.version, 1);
+    assert.ok(t.months.length >= 1 && t.months.every((m, i) => /^\d{4}-\d{2}$/.test(m) && (i === 0 || m > t.months[i - 1]!)), t.months.join());
+    assert.equal(t.national.length, 12);
+    assert.ok(Object.keys(t.pairs).length > 1000, `${Object.keys(t.pairs).length} pairs`);
+    for (const [pk, row] of Object.entries(t.pairs)) {
+      assert.match(pk, /^[A-Z]{3}-[A-Z]{3}$/);
+      assert.ok(pk.slice(0, 3) < pk.slice(4), pk);
+      assert.equal(row.length, 12, pk);
+      for (const cell of row) if (cell) assert.ok(cell.length === CELLS && cell[C.smooth]! <= cell[C.calm]! && cell[C.calm]! <= cell[C.n]!, pk);
+    }
+    assert.ok(t.pairs["JFK-LAX"]?.some((c) => (c?.[C.n] ?? 0) >= 30), "JFK-LAX has a month with figures");
+  });
+
+  test("routeHistoryForSchedule: the day's routes for its month from the bundled table; a broken table costs only the history", () => {
+    const month = Number(ROUTE_HISTORY_TABLE.months[0]!.slice(5));
+    const date = `2027-${String(month).padStart(2, "0")}-15`;
+    const schedule = generatedSchedule({ origin: "JFK", destination: "LAX", date }, FETCHED_AT);
+    const day = routeHistoryForSchedule(schedule)!;
+    assert.equal(isRouteHistoryDay(day), true);
+    assert.equal(day.month, month);
+    assert.deepEqual(Object.keys(day.routes), ["JFK-LAX"]);
+    assert.ok((day.routes["JFK-LAX"]?.flights ?? 0) >= 30);
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      assert.equal(routeHistoryForSchedule(schedule, { ...ROUTE_HISTORY_TABLE, national: null } as unknown as RouteHistoryTable), undefined);
     } finally {
       console.error = quiet;
     }

@@ -7,6 +7,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { getAirport } from "@preflight/shared/airports";
 import { formatShortDate, formatTime12 } from "@preflight/shared/dates";
 import { RATING_CATEGORIES, forYouScore } from "@preflight/shared/ratings";
+import type { RouteHistoryDay } from "@preflight/shared/routeHistory";
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import { AirlineMark } from "@/components/c/common/AirlineMark";
 import { daysToDeparture } from "@/components/c/common/availability";
@@ -109,9 +110,9 @@ function ExampleRoutes({ date, campaign }: { date: string; campaign: Campaign })
 }
 
 /** The flight that leads on the usual order (ties: the earliest), from the day's options. */
-function pickSample(options: readonly FlightOption[], today: string): { option: FlightOption; ratings: ReturnType<typeof ratingsByKey> } | null {
+function pickSample(options: readonly FlightOption[], today: string, history: RouteHistoryDay | null): { option: FlightOption; ratings: ReturnType<typeof ratingsByKey> } | null {
   if (options.length === 0) return null;
-  const ratings = ratingsByKey(options, today);
+  const ratings = ratingsByKey(options, today, history);
   let best: FlightOption | null = null;
   let bestScore = -Infinity;
   for (const option of options) {
@@ -135,7 +136,7 @@ function SampleFlight({ today, date, campaign }: { today: string; date: string; 
   const [from, to] = EXAMPLE_ROUTES[0];
   const day: RouteDay = useMemo(() => ({ origin: from, destination: to, date }), [from, to, date]);
   const source = useFlightSource();
-  const { provider } = useRouteDay(day);
+  const { provider, routeHistory } = useRouteDay(day);
   useEffect(() => {
     source.ensure(day);
   }, [day, source]);
@@ -147,7 +148,7 @@ function SampleFlight({ today, date, campaign }: { today: string; date: string; 
     }
   }, [day, source]);
   const daysUntil = daysToDeparture(today, date);
-  const sample = useMemo(() => (options ? pickSample(options, today) : null), [options, today]);
+  const sample = useMemo(() => (options ? pickSample(options, today, routeHistory) : null), [options, today, routeHistory]);
 
   if (options === null) return <SampleSkeleton />;
   if (!sample) return null;

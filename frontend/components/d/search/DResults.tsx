@@ -156,7 +156,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
 
   // The day through the store (docs/REAL_DATA.md): loaded once per session, the same snapshot every D page reads.
   const source = useFlightSource();
-  const { provider, served } = useRouteDay({ origin, destination, date });
+  const { provider, served, routeHistory } = useRouteDay({ origin, destination, date });
   const search = useMemo(() => runSearch({ origin, destination, date }, source), [origin, destination, date, source]);
   useEffect(() => {
     source.ensure({ origin, destination, date });
@@ -189,7 +189,7 @@ function Results({ day, params, today }: { day: RouteDay; params: Params; today:
   // Sort and filters live in the URL; the optimistic copy shows a change on this frame while the URL catches up.
   const [view, setOptimisticView] = useOptimistic(urlView);
   // Every flight's four ratings, once per day (deterministic: the same flight and date always rate the same).
-  const ratings = useMemo(() => ratingsByKey(options, today), [options, today]);
+  const ratings = useMemo(() => ratingsByKey(options, today, routeHistory), [options, today, routeHistory]);
   const { order } = priorities;
   const shown = useMemo(() => applyDView(options, view, daysUntil, order, ratings), [options, view, daysUntil, order, ratings]);
   // "+$42 vs cheapest" is against the day's cheapest flight, whatever the filters — the same number the

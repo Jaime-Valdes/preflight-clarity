@@ -1,5 +1,6 @@
 import { fareAt, type FlightOption } from "@preflight/shared/search";
 import { forYouScore, rateFlight, type Rating, type RatingCategory } from "@preflight/shared/ratings";
+import type { RouteHistoryDay } from "@preflight/shared/routeHistory";
 import { hrefsFor, type RouteDay } from "@/lib/c/model";
 import { defaultSortFor, matchesView, parseView, viewParams, type Bounds, type ResultsView } from "@/components/c/search/view";
 
@@ -71,10 +72,13 @@ export function dActiveFilterCount(view: DResultsView): number {
   return (f.depFrom !== null ? 1 : 0) + (f.depTo !== null ? 1 : 0) + (f.maxPrice !== null ? 1 : 0) + (f.airlines.length ? 1 : 0) + (f.wide ? 1 : 0);
 }
 
-/** The ratings of every option on the day, by option key (deterministic; compute once per day with useMemo). */
-export function ratingsByKey(options: readonly FlightOption[], today: string): Map<string, Rating[]> {
+/**
+ * The ratings of every option on the day, by option key (deterministic; compute once per day with useMemo).
+ * `history`: the day's measured route history from the day store (null: the day came without it).
+ */
+export function ratingsByKey(options: readonly FlightOption[], today: string, history: RouteHistoryDay | null): Map<string, Rating[]> {
   const map = new Map<string, Rating[]>();
-  for (const option of options) map.set(option.key, rateFlight({ option, today }));
+  for (const option of options) map.set(option.key, rateFlight({ option, today, history }));
   return map;
 }
 

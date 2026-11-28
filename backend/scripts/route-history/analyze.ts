@@ -22,6 +22,10 @@
  *    strongest reading was.
  */
 
+import { C, CELLS, pairKey, windowOf } from "@preflight/shared/routeHistory";
+
+export { C, CELLS, pairKey };
+
 export const SMOOTH_MAX_EDR = 0.1;
 export const CALM_BELOW_EDR = 0.2;
 const GAP_S = 90 * 60;
@@ -33,22 +37,7 @@ const CORRIDOR_NM = 50;
 const MIN_COVER = 0.5;
 const EARTH_NM = 3440;
 
-/** Local-time windows, by the hour a flight sets off: [22, 5), [5, 12), [12, 17), [17, 22). */
-export const WINDOWS = ["overnight", "morning", "afternoon", "evening"] as const;
-export type TimeWindow = (typeof WINDOWS)[number];
-export function windowOf(hour: number): number {
-  return hour >= 22 || hour < 5 ? 0 : hour < 12 ? 1 : hour < 17 ? 2 : 3;
-}
-
-/**
- * One pair's counts for a month, a flat array (the month files and the bundled table keep this shape):
- *  [0] flights counted, [1] smooth, [2] calm, [3] of them the pair's own trips,
- *  [4..6] not-smooth flights by where the strongest reading was (A → B: first, middle, last third),
- *  [7..14] A → B by window (overnight, morning, afternoon, evening): flights, smooth, …
- *  [15..22] B → A, the same.
- */
-export const CELLS = 23;
-export const C = { n: 0, smooth: 1, calm: 2, own: 3, where: 4, ab: 7, ba: 15 } as const;
+// The time-of-day windows and the counts' layout (CELLS, C) are shared/src/routeHistory.ts's.
 
 export interface Readings {
   length: number;
@@ -167,11 +156,6 @@ const RAD = Math.PI / 180;
 const vec = (lat: number, lon: number): Vec => [Math.cos(lat * RAD) * Math.cos(lon * RAD), Math.cos(lat * RAD) * Math.sin(lon * RAD), Math.sin(lat * RAD)];
 const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a: Vec, b: Vec): Vec => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-
-/** The pair key: the two codes in alphabetical order. */
-export function pairKey(a: string, b: string): string {
-  return a < b ? `${a}-${b}` : `${b}-${a}`;
-}
 
 interface Flight {
   /** Indices into the readings, in time order. */
